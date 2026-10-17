@@ -1329,9 +1329,18 @@ public sealed partial class WristPanel
         size = MathF.Max(14, size);
         // the grey still reads (4.5:1) on every card colour: a step toward the text colour where it would not (a two-tone purple: 4.2)
         uint c = size < 15 ? Theme.Mix(Sub, Bento.Text, 0.3f) : Sub, b0 = Bento.Cur.Fill0 | 0xFF000000, b1 = Bento.Cur.Fill1 | 0xFF000000;
-        float Worst(uint ink) => MathF.Min(Bento.Contrast(ink, b0), Bento.Contrast(ink, b1));     // the card's two colours: either may be under it
-        for (float t = 0.3f; t <= 1.01f && Worst(c) < 4.5f; t += 0.175f) c = Theme.Mix(Sub, Bento.Text, t);
-        if (Worst(c) < 4.5f) c = Worst(0xFF000000) >= Worst(0xFFFFFFFF) ? 0xFF000000 : 0xFFFFFFFF;
+        // the card's gradient: either end may be under it, and so may the way between (two hues mixed can be darker than both:
+        // a solid purple's middle gave 4.4)
+        float Worst(uint ink)
+        {
+            float w = float.MaxValue;
+            for (int i = 0; i <= 4; i++) w = MathF.Min(w, Bento.Contrast(ink, Theme.Mix(b0, b1, i / 4f) | 0xFF000000));
+            return w;
+        }
+        // aimed a little over 4.5: a card over the watch's dark back is drawn at 0.96, a shade darker than its colours
+        const float Want = 4.7f;
+        for (float t = 0.3f; t <= 1.01f && Worst(c) < Want; t += 0.175f) c = Theme.Mix(Sub, Bento.Text, t);
+        if (Worst(c) < Want) c = Worst(0xFF000000) >= Worst(0xFFFFFFFF) ? 0xFF000000 : 0xFFFFFFFF;
         TextAt(Ellipsize(s, iw, size, FontWeight.SemiBold), x, by, iw + 2, c, size, FontWeight.SemiBold);
     }
 
