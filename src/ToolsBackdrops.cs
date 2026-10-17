@@ -22,7 +22,7 @@ namespace Orbit;
 //  - its alpha smooth: no step between two neighbouring texels (the seam behind you too) over 2 levels - dithered, no bands;
 //  - premultiplied: no colour over its alpha;
 //  - one texture at a time: the city's let go when a backdrop is made, the backdrop's when Cyber's city is on;
-//  - the motion: Terminal's warm-up flicker only with Motion Full; the picture comes up after the dim (Full).
+//  - the motion: Terminal's slow warm-up only with Motion Full; the picture comes up after the dim (Full).
 static partial class Tools
 {
     static int BackdropsOnly(ConfigStore cfg, Painter painter, Gpu gpu, string dir)
@@ -123,12 +123,21 @@ static partial class Tools
             Log.Info($"backdrops: the city held in Cyber {city0} (want True), let go when a backdrop is made {cityGone} (want True), the backdrop held " +
                      $"{backHeld} (want True) and let go in Cyber {!th.BackdropHeldForTest} (want True)");
 
-            // the motion: Terminal's tube warms up with a flicker only with Motion Full; the picture comes up after the dim (Full only)
+            // the motion: Terminal's phosphor warms up slowly only with Motion Full; the picture comes up after the dim (Full only)
             float tFull = Theater.BackdropLights(Theater.Backdrop.Phosphor, 0.08f, true, true);
             float tReduced = Theater.BackdropLights(Theater.Backdrop.Phosphor, 0.08f, true, false);
             float hall = Theater.BackdropLights(Theater.Backdrop.Hall, 0.15f, true, true), going = Theater.BackdropLights(Theater.Backdrop.Hall, 0.15f, false, true);
+            bool steady = true;                                     // coming in it only ever gets brighter: no blink in any style
+            foreach (Theater.Backdrop k in Enum.GetValues(typeof(Theater.Backdrop)))
+                for (float t = 0, last = 0; t <= 1; t += 1 / 90f)
+                {
+                    float l = Theater.BackdropLights(k, t, true, true);
+                    if (l < last - 1e-6f) steady = false;
+                    last = l;
+                }
             Log.Info($"backdrops motion: Terminal's tube still dark at 0.08 s with Full {tFull == 0} (want True), there at once with Reduced {tReduced == 1} " +
-                     $"(want True); the hall's picture after the dim (Full, 0.15 s) {hall < 0.05f} (want True), going out with the dim {going == 1} (want True)");
+                     $"(want True); the hall's picture after the dim (Full, 0.15 s) {hall < 0.05f} (want True), going out with the dim {going == 1} (want True); " +
+                     $"never a blink coming in {steady} (want True)");
 
             BackdropSheet(views, Path.Combine(dir, "backdrops_preview.png"));
             Log.Info("backdrops: written to " + bd);

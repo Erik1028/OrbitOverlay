@@ -12,8 +12,8 @@ namespace Orbit;
 //    everything but a pin-prick straight up and down; the Dim setting is its alpha, as before;
 //  - the picture (sort 2, 0.15 m nearer - at one distance SteamVR swapped two layers now and then): the style's own backdrop. Its
 //    alpha deepens the dark round the screen (a vignette: the world shows least round the film, more behind you and up high) and its
-//    colours are light on that dark. It is drawn once, on a thread of its own (a few dozen ms: nothing waits - the black wall is
-//    there meanwhile), and kept until the style changes.
+//    colours are light on that dark. It is drawn once, on a thread of its own (30-120 ms: nothing waits - the black wall is there
+//    meanwhile, the picture fades in when it comes), and kept until the style changes.
 // The backdrops (TheaterBackdropRetro.cs for the retro ones):
 //  - Modern: a dark cinema hall - the screen's light in a faint pool on the floor below it, rows of seat backs in silhouette against
 //    it, a few warm step lights down the aisles;
@@ -21,7 +21,8 @@ namespace Orbit;
 //    dim near the screen (far away), bigger and whiter further out (flying past you);
 //  - Windows XP: a Luna-blue night over soft rolling hills, a crescent moon off to the side;
 //  - Windows 7: dark glassy light ribbons, aurora-like, with the bright rim of glass along them;
-//  - Classic Mac: a calm dark desktop pattern, a 1-bit dithered Platinum-grey glow on the horizon, pinstripes below, pixel stars;
+//  - Classic Mac: a calm dark desktop pattern, a 1-bit dithered Platinum-grey haze on the horizon, pinstripes below, pixel stars and
+//    a pixel crescent moon;
 //  - Terminal: green phosphor - vector mountains drawn in glowing lines on the black glass, scanlines through the glow.
 // All of them procedural and our own (no wallpaper, screensaver or logo copied). The rules:
 //  - the alpha is smooth (no edge in it anywhere: pictures are colour only) and dithered - an 8-bit gradient over a wall this size
@@ -151,16 +152,15 @@ public sealed partial class Theater
     }
 
     // how much of the picture shows as theater comes in (t: 0..1). Full motion: the picture comes up a little after the dimming, like the
-    // lights in a hall; Terminal's tube warms up with a flicker. Otherwise (and going out) it follows the dimming.
+    // lights in a hall; Terminal's phosphor warms up slower, creeping up from dark (no blinking: Erik hates flicker). Otherwise (and
+    // going out) it follows the dimming.
     public static float BackdropLights(Backdrop k, float t, bool coming, bool full)
     {
         if (!coming || !full) return 1;
         if (k == Backdrop.Phosphor)
         {
-            if (t < 0.12f) return 0;
-            if (t < 0.18f) return 0.5f;
-            if (t < 0.24f) return 0.1f;
-            return Smooth01((t - 0.24f) / 0.5f);
+            float w = Smooth01((t - 0.15f) / 0.85f);
+            return w * w;
         }
         return Smooth01((t - 0.2f) / 0.6f);
     }
