@@ -154,7 +154,7 @@ public sealed partial class TheaterBar : IPointerTarget, IDisposable
             var ts = _target.TextureSize;
             float screenH = swidth * ts.Y / Math.Max(1, ts.X);
             float dist = vr.HmdValid ? Vector3.Distance(vr.Hmd.Translation, sw.Translation) : 2.5f;
-            float hM = Math.Clamp(0.05f * dist, 0.04f, 0.4f), wM = hM * _tw / _th;
+            float hM = HeightAt(dist), wM = hM * _tw / _th;
             _world = Matrix4x4.CreateTranslation(0, -(screenH / 2 + hM * 0.35f + hM / 2) - (1 - e) * hM * 0.4f, 0.01f) * sw;
             Ov.SetWidth(wM);
             Ov.SetCurvature(scurv > 0 && swidth > 0 ? Math.Clamp(wM * scurv / swidth, 0, 1) : 0);
@@ -434,6 +434,9 @@ public sealed partial class TheaterBar : IPointerTarget, IDisposable
     public bool Interactive => Ov != null && Ov.Visible && _vis > 0.8f;
     public bool AcceptsFrom(Hand h) => true;
     public Vector2 TextureSize => new(Math.Max(1, _tw), Math.Max(1, _th));
+
+    // how tall the bar is under a screen this far from you (the same height on your view); its bottom is 1.35 of it under the screen
+    public static float HeightAt(float dist) => Math.Clamp(0.05f * dist, 0.04f, 0.4f);
 
     public void PointerMove(Hand h, Vector2 px)
     {

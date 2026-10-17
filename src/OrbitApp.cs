@@ -911,7 +911,8 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
     }
 
     // Recenter: the keyboard in the middle under the monitors - on the line from your eyes to just under the lowest monitor's bottom
-    // edge (measured below the middle one), at arm's length (a laser types easily there), facing you
+    // edge (measured below the middle one) and the bar that shows under it, at arm's length (a laser types easily there), facing
+    // you. In theater under the big screen and its bar if that is lower (Erik 10-17: it hung into the bar).
     const float KbReach = 0.9f;
 
     void PlaceKeyboardUnder(DesktopPanel anchor, List<DesktopPanel> placed)
@@ -921,18 +922,32 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         if (up.Length() < 0.1f) { PlaceKeyboard(); return; }
         up = Vector3.Normalize(up);
         var mid = a.Translation;
+        var head = _vr.Hmd.Translation;
         float low = 0;
         foreach (var d in placed)
         {
             var m = MathUtil.FromArray(d.Cfg.Place.M);
             float h = d.Cfg.Width * d.Mon.H / Math.Max(1f, d.Mon.W);
-            low = Math.Min(low, Vector3.Dot(m.Translation - mid, up) - h / 2);
+            low = Math.Min(low, Vector3.Dot(m.Translation - mid, up) - h / 2 - 1.35f * TheaterBar.HeightAt(Vector3.Distance(head, m.Translation)));
         }
-        var head = _vr.Hmd.Translation;
-        var dir = mid + up * (low - 0.05f) - head;
+        var dir = mid + up * (low - 0.03f) - head;
         float len = dir.Length();
         if (len < 0.3f) { PlaceKeyboard(); return; }
         dir /= len;
+        if (_theater.LowestPoint(head, out var tp))
+        {
+            var td = tp - head;
+            if (td.Length() > 0.3f && Vector3.Dot(Vector3.Normalize(td), up) < Vector3.Dot(dir, up))
+            {
+                len = td.Length();
+                dir = td / len;
+                // not steeper than 44° down: a huge big screen must not send it into your lap
+                const float MaxDown = 0.7f;
+                var flat = dir - Vector3.Dot(dir, up) * up;
+                if (Vector3.Dot(dir, up) < -MaxDown && flat.Length() > 0.1f)
+                    dir = Vector3.Normalize(flat) * MathF.Sqrt(1 - MaxDown * MaxDown) - up * MaxDown;
+            }
+        }
         var z = -dir;                                           // facing you
         var y = up - Vector3.Dot(up, z) * z;
         if (y.Length() < 0.1f) { PlaceKeyboard(); return; }
@@ -1000,6 +1015,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
                 if (Placement.IsWorld(w.Cfg.Place)) PlaceWindow(w);
         var missing = _desktops.Where(d => d.Cfg.Enabled && d.Cfg.Place.M == null).ToList();
         if (missing.Count > 0) PlaceDesktops(missing);
+        _theater.Recenter(_vr, TheaterAnchor());            // (before the keyboard: it goes under the big screen too)
         // the keyboard in the middle under the monitors - hidden as well: it comes back where Recenter put things (Erik 10-16); on a
         // hand it stays there
         if (Placement.IsWorld(C.Keyboard.Place) || C.Keyboard.Place.Attach is "head")
@@ -1007,7 +1023,6 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             if (kbUnder != null) PlaceKeyboardUnder(kbUnder, placed);
             else PlaceKeyboard();
         }
-        _theater.Recenter(_vr, TheaterAnchor());
         _cfg.MarkDirty();
     }
 

@@ -187,6 +187,18 @@ public sealed partial class Theater : IDisposable
         return Matrix4x4.CreateTranslation(0, 0, -dist) * MathUtil.YawFrame(vr.Hmd);
     }
 
+    // the lowest point of the big screen with its bar under it, where it is going, a little lower still (Recenter puts the
+    // keyboard under it)
+    public bool LowestPoint(Vector3 head, out Vector3 p)
+    {
+        p = default;
+        if (!On || _view == null || _screen == null) return false;
+        var ts = _screen.TextureSize;
+        float h = _view.Size * ts.Y / Math.Max(1, ts.X), dist = Vector3.Distance(head, _view.Place.Translation);
+        p = _view.Place.Translation - Vector3.Normalize(MathUtil.Up(_view.Place)) * (h / 2 + 1.35f * TheaterBar.HeightAt(dist) + 0.03f * dist);
+        return true;
+    }
+
     // the settings on the bar under the screen: size and curve apply at once
     public void Apply(TheaterConfig cfg)
     {
