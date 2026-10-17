@@ -217,11 +217,12 @@ public sealed class Ambilight : IDisposable
     float[] _tW;                                         //  ... and how much of each (its strength in it)
     const float Inside = 3;                              // texels kept behind the screen's edge (looked at from the side)
 
-    // the glow's shape for a screen this wide for its height (rebuilt only when that changes); true when the texture is a new one
+    // the glow's shape for a screen this wide for its height; true when the texture is a new one. Rebuilt (~1 ms) only when that is
+    // 2 % off: a window resized in theater mode does not rebuild it every frame (the hole is hidden behind the screen anyway)
     public bool Shape(float aspect)
     {
         aspect = Math.Clamp(float.IsFinite(aspect) ? aspect : 16 / 9f, 0.2f, 6f);
-        if (Glow != null && MathF.Abs(aspect - _aspect) < 0.003f * _aspect) return false;
+        if (Glow != null && MathF.Abs(aspect - _aspect) < 0.02f * _aspect) return false;
         _aspect = aspect;
         float w = 1, h = 1 / aspect, m = MarginK * MathF.Sqrt(w * h), gw = w + 2 * m, gh = h + 2 * m;
         int tw, th;

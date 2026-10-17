@@ -335,6 +335,14 @@ static partial class Tools
         for (int i = 0; i < 400; i++) ta.Compose();
         double composeCpu = sw.Elapsed.TotalMilliseconds / 400;
         gpu.Ctx.Flush();
+        var shapeSw = System.Diagnostics.Stopwatch.StartNew();
+        for (int i = 0; i < 20; i++) ta.Shape(i % 2 == 0 ? 1.6f : 1.78f);      // a new shape each time
+        double shapeMs = shapeSw.Elapsed.TotalMilliseconds / 20;
+        ta.Retire();
+        bool rebuilt = false;
+        for (int i = 0; i <= 10; i++) rebuilt |= ta.Shape(1.78f * (1 + 0.0015f * i));                  // a window resized a little at a time
+        Want($"shape: a window resized by 1.5 % does not rebuild the glow ({(rebuilt ? "rebuilt" : "kept")})", !rebuilt);
+        ta.Shape(PW / (float)PH);
         var sample = FrameCost(gpu, () => ta.Sample(pic4K), 30);
         double gpuMs = GpuTime(gpu, () => ta.Sample(pic4K)), gpuMs1080 = GpuTime(gpu, () => ta.Sample(picA));
         Log.Info($"perf: ambilight a theater frame, no glow (Theater's own) {bare.ms:0.000} ms {bare.bytes} B");
@@ -342,6 +350,7 @@ static partial class Tools
         Log.Info($"perf: ambilight a theater frame, glow easing (10 readings/s) {moving.ms:0.000} ms {moving.bytes} B");
         Log.Info($"perf: ambilight writing the glow ({ta.TW} x {ta.TH}) {compose.ms:0.000} ms {compose.bytes} B (with its flush; " +
                  $"the work alone {composeCpu:0.000} ms)");
+        Log.Info($"perf: ambilight a new shape (another screen / a window resized) {shapeMs:0.000} ms");
         Log.Info($"perf: ambilight sampling a 4K picture (10x a second at most): CPU {sample.ms:0.000} ms {sample.bytes} B, GPU {gpuMs:0.000} ms " +
                  $"(1080p: {gpuMs1080:0.000} ms)");
         Want($"perf: the glow allocates nothing a frame (at rest {rest.bytes - bare.bytes} B, easing {moving.bytes - bare.bytes} B more than without it, " +
