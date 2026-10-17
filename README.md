@@ -43,7 +43,9 @@ laser mouse, a full VR keyboard, and its own settings panel you can grab and mov
 - **Theater mode** (a watch button): the monitor or window you used last becomes one big curved screen in front
   of you, the other panels and the keyboard step aside and the world dims behind it. Grab it to move it, the stick
   or both hands to size it; tap again and everything glides back to where it was. It remembers the size.
-  Point at the screen and a switcher shows up under it: one button per monitor and window to swap what plays
+  Point at the screen and a switcher shows up under it: one button per monitor and window to swap what plays.
+  With **Auto theater** on (Settings > Layouts), a video going full screen on a monitor (a browser, VLC, mpv, MPC,
+  PotPlayer, Movies & TV) starts it there by itself, and leaving full screen ends it - games never do
 
 **Stream dock (Hexpad)** - for an Ajazz AKP03 stream dock run by the Hexpad app
 - The dock as a panel you can place over the real one on your desk: its six keys exactly as they look right
