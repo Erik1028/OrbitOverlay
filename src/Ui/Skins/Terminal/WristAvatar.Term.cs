@@ -47,16 +47,17 @@ public sealed partial class WristPanel
             TValue(c, value, AvFitT(Upper(p0.Label), c.Width - 2), !known0 ? T.DIM : p0.Kind != AvatarKind.Toggle || on0 ? T.HOT : T.INK);
             return;
         }
+        // a line each (two columns on a wide box: the 4 x 3 page's Wide)
         const float rh = 14;
-        int rows = Math.Max(1, (int)((c.Height - 4) / rh)), n = _avShown.Count;
-        int fit = n <= rows ? n : rows >= 4 ? rows - 1 : rows;
-        float top = c.Y + 3;
+        int cols = c.Width >= 240 ? 2 : 1, rows = Math.Max(1, (int)((c.Height - 4) / rh)), n = _avShown.Count, room = rows * cols;
+        int fit = n <= room ? n : rows >= 4 ? room - 1 : room;
+        float top = c.Y + 3, cw = MathF.Floor((c.Width - 6 - (cols - 1) * 12) / cols);
         for (int i = 0; i < fit; i++)
         {
             int bi = _avShown[i];
-            TAvRow(Ui.Id("wavt", id * 64 + i), new RectangleF(c.X + 3, top + i * rh, c.Width - 6, rh - 1), s.Avatar.Buttons[bi], s.Values[bi], bi, link);
+            TAvRow(Ui.Id("wavt", id * 64 + i), new RectangleF(c.X + 3 + i / rows * (cw + 12), top + i % rows * rh, cw, rh - 1), s.Avatar.Buttons[bi], s.Values[bi], bi, link);
         }
-        if (fit < n && fit < rows) TCaps(AvFitT(Upper(MoreText(n - fit)), c.Width - 8), c.X + 5, top + fit * rh + 3, T.DIM);
+        if (fit < n && fit < room) TCaps(AvFitT(Upper(MoreText(n - fit)), cw - 2), c.X + 5 + fit / rows * (cw + 12), top + fit % rows * rh + 3, T.DIM);
     }
 
     void TAvRow(string key, RectangleF row, AvatarParam p, float v, int bi, AvatarLink link)

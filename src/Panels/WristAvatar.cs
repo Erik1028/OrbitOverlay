@@ -43,7 +43,7 @@ public sealed partial class WristPanel
     int _avLang = -1, _avEdits = -1;
     readonly List<int> _avShown = new();
     // what to say instead of buttons (null: the buttons), shorter, what would help; the avatar's name; where its values are from
-    string _avMsg, _avShort, _avHint, _avName = "", _avStatus = "", _avCyHead = "", _avCount = "";
+    string _avMsg, _avShort, _avHint, _avName = "", _avStatus = "", _avCyHead = "", _avCount = "", _avFrom = "";
     readonly Dictionary<(string, float, float, int), string> _avFits = new();
     static readonly string[] IntText = MakeInts();
 
@@ -96,6 +96,7 @@ public sealed partial class WristPanel
         int n = a?.Buttons.Length ?? 0;
         _avCount = n == 1 ? Lang.T("1 toggle") : Lang.F("{0} toggles", n);
         _avStatus = s.Ready ? (from.Length > 0 ? _avCount + "  ·  " + from : _avCount) : Lang.T(_avMsg ?? "");
+        _avFrom = s.Ready && !s.Live ? from : _avStatus;              // (the 95 status line: no live values says only that)
         _avCyHead = s.Ready ? Upper(_avName) + "  //  " + Upper(s.Live ? "Live" : "No live values") : Upper(_avMsg ?? "");
     }
 

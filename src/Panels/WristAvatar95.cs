@@ -71,17 +71,21 @@ public sealed partial class WristPanel
             Value95(c, Value95Of(p0, v0), AvFit95(p0.Label, c.Width - 2), Blk95);
             return;
         }
-        // a row each; a tall one that cannot show all of them says "+3 more" on its last row (a tap on the window opens it)
+        // a row each (two columns side by side on a wide one: the 4 x 3 page's Wide); a tall one that cannot show all of them says "+3
+        // more" on its last row (a tap on the window opens it)
         const float rh = 16;
-        int rows = Math.Max(1, (int)((c.Height - 2) / rh)), n = _avShown.Count;
-        int fit = n <= rows ? n : rows >= 4 ? rows - 1 : rows;
-        float cw = c.Width - 4, top = n > rows ? c.Y + 2 : MathF.Floor(c.Y + 2 + (c.Height - 2 - n * rh) / 2);
+        int cols = c.Width >= 240 ? 2 : 1, rows = Math.Max(1, (int)((c.Height - 2) / rh)), n = _avShown.Count, room = rows * cols;
+        int fit = n <= room ? n : rows >= 4 ? room - 1 : room;
+        float cw = MathF.Floor((c.Width - 4 - (cols - 1) * 12) / cols);
+        int used = Math.Min(rows, (n + cols - 1) / cols);
+        float top = n > room ? c.Y + 2 : MathF.Floor(c.Y + 2 + (c.Height - 2 - used * rh) / 2);
         for (int i = 0; i < fit; i++)
         {
             int bi = _avShown[i];
-            AvRow95(Ui.Id("wav95", id * 64 + i), new RectangleF(c.X + 2, top + i * rh, cw, rh), s.Avatar.Buttons[bi], s.Values[bi], bi, link);
+            var row = new RectangleF(c.X + 2 + i / rows * (cw + 12), top + i % rows * rh, cw, rh);
+            AvRow95(Ui.Id("wav95", id * 64 + i), row, s.Avatar.Buttons[bi], s.Values[bi], bi, link);
         }
-        if (fit < n && fit < rows) _ui.Text95(AvFit95(MoreText(n - fit), cw), new RectangleF(c.X + 4, top + fit * rh + 1, cw, 13), Gry95);
+        if (fit < n && fit < room) _ui.Text95(AvFit95(MoreText(n - fit), cw), new RectangleF(c.X + 4 + fit / rows * (cw + 12), top + fit % rows * rh + 1, cw, 13), Gry95);
     }
 
     // a button's row: a check box (a toggle), its name with the value and - / + (a stepper), its name and value (a slider: the window has
@@ -119,7 +123,7 @@ public sealed partial class WristPanel
         var s = _avS;
         var link = d.Avatar;
         float sw = c.Right - 75 - 8 - c.X;
-        _ui.Text95(AvFit95(_avStatus, sw), new RectangleF(c.X, c.Bottom + 10, sw, 13), s.Ready && !s.Live ? 0xFF800000 : Blk95);
+        _ui.Text95(AvFit95(_avFrom, sw), new RectangleF(c.X, c.Bottom + 10, sw, 13), s.Ready && !s.Live ? 0xFF800000 : Blk95);
         if (!s.Ready || s.Avatar.Buttons.Length == 0) { None95Detail(c, _avMsg ?? "Nothing to toggle", _avHint); return; }
         var a = s.Avatar;
         (_av95Params, _av95Values, _av95Order) = (a.Buttons, s.Values, a.Order);
