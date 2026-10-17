@@ -183,7 +183,8 @@ public sealed partial class WristPanel
         float lx = r.X + 3;
         if (p.Kind == AvatarKind.Toggle)
         {
-            Theme.RetroSkin.CheckBox(_p, r.X + 2, r.Y + 1, "", known && v >= 0.5f, known, false, false);
+            // (the Terminal's selection bar is lit: its box drawn lit too, else its [X] is ink on ink)
+            Theme.RetroSkin.CheckBox(_p, r.X + 2, r.Y + 1, "", known && v >= 0.5f, known, sel && Theme.Retro == RetroStyle.Terminal, false);
             lx = r.X + 20;
         }
         string val = p.Kind == AvatarKind.Toggle ? null : Value95Of(p, v);

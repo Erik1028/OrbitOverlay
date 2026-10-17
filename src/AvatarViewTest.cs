@@ -299,19 +299,23 @@ static class AvatarViewTools
         // log: the config written last
         running = true;
         query = false;
+        // (the log looked at first before VRChat said who you are - it does ~15 s after it starts: found when it does)
         string log = Path.Combine(logs, "output_log_2026-10-18_09-00-00.txt");
-        File.WriteAllText(log, "2026.10.18 09:00:01 Debug      -  User Authenticated: Made-up Tester (usr_00000000-0000-4000-8000-0000000e0e0e)\n" +
-                               "2026.10.18 09:00:05 Debug      -  [Behaviour] Switching Made-up Tester to avatar Made-up Fox\n" +
-                               "2026.10.18 09:00:09 Debug      -  [Behaviour] Switching Someone Else to avatar Made-up Cat\n");
+        File.WriteAllText(log, "2026.10.18 09:00:00 Debug      -  Made-up start line\n");
         l.ReadNow();
-        bool fromLog = l.State.Ready && l.State.Source == AvatarSource.Log && l.State.Avatar.Name == "Made-up Fox" && l.State.Values.All(float.IsNaN);
+        bool early = l.State.Source == AvatarSource.Newest;
+        File.AppendAllText(log, "2026.10.18 09:00:01 Debug      -  [Authentication - X] Preforming post login checks for Made-up Tester (usr_00000000-0000-4000-8000-0000000e0e0e)\n" +
+                                "2026.10.18 09:00:05 Debug      -  [Behaviour] Switching Made-up Tester to avatar Made-up Fox\n" +
+                                "2026.10.18 09:00:09 Debug      -  [Behaviour] Switching Someone Else to avatar Made-up Cat\n");
+        l.ReadNow();
+        bool fromLog = early && l.State.Ready && l.State.Source == AvatarSource.Log && l.State.Avatar.Name == "Made-up Fox" && l.State.Values.All(float.IsNaN);
         File.AppendAllText(log, "2026.10.18 09:10:00 Debug      -  [Behaviour] Switching Made-up Tester to avatar Made-up Cat\n");
         l.ReadNow();
         bool followed = l.State.Source == AvatarSource.Log && l.State.Avatar?.Name == "Made-up Cat";
         File.Delete(log);
         l.ReadNow();
         bool newest = l.State.Source == AvatarSource.Newest && l.State.Avatar?.Name == "Made-up Cat";
-        Log.Info($"avatar link: no OSCQuery - your own switch from the log, another player's not {fromLog} (want True), a later switch followed {followed} (want True); " +
+        Log.Info($"avatar link: no OSCQuery - your own switch from the log (you named after the first look), another player's not {fromLog} (want True), a later switch followed {followed} (want True); " +
                  $"no log - the config written last {newest} (want True)");
         // a local test build worn (its id no file name): live, its config the one of the name in the log
         query = true;

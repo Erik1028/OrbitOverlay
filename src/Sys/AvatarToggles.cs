@@ -475,21 +475,17 @@ public sealed class AvatarLink : IDisposable
         _due = DateTime.UtcNow.AddSeconds(_watched ? Poll : Slow);
         if (_pub.Status == AvatarStatus.Off) Publish(new AvatarState { Status = AvatarStatus.Looking });
         // (VRChat's service answering is VRChat running: the process list is looked at only without it)
-        if (!(Running?.Invoke() ?? (_queryPort != 0 || VrchatRunning())))
-        {
-            _queryPort = _hostPort = 0;
-            lock (_lock)
-            {
-                _held.Clear();
-                if (_pub.Status != AvatarStatus.NoVrchat) Publish(new AvatarState { Status = AvatarStatus.NoVrchat });
-            }
-            Said(AvatarStatus.NoVrchat, AvatarSource.None, null);
-            return;
-        }
+        bool hadPort = _queryPort != 0;
+        if (!(Running?.Invoke() ?? (hadPort || VrchatRunning()))) { NotRunning(); return; }
         // the avatar worn and its values: OSCQuery; else the log's last switch, else the config written last
         string id = null;
         Dictionary<string, float> values = null;
         string tree = Ask("/avatar");
+        // the service stopped answering: VRChat may have quit - asked now, or the log's avatar would show "no live values" for a
+        // poll before "VRChat isn't running" (a flash on every quit)
+        if (tree == null && hadPort && Running == null && !VrchatRunning()) { NotRunning(); return; }
+        // one answer missed (the port kept): what the watch shows stays, asked again in a second - not the log's "no live values"
+        if (tree == null && _queryPort != 0) { _due = DateTime.UtcNow.AddSeconds(1); return; }
         if (tree != null) (id, values) = ParseTree(tree);
         AvatarConfigFile a = null;
         var src = AvatarSource.None;
@@ -538,6 +534,17 @@ public sealed class AvatarLink : IDisposable
         Said(status, src, a?.Id);
     }
 
+    void NotRunning()
+    {
+        _queryPort = _hostPort = _missed = 0;
+        lock (_lock)
+        {
+            _held.Clear();
+            if (_pub.Status != AvatarStatus.NoVrchat) Publish(new AvatarState { Status = AvatarStatus.NoVrchat });
+        }
+        Said(AvatarStatus.NoVrchat, AvatarSource.None, null);
+    }
+
     static bool Same(float[] a, float[] b)
     {
         if (a.Length != b.Length) return false;
@@ -556,18 +563,27 @@ public sealed class AvatarLink : IDisposable
             _hostPort = host != null ? HostOscPort(host) : 0;
             return host != null ? Query(path) : null;
         }
-        if (_queryPort == 0 && DateTime.UtcNow >= _nextScan)
+        if (_queryPort != 0)
         {
-            _nextScan = DateTime.UtcNow.AddSeconds(10);
-            _queryPort = FindService(out _hostPort);
+            string body = Get(_queryPort, _queryV6, path);
+            if (body != null) { _missed = 0; return body; }
+            // no answer: once is let go (VRChat busy loading a world - Step keeps what it showed); twice, the port is dropped and
+            // looked for again at once (a new one: OSC switched off and on)
+            if (++_missed < 2) return null;
+            _queryPort = _hostPort = _missed = 0;
+            _nextScan = DateTime.MinValue;
         }
+        if (DateTime.UtcNow < _nextScan) return null;
+        _nextScan = DateTime.UtcNow.AddSeconds(10);
+        _queryPort = FindService(out _hostPort);
         if (_queryPort == 0) return null;
-        string body = Get(_queryPort, _queryV6, path);
-        if (body == null) { _queryPort = 0; _hostPort = 0; }
-        return body;
+        string first = Get(_queryPort, _queryV6, path);
+        if (first == null) _missed = 1;                     // (found, but no answer yet: once more, then dropped)
+        return first;
     }
 
     bool _queryV6;
+    int _missed;
 
     // VRChat.exe's localhost TCP listeners, each asked "/?HOST_INFO": the one that says it is VRChat's
     int FindService(out int oscPort)
@@ -806,7 +822,9 @@ public sealed class AvatarLink : IDisposable
             if (newest == null) return (null, null);
             using var fs = new FileStream(newest, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
             string key = "] Switching " + _me + " to avatar ";
-            if (newest != _logFile || fs.Length < _logPos)
+            // (who you are not found yet: VRChat logs it ~15 s after it starts and the new log may be looked at before - looked for
+            // again while the log is young, else the log would say nothing for the whole session)
+            if (newest != _logFile || fs.Length < _logPos || (_me.Length == 0 && fs.Length < (4 << 20)))
             {
                 // a new log: who you are, then your last switch in it (looked for from its end), then only what is written after
                 _logFile = newest;

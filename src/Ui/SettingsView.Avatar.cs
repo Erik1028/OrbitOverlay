@@ -150,7 +150,7 @@ public sealed partial class SettingsView
         int hit = ui.List95("we95.avlist", lr, n, _wav95Sel, (i, r, on) =>
         {
             int bi = a.Order[i];
-            Theme.RetroSkin.CheckBox(ui.P, r.X + 2, r.Y + 1, "", _avPickTmp.Contains(bi), true, false, false);
+            Theme.RetroSkin.CheckBox(ui.P, r.X + 2, r.Y + 1, "", _avPickTmp.Contains(bi), true, on && Theme.Retro == RetroStyle.Terminal, false);      // (lit on the Terminal's lit bar)
             var b = a.Buttons[bi];
             string kind = b.Kind switch { AvatarKind.Toggle => "", AvatarKind.Stepper => Lang.T("number"), _ => Lang.T("slider") };
             float kw = kind.Length > 0 ? ui.Width95(kind) + 8 : 0;
