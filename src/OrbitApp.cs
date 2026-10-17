@@ -512,6 +512,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             _theater.Update(_vr, dt, C.Theater.Dim, _screens);
             if (theaterWas && !_theater.On) StopTheater(glide: false);      // its screen went away
             if (_theater.View is { } tv && tv.Size != C.Theater.Width) { C.Theater.Width = tv.Size; _cfg.MarkSoftDirty(); }
+            UpdateAutoTheater(now, awake);      // a video in full screen starts / ends theater by itself (OrbitApp.AutoTheater.cs)
             UpdateTheaterBar(now, dt);
             // headset off: no capturing (the overlays keep their last picture)
             if (awake)
@@ -786,6 +787,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         _roomPanel.DestroyOverlay();
         _whatsNewPanel.DestroyOverlay();
         ExtrasReset();
+        AutoTheaterReset();
         if (_theater.On) StopTheater(glide: false);
         _theater.DestroyOverlay();
         _theaterBar.DestroyOverlay();
@@ -1043,6 +1045,12 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             _notifyIn.Incoming.Enqueue(new Notification { Source = "OrbitOverlay", Title = Lang.T("Theater"), Content = Lang.T("There is no monitor or window to show."), Timeout = 4 });
             return;
         }
+        StartTheater(screen);
+    }
+
+    // theater mode on this screen: the keyboard put away for it (it comes back after); the watch / the bar, and auto theater
+    void StartTheater(ITheaterScreen screen)
+    {
         _theaterKb = C.Keyboard.Visible;
         if (_theaterKb) { C.Keyboard.Visible = false; _kbAuto = false; _kbHideAt = -1; }
         _theater.Start(screen, TheaterAnchor(), _vr, C.Theater);

@@ -160,6 +160,8 @@ public sealed class TheaterConfig
     public bool Curved { get; set; } = true;             // bent around you (else flat)
     public bool Bar { get; set; } = true;                // the bar under a monitor / window: Theater button + these settings
     public bool Ambilight { get; set; } = true;          // a glow round the screen in its picture's edge colours (Erik 10-18)
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Auto { get; set; }                       // a video going full screen starts it by itself (Sys/AutoTheater.cs); off: not written
 }
 
 // The VRChat chatbox as a status line (Sys/StatusLine.cs)

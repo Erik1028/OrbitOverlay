@@ -1574,6 +1574,10 @@ static class Hu
         ("&Default", "&Alapértelmezett"),
         ("Toggles with \"{0}\": {1}", "Kapcsolók ezzel: „{0}”: {1}"),
         (" · type to search", " · gépelj a kereséshez"),
+        // ---- Auto theater (Layouts > Theater mode, Sys/AutoTheater.cs) ----
+        ("Auto theater", "Automatikus mozi"),
+        ("starts when a video goes full screen", "elindul, ha egy videó teljes képernyőre vált"),
+        ("A&uto theater when a video goes full screen", "Au&tomatikus mozi teljes képernyős videónál"),
 
     };
 }

@@ -401,7 +401,9 @@ public sealed partial class SettingsView
         b = t.Curved;
         if (ui.Check95("t95.curve", 628, 378, "&Curved", ref b)) { t.Curved = b; _h.TheaterEdited(); }
         b = t.Ambilight;
-        if (ui.Check95("t95.amb", 52, 407, "A&mbilight: a soft glow round the screen in its colours", ref b)) { t.Ambilight = b; _h.TheaterEdited(); }
+        if (ui.Check95("t95.amb", 28, 408, "A&mbilight: a soft glow round the screen in its colours", ref b)) { t.Ambilight = b; _h.TheaterEdited(); }
+        b = t.Auto;                     // a video going full screen starts it by itself (10-18, Sys/AutoTheater.cs)
+        if (ui.Check95("t95.auto", 380, 408, "A&uto theater when a video goes full screen", ref b)) t.Auto = b;
     }
 
     // ---------------- Wrist ----------------
