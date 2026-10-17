@@ -389,19 +389,19 @@ static class AutoTheaterTools
             Look("modern");
             t.Auto = false;
             ui.ResetAnimations();
-            ClickM(222 + 181, 570 + 24);
+            ClickM(602 + 181, 592 + 23);
             bool onM = t.Auto;
             Settle(FrameM);
             Save("layouts_modern");
-            ClickM(222 + 181, 570 + 24);
+            ClickM(602 + 181, 592 + 23);
             bool offM = !t.Auto;
             // 95: the check box under the sliders
             Look("classic");
             t.Auto = false;
             ui.ResetAnimations();
-            Click95(28 + 8, 408 + 6);
+            Click95(380 + 8, 408 + 6);
             bool on95 = t.Auto;
-            Click95(28 + 8, 408 + 6);
+            Click95(380 + 8, 408 + 6);
             bool off95 = !t.Auto;
             Want($"autotheater settings: Modern's switch turns it on {onM} (want True) and off {offM} (want True); the 95 check box on {on95} (want True) " +
                  $"and off {off95} (want True)", onM && offM && on95 && off95);

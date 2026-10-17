@@ -503,7 +503,7 @@ public sealed partial class SettingsView
         b = t.Ambilight;
         if (ui.Toggle("th.amb", new RectangleF(lx - 10, 570, 362, 48), "Ambilight", ref b, "a soft glow round the screen in its colours")) { t.Ambilight = b; _h.TheaterEdited(); }
         b = t.Auto;                     // under the sliders (the left column is full)
-        if (ui.Toggle("th.auto", new RectangleF(wx - 10, 592, cw + 10, 46), "Auto theater", ref b, "starts when a video goes full screen")) t.Auto = b;
+        if (ui.Toggle("th.auto", new RectangleF(wx, 592, cw, 46), "Auto theater", ref b, "starts when a video goes full screen")) t.Auto = b;
         float v = t.Dim;
         if (ui.Slider("th.dim", new RectangleF(wx, 470, cw, 58), "Dim the world", ref v, 0, 0.9f, f => f < 0.005f ? "off" : $"{f * 100:0}%"))
         { t.Dim = v; _h.TheaterEdited(); }
