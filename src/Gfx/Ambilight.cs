@@ -84,8 +84,7 @@ public sealed class Ambilight : IDisposable
         _p.Begin(_grid.Bitmap, 0x00000000);
         _p.ImagePart(pic.Bitmap, new RectangleF(0, 0, GridW, GridH), new RectangleF(0, 0, pic.W, pic.H));
         _p.End();
-        _g.Ctx.CopyResource(_stage[_write], _grid.Tex);
-        _g.Ctx.Flush();                              // sent now: by the next frame the copy is done and the map does not wait
+        _g.Ctx.CopyResource(_stage[_write], _grid.Tex);     // (the main loop's flush at the end of the frame sends it: done by the next)
         _stageAt[_write] = _frame;
         _tries[_write] = 0;
         _write = (_write + 1) % Stages;
