@@ -110,6 +110,7 @@ public sealed partial class Theater : IDisposable
         _dim.SetFlag(Valve.VR.VROverlayFlags.IsPremultiplied, true);
         _dim.SetTexture(_black.Tex);
         _cityOn = false;                    // (Cyber: the night city, TheaterCyber.cs)
+        _ringR = -1;
         _dim.SetCurvature(1f);
         CreateCyber();
     }
@@ -134,6 +135,7 @@ public sealed partial class Theater : IDisposable
         float size = Math.Clamp(cfg.Width, MinWidth, MaxWidth), dist = Math.Clamp(cfg.Distance, 0.6f, 10f);
         _view = new TheaterView { Size = size, Head = vr.Hmd.Translation, Flat = !cfg.Curved };
         _view.Move(Where(anchor ?? screen, vr, dist));
+        Level(vr);
         bool back = _screen == screen && screen.Theater != null;      // still on its way out: turn around from there
         if (_screen != null && !back) Release(_screen);
         _screen = screen;
@@ -201,6 +203,7 @@ public sealed partial class Theater : IDisposable
         float dist = Math.Clamp(Vector3.Distance(_view.Place.Translation, _view.Head), 0.6f, 10f);
         _view.Head = vr.Hmd.Translation;
         _view.Move(Where(anchor ?? _screen, vr, dist));
+        Level(vr);
     }
 
     // the switcher under the screen: another monitor / window takes the same place and size. It fades in over the one
@@ -289,13 +292,13 @@ public sealed partial class Theater : IDisposable
             else
             {
                 const float Behind = 0.6f;
-                float r = Vector3.Distance(_view.World.Translation, _view.Head) + Behind;
-                var place = Matrix4x4.CreateTranslation(0, 0, -Behind) * _view.World;
-                float width = 2 * MathF.PI * r;     // all the way round you at that radius (curvature 1)
-                _dim.SetAbsolute(place);
-                _dim.SetWidth(width);
-                _dim.SetAlpha(a);
-                CyberWall(a, place, width);         // Cyber: the night city and its skyline (TheaterCyber.cs)
+                if (!CyberWall(a, Behind))          // Cyber: the night city, level and still (TheaterCyber.cs)
+                {
+                    float r = Vector3.Distance(_view.World.Translation, _view.Head) + Behind;
+                    _dim.SetAbsolute(Matrix4x4.CreateTranslation(0, 0, -Behind) * _view.World);
+                    _dim.SetWidth(2 * MathF.PI * r);    // all the way round you at that radius (curvature 1)
+                    _dim.SetAlpha(a);
+                }
                 _dim.Show();
             }
         }

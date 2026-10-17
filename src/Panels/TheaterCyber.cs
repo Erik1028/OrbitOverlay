@@ -10,11 +10,20 @@ namespace Orbit;
 // skyline round the horizon: building silhouettes, lit windows, the odd neon sign. Both textures are drawn ONCE (a few ms, the first
 // time) and kept; coming in, the wall powers up like a tube (a flicker of its alpha) and the city's lights come on after it (Full).
 // The screen's own lock-on and scan, and the switch's unfold over the old one, are CyberScreenFx's (the panels').
+//
+// The city has a frame of its own (Erik 10-17: it moved and tilted with the screen, "the houses must be level"): level, round your
+// head where it was when theater started, turned to face the screen - set again by Recenter only. Its radius is the screen's distance
+// from there plus Behind, so it only changes when the screen is moved (it followed the head before: the whole city was re-laid every
+// frame). The skyline band is a little nearer than the wall: at one distance SteamVR swapped the two now and then - the buildings
+// flickered.
 public sealed partial class Theater
 {
     Surface _city, _sky;                 // the wall (WallAspect tall, fading like the black one) and the skyline band
     VrOverlay _band;
     bool _cityOn;
+    Matrix4x4 _level = Matrix4x4.Identity;  // the city's frame: level, at your head, facing the screen (Start / Recenter)
+    float _ringR = -1;                       // its radius set last (-1: set it again)
+    const float BandIn = 0.15f;              // the band this much nearer than the wall
     const int CityW = 1024, BandW = 4096, BandH = 512;   // the band: an eighth of its width tall - 21° above and below the horizon
 
     // the wall's texture rows: f = 0 the horizon .. 1 the top / bottom edge; the elevation there (WallAlpha's)
@@ -30,31 +39,67 @@ public sealed partial class Theater
         _band.SetCurvature(1f);
     }
 
-    // with the wall shown this frame (a = its alpha): the style's textures, the band on the wall's place, the power-up
-    void CyberWall(float a, Matrix4x4 place, float width)
+    // the city's frame (Start / Recenter): level, at your head, turned to face the screen
+    void Level(VrSession vr)
+    {
+        _level = LevelFrame(vr.Hmd, _view.Place.Translation);
+        _ringR = -1;
+    }
+
+    public static Matrix4x4 LevelFrame(in Matrix4x4 hmd, Vector3 screen)
+    {
+        var f = screen - hmd.Translation;
+        f.Y = 0;
+        if (f.LengthSquared() < 0.01f) return MathUtil.YawFrame(hmd);    // right above / below you: the way you face
+        var z = -Vector3.Normalize(f);
+        return MathUtil.Basis(Vector3.Normalize(Vector3.Cross(Vector3.UnitY, z)), Vector3.UnitY, z, hmd.Translation);
+    }
+
+    // a cylinder round the city's frame at radius r: its middle straight ahead, all the way round (curvature 1)
+    Matrix4x4 Ring(float r) => Matrix4x4.CreateTranslation(0, 0, -r) * _level;
+
+    // with the wall shown this frame (a = its alpha): in the Cyber style the city - its textures, its place, the power-up - and
+    // true; otherwise the black wall's texture back, the band away, and false (the wall goes behind the screen then)
+    bool CyberWall(float a, float behind)
     {
         bool cy = Theme.Cyber && _p != null;
         if (!cy)
         {
             if (_cityOn) { _dim.SetTexture(_black.Tex); _cityOn = false; }
+            _ringR = -1;
             _band?.Hide();
-            return;
+            return false;
         }
         if (_city == null) { _city = new Surface(_g, CityW, (int)(CityW * WallAspect)); DrawCity(); }
         if (_sky == null) { _sky = new Surface(_g, BandW, BandH); DrawSkyline(); }
-        if (!_cityOn) { _dim.SetTexture(_city.Tex); _cityOn = true; }
+        if (!_cityOn)
+        {
+            _dim.SetTexture(_city.Tex);
+            _band?.SetTexture(_sky.Tex);            // once: they never change
+            _cityOn = true;
+            _ringR = -1;
+        }
+        // behind the screen wherever it is now and where it is going (growing out of its place it may be the farther one)
+        var c = _level.Translation;
+        float r = MathF.Max(Vector3.Distance(_view.Place.Translation, c), Vector3.Distance(_view.World.Translation, c)) + behind;
+        if (MathF.Abs(r - _ringR) > 0.001f)
+        {
+            _ringR = r;
+            _dim.SetAbsolute(Ring(r));
+            _dim.SetWidth(2 * MathF.PI * r);
+            _band?.SetAbsolute(Ring(r - BandIn));
+            _band?.SetWidth(2 * MathF.PI * (r - BandIn));
+        }
         // coming in (Full): the wall flickers on like a tube, the city's lights after it; going: both fade with the screen
         bool coming = On && CyberFx.Full && _t < 1;
         float wall = coming ? Flicker(_t) : 1, lights = coming ? Smooth01((_t - 0.45f) / 0.45f) : 1;
         _dim.SetAlpha(a * wall);
-        if (_band == null) return;
+        if (_band == null) return true;
         float ba = a * lights;
-        if (ba <= 0.004f) { _band.Hide(); return; }
-        _band.SetTexture(_sky.Tex);
-        _band.SetAbsolute(place);
-        _band.SetWidth(width);
+        if (ba <= 0.004f) { _band.Hide(); return true; }
         _band.SetAlpha(Math.Min(1, ba * 1.3f));      // the lights a little brighter than the dimming itself
         _band.Show();
+        return true;
     }
 
     // a tube switching on: two short blinks, then up
@@ -159,9 +204,9 @@ public sealed partial class Theater
             if (AtSun(fx, fw)) { fx += fw; continue; }
             int fh = (int)MathF.Round(BandRow(3 + 9 * (float)Math.Pow(rnd.NextDouble(), 1.4)) * px);
             _p.Fill(new RectangleF(fx, mid - fh, fw, fh), 0xFF1A0F2C);
-            for (int wy = mid - fh + 5; wy < mid - 6; wy += 9)
-                for (int wx = fx + 4; wx < fx + fw - 4; wx += 7)
-                    if (rnd.NextDouble() < 0.07) _p.Fill(new RectangleF(wx, wy, 2, 2), Pm(0xFFB48CFF, 0.35f));
+            for (int wy = mid - fh + 5; wy < mid - 6; wy += 10)
+                for (int wx = fx + 4; wx < fx + fw - 5; wx += 8)
+                    if (rnd.NextDouble() < 0.07) _p.Fill(new RectangleF(wx, wy, 3, 3), Pm(0xFFB48CFF, 0.3f));
             fx += fw;
         }
         int x = 0;
@@ -176,21 +221,24 @@ public sealed partial class Theater
             int top = mid - bh;
             uint body = Theme.Mix(0xFF0B0A14, 0xFF16112A, (float)rnd.NextDouble() * 0.5f);
             _p.Fill(new RectangleF(x, top, bw, bh), body);
-            _p.Fill(new RectangleF(x, top, bw, 1), 0xFF2A2140);                     // a lit rim on its roof
+            _p.Fill(new RectangleF(x, top, bw, 2), 0xFF241C38);                     // a lit rim on its roof
             if (bh > 40 && rnd.Next(3) == 0)                                          // an antenna with a red light
             {
-                int ax = x + bw / 2, ah = rnd.Next(6, 18);
-                _p.Fill(new RectangleF(ax, top - ah, 1, ah), 0xFF2A2140);
-                _p.Fill(new RectangleF(ax - 1, top - ah - 1, 3, 2), 0xFFFF3B4F);
+                int ax = x + bw / 2 - 1, ah = rnd.Next(6, 18);
+                _p.Fill(new RectangleF(ax, top - ah, 2, ah), 0xFF2A2140);
+                _p.Fill(new RectangleF(ax - 2, top - ah - 2, 6, 5), Pm(0xFFFF3B4F, 0.25f));
+                _p.Fill(new RectangleF(ax - 1, top - ah - 1, 4, 3), 0xFFFF3B4F);
             }
-            // windows: a grid of 2 x 3 cells, a few lit
+            // windows: a grid of 3 x 4 cells, a few lit, each with a faint halo (no hard 2 px dots: they twinkled)
             float lp = 0.12f + 0.22f * (float)rnd.NextDouble();
-            for (int wy = top + 4; wy < mid - 4; wy += 7)
-                for (int wx = x + 3; wx < x + bw - 4; wx += 5)
+            for (int wy = top + 5; wy < mid - 6; wy += 9)
+                for (int wx = x + 3; wx < x + bw - 5; wx += 6)
                     if (rnd.NextDouble() < lp)
                     {
                         uint c = lit[rnd.Next(lit.Length)];
-                        _p.Fill(new RectangleF(wx, wy, 2, 3), Pm(c, 0.45f + 0.45f * (float)rnd.NextDouble()));
+                        float al = 0.45f + 0.4f * (float)rnd.NextDouble();
+                        _p.Fill(new RectangleF(wx - 1, wy - 1, 5, 6), Pm(c, al * 0.22f));
+                        _p.Fill(new RectangleF(wx, wy, 3, 4), Pm(c, al));
                     }
             // now and then a neon sign down its side, with a glow
             if (bh > 30 && rnd.Next(8) == 0)

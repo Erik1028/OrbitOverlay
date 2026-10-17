@@ -559,6 +559,16 @@ static partial class Tools
                 SaveCrop(sky, gpu, Path.Combine(qa, "cyberui_skyline.png"), new RectangleF(0, 0, sky.W, sky.H), keepAlpha: true);
                 index.AppendLine("wall|the theater wall: the night city (sky, neon horizon, floor grid) and its skyline band|cyberui_wall_000.png,cyberui_skyline.png");
             }
+            {
+                // the city's frame: level whatever way the head and the screen are tilted, facing the screen, at the head
+                var hmd = Matrix4x4.CreateRotationX(0.5f) * Matrix4x4.CreateRotationZ(0.3f) * Matrix4x4.CreateTranslation(0.2f, 1.6f, 0.1f);
+                var scr = new Vector3(0.9f, 2.4f, -2f);
+                var lv = Theater.LevelFrame(hmd, scr);
+                var fwd = -new Vector3(lv.M31, lv.M32, lv.M33);
+                var flat = Vector3.Normalize(new Vector3(scr.X - 0.2f, 0, scr.Z - 0.1f));
+                bool level = MathF.Abs(lv.M22 - 1) < 1e-4f, facing = Vector3.Dot(fwd, flat) > 0.9999f, at = Vector3.Distance(lv.Translation, hmd.Translation) < 1e-4f;
+                Log.Info($"cyber ui: theater city frame level {level} (want True), facing the screen {facing} (want True), at the head {at} (want True)");
+            }
             File.WriteAllText(Path.Combine(qa, "cyberui_index.txt"), index.ToString());
             Log.Info($"cyber ui: motion frames written to {qa}");
         }
