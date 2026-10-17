@@ -52,6 +52,7 @@ public sealed partial class Theater
     Surface _backTex;
     Backdrop _backKind, _backSet;     // the picture in _backTex / the one the overlay was given
     float _backIn;                    // the picture fading in once it is there (the first time it may come after theater has)
+    float _backLit;                   // how far its lights are up (BackdropLit: they never jump)
     Thread _job;                      // drawing one (one at a time)
     Backdrop _jobKind, _backFailed;
     uint[] _jobPx;
@@ -84,11 +85,12 @@ public sealed partial class Theater
             _back?.SetWidth(2 * MathF.PI * (r - BandIn));
         }
         _dim.SetAlpha(a);
+        _backLit = BackdropLit(_backLit, !_dim.Visible, want, _t, On, Motion.Full);      // (the dim was off: theater starts from nothing)
         if (_back == null) return;
         if (_backTex == null || _backKind != want) { _back.Hide(); _backIn = 0; return; }     // still being drawn: the black wall alone
         if (_backSet != want) { _back.SetTexture(_backTex.Tex); _backSet = want; }       // once: it never changes
         _backIn = Motion.Step(_backIn, true, dt, 0.5f);
-        float pa = a * _backIn * BackdropLights(want, _t, On && _t < 1, Motion.Full);
+        float pa = a * _backIn * _backLit;
         if (pa <= 0.004f) { _back.Hide(); return; }
         _back.SetAlpha(pa);
         _back.Show();
@@ -163,6 +165,17 @@ public sealed partial class Theater
             return w * w;
         }
         return Smooth01((t - 0.2f) / 0.6f);
+    }
+
+    // the lights frame by frame: coming in they follow BackdropLights but only ever go up, once theater is in they are all up, going out
+    // they stay as they are and fade with the dim. fresh: theater starts from nothing (they start dark). So a quick off / on never makes
+    // them jump: turned off half way up they don't flash up to full, turned on again on the way out they don't drop back to dark (Terminal's
+    // tube went from full to 15% and up again - a blink; Erik hates flicker)
+    public static float BackdropLit(float lit, bool fresh, Backdrop k, float t, bool on, bool full)
+    {
+        if (fresh) lit = 0;
+        if (on && t < 1) return Math.Max(lit, BackdropLights(k, t, true, full));
+        return on ? 1 : lit;
     }
 
     void DestroyBackdrop()

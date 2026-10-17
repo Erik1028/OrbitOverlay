@@ -138,6 +138,29 @@ static partial class Tools
             Log.Info($"backdrops motion: Terminal's tube still dark at 0.08 s with Full {tFull == 0} (want True), there at once with Reduced {tReduced == 1} " +
                      $"(want True); the hall's picture after the dim (Full, 0.15 s) {hall < 0.05f} (want True), going out with the dim {going == 1} (want True); " +
                      $"never a blink coming in {steady} (want True)");
+            // a quick off / on, frame by frame (BackdropLit): started from nothing, turned off half way up (the lights must not flash up), on
+            // again on the way out (they must not drop back to dark), then all the way in
+            bool noJump = true, startsDark = true, allIn = true;
+            foreach (var k in new[] { Theater.Backdrop.Hall, Theater.Backdrop.Phosphor })
+            {
+                float lit = Theater.BackdropLit(1, true, k, 1 / 90f, true, true);
+                startsDark &= lit == 0;
+                void Frames(float from, float to, bool on)
+                {
+                    for (float t = from; on ? t < to : t > to; t += on ? 1 / 90f : -1 / 90f)
+                    {
+                        float l = Theater.BackdropLit(lit, false, k, t, on, true);
+                        if (on ? l < lit - 1e-6f : l > lit + 1e-6f) noJump = false;
+                        lit = l;
+                    }
+                }
+                Frames(1 / 90f, 0.5f, true);
+                Frames(0.5f, 0.3f, false);
+                Frames(0.3f, 1, true);
+                lit = Theater.BackdropLit(lit, false, k, 1, true, true);
+                allIn &= lit == 1;
+            }
+            Log.Info($"backdrops motion: a quick off / on - the lights start dark {startsDark} (want True), never jump {noJump} (want True), all up once in {allIn} (want True)");
 
             BackdropSheet(views, Path.Combine(dir, "backdrops_preview.png"));
             Log.Info("backdrops: written to " + bd);
