@@ -135,6 +135,7 @@ static partial class Tools
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "social") return SocialOnly(wrist, data, cfg, painter, gpu, dir);
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "lights") return LightsOnly(wrist, data, cfg, painter, gpu, dir);
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "onthisday") return OnThisDayTempsTools.Only(wrist, data, cfg, gpu, dir);
+        if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "backdrops") return BackdropsOnly(cfg, painter, gpu, dir);    // theater's backdrops (ToolsBackdrops.cs)
         if (everything)
         {
             var sw0 = System.Diagnostics.Stopwatch.StartNew();
@@ -796,6 +797,7 @@ static partial class Tools
         // the retro styles: every screen once more in each, Windows 95 first (its pictures keep their *_95 names); then Cyber
         foreach (var sk in Skins.All) RetroShots(sk);
         CyberShots();
+        BackdropsRun(cfg, painter, gpu, dir);              // theater's backdrop in every style, backdrops_preview.png (ToolsBackdrops.cs)
         PhotoViewTools.PreviewSheet(dir);       // the latest photo in every style, side by side (photo_preview.png)
         WeatherViewTools.Sheets(dir, painter, gpu);        // weather_preview.png: every style's weather side by side
         FolderViewTools.Sheet(dir);                        // folder_preview.png: every style's folder closed and open
