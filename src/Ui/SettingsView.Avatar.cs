@@ -14,6 +14,8 @@ namespace Orbit;
 public sealed partial class SettingsView
 {
     int _avChipPage;
+    readonly List<int> _avFound = new();
+    string _avSearchWas = "";
     bool _wav95;                                // the 95 editor's Avatar Toggles dialog is open
     int _wav95Sel = -1;
     readonly List<int> _avPickTmp = new();
@@ -79,17 +81,25 @@ public sealed partial class SettingsView
         }
         var a = s.Avatar;
         var picks = AvatarPicks(a);
-        int shown = AvatarFilter.Shown(a, picks, _avPickTmp), n = a.Order.Length;
-        string head = Lang.F("{0}: {1} of {2} on the watch", a.Name, shown, n);
-        ui.Label(new RectangleF(x, y, 486 - 112, 18), Cut(p, head, 486 - 116, 13), Theme.Dim, 13);
+        int shown = AvatarFilter.Shown(a, picks, _avPickTmp);
+        // an avatar with hundreds: letters typed in the desktop window (the palette's search, TypeKey) narrow the chips to the names
+        // that hold them
+        _avFound.Clear();
+        foreach (int bi in a.Order)
+            if (_wsearch.Length == 0 || a.Buttons[bi].Label.Contains(_wsearch, StringComparison.CurrentCultureIgnoreCase)) _avFound.Add(bi);
+        int n = _avFound.Count;
+        string head = _wsearch.Length > 0 ? Lang.F("Toggles with \"{0}\": {1}", _wsearch, n)
+            : Lang.F("{0}: {1} of {2} on the watch", a.Name, shown, a.Order.Length) + (InVr ? "" : Lang.T(" · type to search"));
+        ui.Label(new RectangleF(x, y, 486 - 112, 18), Cut(p, head, 486 - 116, 13), _wsearch.Length > 0 ? Theme.Text : Theme.Dim, 13);
         if (ui.Button("we.avdefault", new RectangleF(x + 486 - 104, y - 4, 104, 24), "Default", null, false, picks != null, 12)) ResetPicks(ui, a);
         int pages = (n + AvChips - 1) / AvChips;
+        if (_wsearch != _avSearchWas) { _avSearchWas = _wsearch; _avChipPage = 0; }
         _avChipPage = Math.Clamp(_avChipPage, 0, Math.Max(0, pages - 1));
         for (int k = 0; k < AvChips; k++)
         {
             int i = _avChipPage * AvChips + k;
             if (i >= n) break;
-            int bi = a.Order[i];
+            int bi = _avFound[i];
             bool on = _avPickTmp.Contains(bi);
             var r = new RectangleF(x + k % 4 * 122, y + 24 + k / 4 * 35, 116, 30);
             if (ui.Button(Ui.Id("wavp", k), r, Cut(p, a.Buttons[bi].Label, on ? 116 - 40 : 116 - 16, 12), on ? Theme.IcoCheck : null, on, true, 12))

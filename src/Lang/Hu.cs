@@ -1568,6 +1568,8 @@ static class Hu
         ("C&hoose...", "&Kiválasztás..."),
         ("Check the ones the watch shows ({0} of {1}).", "Jelöld be, amiket az óra mutasson ({0} / {1})."),
         ("&Default", "&Alapértelmezett"),
+        ("Toggles with \"{0}\": {1}", "Kapcsolók ezzel: „{0}”: {1}"),
+        (" · type to search", " · gépelj a kereséshez"),
 
     };
 }

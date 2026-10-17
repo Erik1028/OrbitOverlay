@@ -612,6 +612,21 @@ static partial class Tools
                 }
                 Log.Info($"avatar editor {name}: {crossed} control(s) crossing another (want 0){(classic ? $", the dialog {dialog} (want 0)" : "")}");
             }
+            // the desktop window: letters typed narrow the chips ("ha": Hat (Props), Hat (Clothes), Shades)
+            cfg.Data.Appearance = new AppearanceConfig { Clock24h = true };
+            Theme.Apply(cfg.Data.Appearance);
+            var ask0 = view.AskFile;
+            view.AskFile = (_, _, _) => { };
+            view.SelectKindForTest("avatar");
+            view.TypeKey('h'); view.TypeKey('a');
+            Draw(false);
+            surf.SavePng(gpu, Path.Combine(dir, "settings_avatar_search.png"));
+            int chips = hits.Where(h => h.id.StartsWith("wavp", StringComparison.Ordinal)).Select(h => h.id).Distinct().Count();
+            view.TypeKey((char)27);
+            Draw(false);
+            int all = hits.Where(h => h.id.StartsWith("wavp", StringComparison.Ordinal)).Select(h => h.id).Distinct().Count();
+            view.AskFile = ask0;
+            Log.Info($"avatar editor: \"ha\" typed in the desktop window leaves {chips} chips (want 3), Esc all of the first page {all} (want 16)");
             // a pick in the editor: the widget shows it at its end (the first pick starts from what the widget showed)
             cfg.Data.Avatars.Shown.Remove(AvatarViewTools.FoxId);
             cfg.Data.Appearance = new AppearanceConfig { Clock24h = true };
