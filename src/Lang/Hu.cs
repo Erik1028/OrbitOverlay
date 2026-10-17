@@ -1528,6 +1528,10 @@ static class Hu
         ("MODE", "MÓD"),
         ("TYPE", "GÉPELÉS"),
         ("kbd|LAYOUT", "KIOSZTÁS"),
+        // ---- Auto theater (Layouts > Theater mode, Sys/AutoTheater.cs) ----
+        ("Auto theater", "Automatikus mozi"),
+        ("starts when a video goes full screen", "elindul, ha egy videó teljes képernyőre vált"),
+        ("A&uto theater: starts when a video goes full screen on a monitor", "Au&tomatikus mozi: elindul, ha egy videó teljes képernyőre vált egy monitoron"),
 
     };
 }

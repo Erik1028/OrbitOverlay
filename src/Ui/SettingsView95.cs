@@ -400,6 +400,8 @@ public sealed partial class SettingsView
         ui.Text95($"{v:0.0} m", new RectangleF(566, 378, 44, 15));
         b = t.Curved;
         if (ui.Check95("t95.curve", 628, 378, "&Curved", ref b)) { t.Curved = b; _h.TheaterEdited(); }
+        b = t.Auto;                     // (Erik 10-18) Sys/AutoTheater.cs
+        if (ui.Check95("t95.auto", 28, 408, "A&uto theater: starts when a video goes full screen on a monitor", ref b)) t.Auto = b;
     }
 
     // ---------------- Wrist ----------------

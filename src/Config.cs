@@ -159,6 +159,8 @@ public sealed class TheaterConfig
     public float Dim { get; set; } = 0.6f;               // how dark the world gets behind it (0 = not at all)
     public bool Curved { get; set; } = true;             // bent around you (else flat)
     public bool Bar { get; set; } = true;                // the bar under a monitor / window: Theater button + these settings
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Auto { get; set; }                       // a video going full screen starts it by itself (Sys/AutoTheater.cs); off: not written
 }
 
 // The VRChat chatbox as a status line (Sys/StatusLine.cs)

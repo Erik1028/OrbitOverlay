@@ -493,11 +493,14 @@ public sealed partial class SettingsView
         var t = C.Theater;
         p.Line(lx, 440, 984, 440, Theme.Border, 1);
         ui.Section(new RectangleF(lx, 450, 352, 22), "Theater mode");
+        // three switches on the left (Auto theater, Erik 10-18: a little closer together to fit), the two sliders on the right
         bool b = t.Bar;
-        if (ui.Toggle("th.bar", new RectangleF(lx - 10, 474, 362, 54), "Bar under the monitors", ref b,
+        if (ui.Toggle("th.bar", new RectangleF(lx - 10, 474, 362, 48), "Bar under the monitors", ref b,
                 "point at a monitor's bottom: Theater + settings")) t.Bar = b;
         b = t.Curved;
-        if (ui.Toggle("th.curve", new RectangleF(lx - 10, 530, 362, 54), "Curved", ref b, "bent around you, else flat")) { t.Curved = b; _h.TheaterEdited(); }
+        if (ui.Toggle("th.curve", new RectangleF(lx - 10, 522, 362, 48), "Curved", ref b, "bent around you, else flat")) { t.Curved = b; _h.TheaterEdited(); }
+        b = t.Auto;
+        if (ui.Toggle("th.auto", new RectangleF(lx - 10, 570, 362, 48), "Auto theater", ref b, "starts when a video goes full screen")) t.Auto = b;
         float v = t.Dim;
         if (ui.Slider("th.dim", new RectangleF(wx, 470, cw, 58), "Dim the world", ref v, 0, 0.9f, f => f < 0.005f ? "off" : $"{f * 100:0}%"))
         { t.Dim = v; _h.TheaterEdited(); }

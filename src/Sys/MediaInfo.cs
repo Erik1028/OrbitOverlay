@@ -40,6 +40,14 @@ public sealed class MediaInfo : IDisposable
         lock (_lock) return (_has, _title, _artist, _playing, _art, Version);
     }
 
+    // The player behind the session and whether it plays (auto theater, Sys/AutoTheater.cs: is it the full-screen window's player that
+    // plays?). app: the session's SourceAppUserModelId - "Chrome", "MSEdge", "vlc.exe", Firefox's install hash...; null: no session.
+    string _app;
+    public (bool playing, string app) Source()
+    {
+        lock (_lock) return (_playing, _app);
+    }
+
     GlobalSystemMediaTransportControlsSession _watched;
     public int Reads;            // how many times the session was read (tests)
     volatile bool _now;          // a command was sent: read again right away
@@ -88,6 +96,9 @@ public sealed class MediaInfo : IDisposable
                 Reads++;
                 var s = _mgr.GetCurrentSession();
                 Watch(s);
+                string app = null;
+                try { app = s?.SourceAppUserModelId; } catch { }
+                lock (_lock) _app = app;
                 if (s == null)
                 {
                     lastKey = null;            // the same track coming back must load its cover again
