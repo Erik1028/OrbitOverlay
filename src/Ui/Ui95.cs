@@ -188,6 +188,14 @@ public sealed partial class Ui
     public int ListTop95(string id) => _scroll95.TryGetValue(id, out int top) ? top : 0;
     public void ListScrollTo95(string id, int top) => _scroll95[id] = Math.Max(0, top);
 
+    // a row's part of its id ("/3"), made once: a "/" + i per row per frame was a list's garbage
+    static readonly List<string> _rowParts = new();
+    static string RowPart(int i)
+    {
+        while (_rowParts.Count <= i) _rowParts.Add("/" + _rowParts.Count.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        return _rowParts[i];
+    }
+
     // returns the item clicked this frame (or -1); draw(index, row rect, selected) paints a row
     public int List95(string id, RectangleF r, int count, int selected, Action<int, RectangleF, bool> draw, float rowH = 16)
     {
@@ -206,7 +214,7 @@ public sealed partial class Ui
         {
             int idx = top + i;
             var row = new RectangleF(inner.X, inner.Y + i * rowH, rowsW, rowH);
-            if (Behave(K(id, "/" + i), row, out _, out _)) clicked = idx;
+            if (Behave(K(id, RowPart(i)), row, out _, out _)) clicked = idx;
             if (pos != top) continue;
             if (idx == selected) Sk.ListSelection(P, row);
             draw(idx, row, idx == selected);

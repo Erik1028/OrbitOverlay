@@ -554,6 +554,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         UpdateSocial(now);                  // VRCX's friends online, the session and its recap (OrbitApp.Social.cs)
         UpdateMemories(now);                // this day's photos of earlier years, On this day (OrbitApp.Memories.cs)
         UpdateTemps(now);                   // the temperatures widget / the hot alert's sensors (OrbitApp.Temps.cs)
+        UpdateAvatar(now);                  // the VRChat avatar's toggles (OrbitApp.Avatar.cs)
         // the weather: the place from the settings (else Hexpad's), fetched while a weather widget is on one of the pages
         _weather.SetLocation(C.Weather?.Location);
         _weather.Active = C.Wrist.Face == "custom" && WatchPages.Any(C.Wrist, "weather");
@@ -1937,6 +1938,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         _weather.Dispose();
         _lumos.Dispose();
         _prisma.Dispose();
+        AvatarDispose();
         _pacer.Dispose();
         _hexpad.Dispose();
         _dashSurf?.Dispose(); _thumbSurf?.Dispose();

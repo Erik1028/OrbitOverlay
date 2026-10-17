@@ -77,7 +77,7 @@ public sealed class OscSender : IDisposable
         }
         void BigEndian(byte[] b) { if (BitConverter.IsLittleEndian) Array.Reverse(b); buf.AddRange(b); }
 
-        Bytes(Encoding.ASCII.GetBytes(address));
+        Bytes(Encoding.UTF8.GetBytes(address));       // (UTF-8: an avatar's parameter may have letters ASCII has not - the avatar toggles)
         var tags = new StringBuilder(",");
         foreach (var v in values)
             tags.Append(v switch
