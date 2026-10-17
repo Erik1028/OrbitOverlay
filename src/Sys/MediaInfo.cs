@@ -98,11 +98,10 @@ public sealed class MediaInfo : IDisposable
                 Watch(s);
                 string app = null;
                 try { app = s?.SourceAppUserModelId; } catch { }
-                lock (_lock) _app = app;
                 if (s == null)
                 {
                     lastKey = null;            // the same track coming back must load its cover again
-                    Set(false, null, null, false, null, null);
+                    Set(false, null, null, false, null, null, null);
                 }
                 else
                 {
@@ -121,7 +120,7 @@ public sealed class MediaInfo : IDisposable
                         try { art = LoadArt(props.Thumbnail); artOk = true; } catch { art = null; }
                     }
                     lastKey = key;
-                    Set(!string.IsNullOrEmpty(props?.Title), props?.Title, props?.Artist, playing, art, newKey || (loadArt && art != null) ? "new" : null);
+                    Set(!string.IsNullOrEmpty(props?.Title), props?.Title, props?.Artist, playing, art, newKey || (loadArt && art != null) ? "new" : null, app);
                     ReadTimeline(s);
                 }
             }
@@ -171,10 +170,11 @@ public sealed class MediaInfo : IDisposable
         }
     }
 
-    void Set(bool has, string title, string artist, bool playing, uint[] art, string artChanged)
+    void Set(bool has, string title, string artist, bool playing, uint[] art, string artChanged, string app)
     {
         lock (_lock)
         {
+            _app = app;         // with the play state it belongs to (a new player with the old one's state would start auto theater)
             bool changed = has != _has || title != _title || artist != _artist || playing != _playing || artChanged != null;
             if (!changed) return;
             _has = has; _title = title; _artist = artist; _playing = playing;

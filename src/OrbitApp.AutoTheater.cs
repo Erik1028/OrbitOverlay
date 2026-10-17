@@ -18,7 +18,7 @@ public sealed partial class OrbitApp
     ITheaterScreen _autoScreen;             // the panel it started theater on (theater switched to another one: Erik's now)
     string _autoName;                       // the program it started for (the log)
     string _autoExeFor, _autoExe;           // "\vlc.exe": the mixer's key ends with it (made once per program)
-    double _autoNext, _autoHeard = -10;
+    double _autoNext, _autoHeard = -10, _autoAsked = -10;
 
     // from Tick after the theater's own update, every frame (it looks only every 0.25 s)
     void UpdateAutoTheater(double now, bool awake)
@@ -35,7 +35,8 @@ public sealed partial class OrbitApp
         nint watch = _auto.Watch;
         if (watch == _autoFront.Hwnd) _autoWatched = _autoFront;
         else WindowLook.Look(watch, ref _autoWatched);
-        bool ready = awake && _vr.HmdValid, on = _theater.On;
+        // ready: worn too - with "pause when off" turned off the panels stay awake, but a theater nobody sees should not start
+        bool ready = awake && _vr.HeadsetWorn && _vr.HmdValid, on = _theater.On;
         bool playing = _auto.WantsPlaying(on, ready, _autoFront, _autoScreens) && AutoPlaying(now, _autoFront.Process);
         var act = _auto.Step(now, true, ready, on, on && _theater.Screen == _autoScreen, _autoFront, _autoWatched, playing, _autoScreens);
         if (_auto.LatchedNow) Log.Info("auto theater: ended by hand - not again until that video leaves full screen");
@@ -62,6 +63,11 @@ public sealed partial class OrbitApp
     {
         var (playing, app) = _media.Source();
         if (AutoTheater.SessionIs(exe, app)) return playing;
+        // the first look after a pause: the mixer's list is as it was when it was last wanted (minutes ago, maybe - a meter from back
+        // then would count as sound now and start theater over a paused video 1.5 s later). Its meters are read in this frame's mixer
+        // tick: from the next look on they are now's.
+        bool fresh = now - _autoAsked < AutoTheater.Every * 2;
+        _autoAsked = now;
         if (!ReferenceEquals(exe, _autoExeFor))
         {
             _autoExeFor = exe;
@@ -69,6 +75,7 @@ public sealed partial class OrbitApp
             _autoHeard = -10;
         }
         _mixer.Want(now);                   // the list kept fresh (with its meters) for the next looks
+        if (!fresh) { _autoHeard = -10; return false; }
         foreach (var a in _mixer.Apps)
             if (a.Peak > 0.002f && a.Key != null && a.Key.EndsWith(_autoExe, StringComparison.OrdinalIgnoreCase)) _autoHeard = now;
         return now - _autoHeard < 2;
