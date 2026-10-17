@@ -508,6 +508,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             foreach (var d in _desktops) _screens.Add(d);           // (AddRange of another element type boxed an enumerator each time)
             foreach (var w in _windowPanels) _screens.Add(w);
             bool theaterWas = _theater.On;
+            _theater.AmbilightOn = C.Theater.Ambilight;
             _theater.Update(_vr, dt, C.Theater.Dim, _screens);
             if (theaterWas && !_theater.On) StopTheater(glide: false);      // its screen went away
             if (_theater.View is { } tv && tv.Size != C.Theater.Width) { C.Theater.Width = tv.Size; _cfg.MarkSoftDirty(); }

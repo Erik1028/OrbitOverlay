@@ -21,7 +21,7 @@ static class OverlayDump
         try
         {
             var keys = new List<string> { "erik.orbit.desktop.0", "erik.orbit.desktop.1", "erik.orbit.desktop.2", "erik.orbit.desktop.3",
-                "erik.orbit.theater.dim", "erik.orbit.theater.bar", "erik.orbit.kb" };
+                "erik.orbit.theater.dim", "erik.orbit.theater.bar", "erik.orbit.theater.glow", "erik.orbit.kb" };
             try
             {
                 using var doc = JsonDocument.Parse(File.ReadAllText(Path.Combine(Log.Dir, "config.json")));

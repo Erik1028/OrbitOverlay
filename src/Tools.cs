@@ -138,6 +138,7 @@ static partial class Tools
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "onthisday") return OnThisDayTempsTools.Only(wrist, data, cfg, gpu, dir);
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "avatar") return AvatarOnly(wrist, data, cfg, painter, gpu, dir);
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "backdrops") return BackdropsOnly(cfg, painter, gpu, dir);    // theater's backdrops (ToolsBackdrops.cs)
+        if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "ambilight") return AmbilightOnly(cfg, painter, gpu, dir);     // theater's glow (AmbilightTest.cs)
         if (everything)
         {
             var sw0 = System.Diagnostics.Stopwatch.StartNew();
