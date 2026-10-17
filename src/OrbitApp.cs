@@ -559,6 +559,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         _weather.Active = C.Wrist.Face == "custom" && WatchPages.Any(C.Wrist, "weather");
         _data.Weather = _weather.Report;
         // the light and the RGB: their apps asked while their widget is on one of the pages (the bulb read again when the watch shows)
+        _lumos.SetKey(C.Lights?.Key);
         _lumos.SetBulb(C.Lights?.Bulb);
         _lumos.Active = C.Wrist.Face == "custom" && WatchPages.Any(C.Wrist, "light");
         _lumos.Watched = _wrist?.Alpha > 0.02f;

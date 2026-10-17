@@ -76,6 +76,12 @@ static partial class Tools
             Modern();
             surf.SavePng(gpu, System.IO.Path.Combine(dir, $"settings_window_search_{name}.png"));
             view.TypeKey((char)27);
+            // a light widget selected: its Bulb row (the address, Go direct / Use Lumos)
+            view.SelectKindForTest("light");
+            ui.ResetAnimations();
+            Modern();
+            surf.SavePng(gpu, System.IO.Path.Combine(dir, $"settings_window_bulb_{name}.png"));
+            view.SelectKindForTest(null);
             view.EditingWatch = false;
             cfg.Data.Wrist.Face = face0;
             view.AskFile = ask0;

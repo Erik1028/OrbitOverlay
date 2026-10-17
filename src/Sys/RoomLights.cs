@@ -19,6 +19,8 @@ namespace Orbit;
 //    /api/brightness, /api/color_temp and /api/hsv for a bulb's address. Lumos holds the TP-Link account and signs in to the bulb
 //    itself; Orbit only says which bulb (Config.Lights.Bulb, its IP address). /api/config is never asked (its answer carries the
 //    account's e-mail), nor anything that writes Lumos's config (discover, connect, forget).
+//    With a key kept (Config.Lights.Key, "Use account" in the editor) the same calls go straight to the bulb instead (TapoDirect.cs):
+//    Lumos need not run then (Erik 10-17).
 //  - the RGB: Prisma (RGBCommander.exe) takes a second launch's command line from its named pipe RGBCommander_Cmd_v1 - one command a
 //    connection, the words joined with U+001F ("--effect" "rainbow", "--brightness" "55", "--toggle"), the same as its Stream Deck
 //    buttons. The pipe has no answer, so what the widget shows is read from Prisma's own settings.json (read only; Prisma writes it
@@ -73,6 +75,8 @@ public sealed class LumosLink : IDisposable
     volatile bool _stop, _active, _watched, _frozen;
     volatile string _bulb = "";
     volatile LampState _pub = new() { Status = LinkStatus.Off };
+    volatile TapoDirect _direct;            // a key kept: straight to the bulb (null: through Lumos)
+    string _keyKept;
     int _version;
     HttpClient _http;
     // the commands waiting: the newest of each kind
@@ -118,6 +122,22 @@ public sealed class LumosLink : IDisposable
         host = host?.Trim() ?? "";
         if (host == _bulb && (_thread != null || _frozen)) return;
         _bulb = host;
+        _due = DateTime.MinValue;
+        Start();
+        _wake.Set();
+    }
+
+    // Config.Lights.Key (asked every frame: only a change counts): with one, straight to the bulb; without, through Lumos
+    public bool Direct => _direct != null;
+
+    public void SetKey(string kept)
+    {
+        if (kept == _keyKept) return;
+        _keyKept = kept;
+        var key = TapoAccount.Unprotect(kept);
+        _direct = key == null ? null : new TapoDirect(key);
+        Log.Info("lights: " + (key != null ? "straight to the bulb (the Tapo key kept)" : kept != null ? "the kept Tapo key is not this Windows user's: through Lumos" : "through Lumos"));
+        _said = LinkStatus.Off;
         _due = DateTime.MinValue;
         Start();
         _wake.Set();
@@ -194,6 +214,7 @@ public sealed class LumosLink : IDisposable
     }
 
     LinkStatus _said = LinkStatus.Off;
+    string _saidMsg;
 
     void Step()
     {
@@ -234,7 +255,7 @@ public sealed class LumosLink : IDisposable
         lock (_lock) more = _power != null || _bright > 0 || _temp > 0 || _hsv != null || _toggle;
         // newer commands wait: the state they will make stays shown until their own answer
         if (!more || !got.Ready) Publish(got);
-        Said(got.Status);
+        Said(got.Status, got.Message);
         double next = got.Status switch
         {
             LinkStatus.Ready => _watched ? Poll : Slow,
@@ -252,7 +273,7 @@ public sealed class LumosLink : IDisposable
     {
         int code; string body;
         try { (code, body) = Call(method, path, json); }
-        catch (Exception e) when (Refused(e))
+        catch (Exception e) when (Refused(e) || (Http == null && _direct == null && !Listening()))
         {
             return new LampState { Status = LinkStatus.NoApp };
         }
@@ -262,6 +283,20 @@ public sealed class LumosLink : IDisposable
         }
         try { return Parse(code, body); }
         catch (Exception) { return new LampState { Status = LinkStatus.Error, Message = "Not Lumos on port 8770" }; }
+    }
+
+    // Lumos's port has a listener (Windows takes ~2 s to refuse a closed one on this PC: the connect gave up first and it looked like
+    // Lumos not answering)
+    bool Listening()
+    {
+        try
+        {
+            int port = new Uri(Url).Port;
+            foreach (var ep in System.Net.NetworkInformation.IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners())
+                if (ep.Port == port) return true;
+            return false;
+        }
+        catch (Exception) { return true; }
     }
 
     // nothing listens there: Lumos is not running
@@ -302,6 +337,7 @@ public sealed class LumosLink : IDisposable
     (int, string) Call(string method, string path, string json)
     {
         if (Http != null) return Http(method, path, json);
+        if (_direct is { } d) return d.Handle(method, path, json);
         // no proxy (a system proxy must not see a call to this PC); Lumos waits up to 20 s for a bulb that has to be signed in again
         _http ??= new HttpClient(new SocketsHttpHandler { UseProxy = false, ConnectTimeout = TimeSpan.FromSeconds(2) })
             { Timeout = TimeSpan.FromSeconds(25), BaseAddress = new Uri(Url) };
@@ -320,16 +356,18 @@ public sealed class LumosLink : IDisposable
     }
 
     // the log says when it changes (never the bulb's state, never what Lumos holds)
-    void Said(LinkStatus s)
+    void Said(LinkStatus s, string msg = null)
     {
-        if (s == _said) return;
+        if (s == _said && msg == _saidMsg) return;
         _said = s;
+        _saidMsg = msg;
+        bool d = _direct != null;
         Log.Info("lights: " + s switch
         {
-            LinkStatus.Ready => "Lumos answers for the bulb",
+            LinkStatus.Ready => d ? "the bulb answers (direct)" : "Lumos answers for the bulb",
             LinkStatus.NoApp => "Lumos is not running",
             LinkStatus.NoDevice => "no bulb set (Settings > Wrist)",
-            _ => "Lumos could not reach the bulb",
+            _ => (d ? "the bulb (direct): " : "Lumos could not reach the bulb: ") + msg,
         });
     }
 

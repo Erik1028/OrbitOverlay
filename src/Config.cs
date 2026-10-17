@@ -185,6 +185,8 @@ public sealed class LightsConfig
 {
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string Bulb { get; set; }                  // the Tapo bulb's IP address as Lumos knows it (null: "Set the bulb")
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string Key { get; set; }                   // the bulb's key, DPAPI-protected (TapoAccount): straight to the bulb; null: through Lumos
 }
 
 public sealed class GeneralConfig

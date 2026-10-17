@@ -147,6 +147,25 @@ public sealed partial class SettingsView
         return res;
     }
 
+    // --snapshot: a widget of that kind on the page edited selected (none there: the page emptied for it); null: the page as it was
+    List<WatchWidget> _testKept;
+    internal void SelectKindForTest(string kind)
+    {
+        var list = EditList();
+        if (kind == null)
+        {
+            if (_testKept != null) { list.Clear(); list.AddRange(_testKept); }
+            _testKept = null;
+            _wselW = null;
+            return;
+        }
+        _wselW = list.Find(w => w.Type == kind);
+        if (_wselW != null) return;
+        _testKept = new List<WatchWidget>(list);
+        list.Clear();
+        _wselW = WatchWidgets.Add(list, WatchWidgets.Find(kind));
+    }
+
     WatchWidget SelWidget(List<WatchWidget> list)
     {
         if (_wselW != null && !list.Contains(_wselW)) _wselW = null;

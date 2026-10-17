@@ -40,7 +40,7 @@ static class Program
         if (uf >= 0 && uf + 1 < args.Length) UpdatedFrom = args[uf + 1];
         bool has(string a) => args.Contains(a);
         if (has("--tempstest")) { Log.Init("orbit-tool.log"); return TempSensors.Probe(); }      // the real temperature sources read twice, read only (Sys/Temps.cs)
-        bool tool = has("--snapshot") || has("--animstrip") || has("--faceshot") || has("--clockshot") || has("--selftest") || has("--scene") || has("--osctest") || has("--tasktest") || has("--filtertest") || has("--focustest") || has("--leaktest") || has("--raytest") || has("--updatetest") || has("--wintest") || has("--docktest") || has("--roomtest") || has("--theatertest") || has("--perfbench") || has("--ovdump") || has("--pacetest") || has("--pacertest") || has("--capturetest") || has("--voltest") || has("--mixertest");
+        bool tool = has("--snapshot") || has("--animstrip") || has("--faceshot") || has("--clockshot") || has("--selftest") || has("--scene") || has("--osctest") || has("--tasktest") || has("--filtertest") || has("--focustest") || has("--leaktest") || has("--raytest") || has("--updatetest") || has("--wintest") || has("--docktest") || has("--roomtest") || has("--theatertest") || has("--perfbench") || has("--ovdump") || has("--pacetest") || has("--pacertest") || has("--capturetest") || has("--voltest") || has("--mixertest") || has("--tapotest");
         if (tool) return RunTool(args);
 
         // install / uninstall (the same exe: named "OrbitSetup.exe" it is the installer)
@@ -119,6 +119,25 @@ static class Program
         }
     }
 
+    // dev: the bulb straight (TapoDirect), READ ONLY - its state with the key from Hexpad's / Lumos's account (made in memory, not kept),
+    // then with a wrong key (must say "Wrong Tapo account"). Logs the state's shape only: never the account, the key or the bulb's name.
+    static int TapoProbe(string host)
+    {
+        if (host.Length == 0) { Log.Warn("tapo: --tapotest <bulb IP>"); return 2; }
+        var kept = TapoAccount.Import(out string from);
+        var key = TapoAccount.Unprotect(kept);
+        if (key == null) { Log.Warn("tapo: no account in Hexpad or Lumos"); return 1; }
+        var t0 = DateTime.UtcNow;
+        var (code, body) = new TapoDirect(key).Handle("GET", "/api/state?host=" + Uri.EscapeDataString(host), null);
+        var s = LumosLink.Parse(code, body);
+        Log.Info($"tapo: key from {from} - {code} in {(DateTime.UtcNow - t0).TotalMilliseconds:0} ms, status {s.Status}{(s.Ready ? "" : " (" + s.Message + ")")}, " +
+                 $"on {s.On}, brightness {(s.Brightness > 0)}, colour {s.HasColor}, white {s.HasTemp} {s.TempMin}-{s.TempMax} K, named {s.Name.Length > 0}");
+        var (wc, wb) = new TapoDirect(TapoAccount.KeyFor("nobody@example.com", "wrong")).Handle("GET", "/api/state?host=" + Uri.EscapeDataString(host), null);
+        var w = LumosLink.Parse(wc, wb);
+        Log.Info($"tapo: a wrong key - {wc}, '{w.Message}' (want 'Wrong Tapo account')");
+        return s.Ready && w.Message == "Wrong Tapo account" ? 0 : 1;
+    }
+
     // dev: the watch's volume control on this PC's default speakers (per-app on Virtual Desktop's, through the mixer as in VR); "dip":
     // 5 % down for 2 s, then back
     static int VolTest(bool dip)
@@ -186,6 +205,11 @@ static class Program
                 return VolTest(args.Contains("dip"));
             if (args.Contains("--mixertest"))
                 return MixerViewTools.Probe();
+            if (args.Contains("--tapotest"))
+            {
+                int i = Array.IndexOf(args, "--tapotest");
+                return TapoProbe(i + 1 < args.Length ? args[i + 1] : "");
+            }
             if (args.Contains("--capturetest"))
                 return CaptureTest.Run();
             if (args.Contains("--pacertest"))
