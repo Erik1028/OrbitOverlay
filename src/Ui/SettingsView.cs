@@ -486,7 +486,8 @@ public sealed partial class SettingsView
         DrawTheater(ui, lx, wx, cw);
     }
 
-    // theater mode's settings (the same ones as on the bar under a screen in VR) and the bar itself on / off
+    // theater mode's settings (the same ones as on the bar under a screen in VR), the bar itself on / off, and the Ambilight (Erik
+    // 10-18: three switches on the left now, a little closer together)
     void DrawTheater(Ui ui, float lx, float wx, float cw)
     {
         var p = ui.P;
@@ -494,10 +495,12 @@ public sealed partial class SettingsView
         p.Line(lx, 440, 984, 440, Theme.Border, 1);
         ui.Section(new RectangleF(lx, 450, 352, 22), "Theater mode");
         bool b = t.Bar;
-        if (ui.Toggle("th.bar", new RectangleF(lx - 10, 474, 362, 54), "Bar under the monitors", ref b,
+        if (ui.Toggle("th.bar", new RectangleF(lx - 10, 472, 362, 48), "Bar under the monitors", ref b,
                 "point at a monitor's bottom: Theater + settings")) t.Bar = b;
         b = t.Curved;
-        if (ui.Toggle("th.curve", new RectangleF(lx - 10, 530, 362, 54), "Curved", ref b, "bent around you, else flat")) { t.Curved = b; _h.TheaterEdited(); }
+        if (ui.Toggle("th.curve", new RectangleF(lx - 10, 521, 362, 48), "Curved", ref b, "bent around you, else flat")) { t.Curved = b; _h.TheaterEdited(); }
+        b = t.Ambilight;
+        if (ui.Toggle("th.amb", new RectangleF(lx - 10, 570, 362, 48), "Ambilight", ref b, "a soft glow round the screen in its colours")) { t.Ambilight = b; _h.TheaterEdited(); }
         float v = t.Dim;
         if (ui.Slider("th.dim", new RectangleF(wx, 470, cw, 58), "Dim the world", ref v, 0, 0.9f, f => f < 0.005f ? "off" : $"{f * 100:0}%"))
         { t.Dim = v; _h.TheaterEdited(); }

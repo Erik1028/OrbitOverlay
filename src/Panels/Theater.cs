@@ -15,6 +15,8 @@ public interface ITheaterScreen : IPointerTarget
     string TheaterState { get; }          // for the log: is it showing, has it a picture
     float TheaterFade { get; }            // how far it has faded in, 0..1
     void TheaterVanish();                 // gone at once: it fades in again from nothing wherever it shows next
+    // its picture now (the captured texture; null before its first frame) and that frame's number: the Ambilight samples it
+    Surface TheaterPicture(out long frame) { frame = 0; return null; }
     // its own (saved) place, size, bend and opacity, where the screen grows from and goes back to
     bool Home(out Matrix4x4 world, out float width, out float curvature, out float opacity);
 }
@@ -122,6 +124,7 @@ public sealed partial class Theater : IDisposable
         _dim = null;
         _band?.Dispose();
         _band = null;
+        DestroyAmbilight();
     }
 
     public ITheaterScreen Screen => On ? _screen : null;
@@ -314,6 +317,7 @@ public sealed partial class Theater : IDisposable
                 _dim.Show();
             }
         }
+        UpdateAmbilight(dt);                    // the glow round the screen (TheaterAmbilight.cs)
         // once it is in: how the screen is doing (if it does not show up, the log says why)
         if (On && _screen != null && _t >= 1 && !_checked)
         {
@@ -363,5 +367,6 @@ public sealed partial class Theater : IDisposable
         _dim?.Dispose();
         _black?.Dispose();
         DisposeCyber();
+        DisposeAmbilight();
     }
 }

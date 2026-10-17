@@ -400,6 +400,8 @@ public sealed partial class SettingsView
         ui.Text95($"{v:0.0} m", new RectangleF(566, 378, 44, 15));
         b = t.Curved;
         if (ui.Check95("t95.curve", 628, 378, "&Curved", ref b)) { t.Curved = b; _h.TheaterEdited(); }
+        b = t.Ambilight;
+        if (ui.Check95("t95.amb", 52, 407, "A&mbilight: a soft glow round the screen in its colours", ref b)) { t.Ambilight = b; _h.TheaterEdited(); }
     }
 
     // ---------------- Wrist ----------------

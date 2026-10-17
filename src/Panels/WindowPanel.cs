@@ -293,6 +293,7 @@ public sealed class WindowPanel : ITheaterScreen, IDisposable
     public bool HomeInWorld => Placement.IsWorld(Cfg.Place);
     public float TheaterFade => _vis;
     public void TheaterVanish() => _vis = 0;
+    public Surface TheaterPicture(out long frame) { frame = _cap?.Frames ?? 0; return _hasTexture && _cap is { Closed: false } ? _cap.Target : null; }
     public string TheaterState =>
         $"overlay {(Ov == null ? "none" : Ov.Visible ? "shown" : "hidden")}, fade {_vis:0.00}, picture {(_hasTexture ? "yes" : "no")}, " +
         $"capture {(_cap == null ? "none" : _cap.Closed ? "closed" : "live")}";

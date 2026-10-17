@@ -1528,6 +1528,10 @@ static class Hu
         ("MODE", "MÓD"),
         ("TYPE", "GÉPELÉS"),
         ("kbd|LAYOUT", "KIOSZTÁS"),
+        // ---- theater mode's Ambilight (Erik 10-18) ----
+        ("Ambilight", "Ambilight"),
+        ("a soft glow round the screen in its colours", "lágy fény a képernyő körül, a kép színeiben"),
+        ("A&mbilight: a soft glow round the screen in its colours", "A&mbilight: lágy fény a képernyő körül, a kép színeiben"),
 
     };
 }

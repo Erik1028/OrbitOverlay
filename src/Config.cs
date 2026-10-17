@@ -159,6 +159,7 @@ public sealed class TheaterConfig
     public float Dim { get; set; } = 0.6f;               // how dark the world gets behind it (0 = not at all)
     public bool Curved { get; set; } = true;             // bent around you (else flat)
     public bool Bar { get; set; } = true;                // the bar under a monitor / window: Theater button + these settings
+    public bool Ambilight { get; set; } = true;          // a glow round the screen in its picture's edge colours (Erik 10-18)
 }
 
 // The VRChat chatbox as a status line (Sys/StatusLine.cs)
