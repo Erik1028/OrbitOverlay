@@ -245,7 +245,15 @@ static partial class Tools
                  $"{angG / angS:0.00}x its angle, {m / rs * 180 / MathF.PI:0.0}° past it each side",
                 back >= 0.08f && back <= 0.3f && Vector3.Distance(axisS, axisG) < 0.001f && angG / angS > 1.25f && angG / angS < 1.45f &&
                 MathF.Abs((angG - angS) / 2 - m / rs) < 1e-3f);
-            v.Curvature = 0;
+            // the headset's little moves (breathing, leaning a bit) do not move it while the screen rests: no SteamVR calls a frame
+            var vj = new TheaterView { World = v.World, Head = head + new Vector3(0.012f, -0.008f, 0.01f), Width = v.Width, Curvature = v.Curvature };
+            Theater.GlowPlace(vj, new Vector2(PW, PH), out var gwj, out float gwidj, out _, out _);
+            bool stillCurved = gwj == gw && gwidj == gwid;
+            vj.Curvature = v.Curvature = 0;
+            Theater.GlowPlace(v, new Vector2(PW, PH), out gw, out gwid, out _, out _);
+            Theater.GlowPlace(vj, new Vector2(PW, PH), out gwj, out gwidj, out _, out _);
+            Want($"place: the headset moving a little does not move the glow (curved {stillCurved}, flat {gwj == gw && gwidj == gwid})",
+                stillCurved && gwj == gw && gwidj == gwid);
             Theater.GlowPlace(v, new Vector2(PW, PH), out gw, out gwid, out gc, out back);
             float d = 2.5f;
             Want($"place: flat - flat too, {gwid:0.00} m wide at {d + back:0.00} m (the same angle past the screen)",
@@ -358,6 +366,31 @@ static partial class Tools
         theater.Stop(vr, tcfg);
         Frames(0.7f, true);
         Want($"theater: stopped, the glow goes with the screen ({theater.AmbilightAlpha:0.00})", theater.AmbilightAlpha == 0);
+        // Look > Motion off: theater comes back at full strength at once - the glow must not light up in the last picture's colours
+        // first and ease over (a white picture now: grey light from its very first frame)
+        {
+            var motion = Motion.Level;
+            Motion.Level = MotionLevel.Off;
+            scr.Pic = picW;
+            scr.Fade = 1;
+            theater.Start(scr, scr, vr, tcfg);
+            int firstAt = -1;
+            bool stale = false;
+            for (int f = 0; f < 10; f++)
+            {
+                scr.Frame++;
+                theater.Update(vr, Dt, tcfg.Dim, live);
+                GpuIdle(gpu);
+                if (theater.AmbilightAlpha <= 0 || !ta.HasReading) continue;
+                if (firstAt < 0) firstAt = f;
+                var e = ta.Eased(Ambilight.Left(8));
+                stale |= MathF.Max(MathF.Abs(e.X - e.Y), MathF.Abs(e.Y - e.Z)) > 0.03f;
+            }
+            Motion.Level = motion;
+            Want($"theater: Motion off, on again with another picture - the glow in its colours from its first frame (frame {firstAt}, " +
+                 $"{(stale ? "the last picture's colours first" : "no old colours")})", firstAt >= 0 && firstAt <= 3 && !stale);
+            theater.Stop(null, null);
+        }
 
         // ---- pictures ----
         var shots = new List<(string label, string path)>();

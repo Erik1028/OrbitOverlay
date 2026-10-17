@@ -21,6 +21,7 @@ public sealed partial class Theater
     double _ambTime, _ambNext;               // the glow's own clock (the frames' dt): its 10 readings a second
     ITheaterScreen _ambSrc;                  // what was sampled last, and its frame
     long _ambFrame = -1;
+    bool _ambFailed;                         // SteamVR would not make its overlay: none (and no sampling) until VR connects again
 
     public float AmbilightAlpha { get; private set; }       // the glow's alpha this frame (the checks)
     public Ambilight AmbilightForTest => _amb;
@@ -35,7 +36,7 @@ public sealed partial class Theater
         if (src != null) pic = src.TheaterPicture(out frame);
         if (pic == null && _leaving != null) { src = _leaving; pic = src.TheaterPicture(out frame); }
         float a = 0;
-        if (_screen != null && _view != null && _ambOn > 0)
+        if (_screen != null && _view != null && _ambOn > 0 && !_ambFailed)
         {
             // with the screen: its own fade in (the old one stays solid under a switch: no dip), theater's in / out
             float fade = _leaving != null ? 1 : Math.Clamp(_screen.TheaterFade, 0, 1), vis = 1 - (1 - fade) * (1 - fade) * (1 - fade);
@@ -45,7 +46,9 @@ public sealed partial class Theater
         if (a <= 0.004f || pic == null)
         {
             _ambOv?.Hide();
-            _ambSrc = null;                  // shown again: sampled at once
+            _ambSrc = null;                  // shown again: sampled at once (not after the 0.1 s the last reading had left) ...
+            _ambNext = _ambTime;
+            _amb?.Forget();                  // ... and its colours from that reading, not the last picture's
             return;
         }
         _amb ??= new Ambilight(_g, _p);
@@ -65,10 +68,23 @@ public sealed partial class Theater
         if (!_amb.HasReading || _amb.Composed == 0) { _ambOv?.Hide(); return; }
         if (_ambOv == null && _dim != null)
         {
-            _ambOv = new VrOverlay("erik.orbit.theater.glow", "OrbitOverlay theater glow");
-            _ambOv.SetSortOrder(3);
-            _ambOv.SetFlag(Valve.VR.VROverlayFlags.IsPremultiplied, true);
-            _ambDirty = true;
+            // made here, in the middle of a frame: SteamVR refusing it (too many overlays) must not throw out of every frame - theater
+            // itself would stop working and Orbit restart after 900 of them. No glow until VR connects again, the rest goes on.
+            try
+            {
+                _ambOv = new VrOverlay("erik.orbit.theater.glow", "OrbitOverlay theater glow");
+                _ambOv.SetSortOrder(3);
+                _ambOv.SetFlag(Valve.VR.VROverlayFlags.IsPremultiplied, true);
+                _ambDirty = true;
+            }
+            catch (Exception e)
+            {
+                Log.Warn("theater glow overlay: " + e.Message);
+                _ambOv?.Dispose();
+                _ambOv = null;
+                _ambFailed = true;
+                return;
+            }
         }
         if (_ambOv == null) return;          // no VR (--snapshot): the glow is worked out all the same
         if (_ambDirty)
@@ -91,10 +107,11 @@ public sealed partial class Theater
     public static void GlowPlace(TheaterView v, Vector2 ts, out Matrix4x4 world, out float width, out float curvature, out float back)
     {
         float w = Math.Max(0.05f, v.Width), h = w * ts.Y / Math.Max(1, ts.X);
-        float dist = Math.Max(0.3f, Vector3.Distance(v.World.Translation, v.Head));
-        back = Math.Clamp(0.06f * dist, 0.08f, 0.3f);      // well before the wall (0.6 m) and Cyber's skyline (0.45 m)
         bool curved = v.Curvature >= DesktopLayout.MinCurvature;
-        float r = curved ? w / (2 * MathF.PI * v.Curvature) : dist;
+        // how far it is from you: curved, its bend's radius; flat, your distance in 5 cm steps - not the headset's every little move
+        // (the glow would follow it with two SteamVR calls a frame while the screen itself rests)
+        float r = curved ? w / (2 * MathF.PI * v.Curvature) : Math.Max(0.3f, MathF.Round(Vector3.Distance(v.World.Translation, v.Head) * 20) / 20);
+        back = Math.Clamp(0.06f * r, 0.08f, 0.3f);         // well before the wall (0.6 m) and Cyber's skyline (0.45 m)
         float m = Ambilight.MarginK * MathF.Sqrt(w * h), k = (r + back) / r;
         width = (w + 2 * m) * k;
         curvature = curved ? Math.Min(1, (w + 2 * m) / (2 * MathF.PI * r)) : 0;
@@ -107,6 +124,7 @@ public sealed partial class Theater
         _ambOv = null;
         _ambDirty = true;
         _ambSrc = null;
+        _ambFailed = false;
     }
 
     void DisposeAmbilight()

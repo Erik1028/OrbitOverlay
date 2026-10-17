@@ -172,6 +172,15 @@ public sealed class Ambilight : IDisposable
         if (on && _have && !Settled()) { Array.Copy(_target, _eased, Edge); _changed = true; }
     }
 
+    // the glow went away (theater off, the setting off, no picture): its colours are old news. The next time it shows it waits for a
+    // new reading (a frame or two) instead of starting from these - with Look > Motion off it comes back at full strength at once,
+    // and the last film's colours lit up round the new picture and eased over to its own. A copy still on its way is dropped too.
+    public void Forget()
+    {
+        _have = false;
+        for (int i = 0; i < Stages; i++) _stageAt[i] = -1;
+    }
+
     bool Settled()
     {
         for (int k = 0; k < Edge; k++) if (_target[k] != _eased[k]) return false;
