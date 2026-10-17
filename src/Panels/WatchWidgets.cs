@@ -95,6 +95,9 @@ public static class WatchWidgets
         new("memory", "On this day", "On This Day", WristPanel.MemoryKindIcon, W95Icons.Id.Palette, new[] { (1, 1), (2, 1), (2, 2) }, 1),
         // the PC's temperatures: the GPU, the CPU, the GPU's hotspot and fan; a tap opens the last 10 minutes (Sys/Temps.cs, WristTemps.cs)
         new("temps", "Temperatures", "System Monitor", WristPanel.TempsKindIcon, W95Icons.Id.Computer, new[] { (1, 1), (2, 1), (2, 2) }, 1),
+        // VRChat: buttons for the avatar worn, made from its OSC config; a tap sends the parameter over OSC (Erik 10-18; Sys/AvatarToggles.cs,
+        // WristAvatar.cs); a tap on its header opens all of them
+        new("avatar", "Avatar toggles", "Avatar", WristPanel.AvatarKindIcon, W95Icons.Id.People, new[] { (1, 1), (2, 1), (3, 1), (2, 2), (3, 2) }, 1),
     };
 
     // what the editor offers: the dock only when Hexpad is there (set by the app)
@@ -113,7 +116,7 @@ public static class WatchWidgets
         "time" or "date" or "calendar" or "analog" or "timer" or "stopwatch" or "session" => 0,
         "perf" or "graph" or "fps" or "reproj" or "gpu" or "vram" or "cpu" or "ram" or "battery" or "temps" => 1,
         "media" or "volume" or "mixer" or "mic" => 2,
-        "room" or "notifications" or "status" or "friends" or "recap" or "photo" or "memory" => 3,
+        "room" or "notifications" or "status" or "friends" or "recap" or "photo" or "memory" or "avatar" => 3,
         "keyboard" or "desktops" or "recenter" or "layout" or "night" or "settings" or "theater" or "buttons" or "dock" or "light" or "rgb" => 4,
         _ => 5,
     };
@@ -415,6 +418,7 @@ public static class WatchWidgets
         ["friends"] = new[] { M, S, L }, ["recap"] = new[] { M, S, L },
         ["light"] = new[] { M, S, L }, ["rgb"] = new[] { M, S, L },
         ["memory"] = new[] { M, S, L }, ["temps"] = new[] { M, S, L },
+        ["avatar"] = new[] { M, S, L, Wd },
     };
     static readonly Dictionary<string, (int W, int H)[]> _derived43 = new();
 

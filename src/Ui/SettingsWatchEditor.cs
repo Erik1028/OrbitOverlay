@@ -376,6 +376,7 @@ public sealed partial class SettingsView
         // under the watch: a button group's buttons when one is selected, else the palette (click one to put it in the marked cell or
         // the first free spot); what went wrong (no room, it does not fit) over it
         if (sel?.Type == "buttons") GroupPicker(ui, sel, 222, PaletteY - 20);
+        else if (sel?.Type == "avatar") AvatarPicker(ui, 222, PaletteY - 20);      // the avatar's buttons to pick (SettingsView.Avatar.cs)
         else
         {
             // over the palette: its categories, and the search (typed in the desktop window); what went wrong in their place
@@ -711,7 +712,7 @@ public sealed partial class SettingsView
     void Wrist95Editor(Ui ui)
     {
         if (SkinWatchEditor(ui)) return;          // a style's own editor (ScreenHooks.cs)
-        bool inert95 = Dialog95Begin(ui, _wshare);     // the Share dialog over the page (SettingsView95.Extras.cs)
+        bool inert95 = Dialog95Begin(ui, _wshare || _wav95);     // the Share / Avatar Toggles dialog over the page (SettingsView95.Extras.cs)
         var p = ui.P;
         var w = C.Wrist;
         var list = EditList();                  // the page's, or the folder's (SettingsView.Folder.cs)
@@ -811,6 +812,7 @@ public sealed partial class SettingsView
                     }
                 }
                 if (sel.Type == "light") Bulb95Row(ui, 388, 348);       // the bulb Lumos is asked about (SettingsView.Lights.cs)
+                if (sel.Type == "avatar") Avatar95Row(ui, 388, 348);    // how many of the avatar's buttons, Choose... (SettingsView.Avatar.cs)
             }
             if (ui.Button95("we95.rm", new RectangleF(647, 321, 75, 23), "Re&move")) RemoveSelected(ui, list);
             FolderSelected95(ui, list, sel);    // a folder: Open folder, Rename...; keep its widgets? (SettingsView.Folder.cs)
@@ -820,5 +822,6 @@ public sealed partial class SettingsView
             w.Background = bg == 1 ? "cards" : "panel";
         if (ui.Button95("we95.done", new RectangleF(659, 405, 75, 23), "&Done", true, true)) { EditingWatch = false; LeaveFolder(); }
         Share95(ui, inert95);
+        AvatarDialog95(ui, list);
     }
 }

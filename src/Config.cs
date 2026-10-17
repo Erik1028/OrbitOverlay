@@ -189,6 +189,14 @@ public sealed class LightsConfig
     public string Key { get; set; }                   // the bulb's key, DPAPI-protected (TapoAccount): straight to the bulb; null: through Lumos
 }
 
+// The avatar toggles widget (Sys/AvatarToggles.cs): which of an avatar's parameters its widget shows, by the avatar's id - picked in the
+// watch editor. An avatar not in it shows the filter's first ones. Null in Config = none picked yet, written only once set.
+public sealed class AvatarsConfig
+{
+    public Dictionary<string, List<string>> Shown { get; set; } = new();     // avtr_... -> the parameters' names, in the order shown
+    [JsonIgnore] public int Edits;                    // goes up with every pick (the watch makes its buttons again)
+}
+
 public sealed class GeneralConfig
 {
     public string LaserHand { get; set; } = "both";
@@ -320,6 +328,8 @@ public sealed class Config
     public WeatherConfig Weather { get; set; }         // the weather widget's place and units (null = the defaults)
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public LightsConfig Lights { get; set; }           // the light widget's bulb (null = none set)
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public AvatarsConfig Avatars { get; set; }         // the avatar toggles' picks per avatar (null = none picked)
 
     public static List<LayoutProfile> DefaultLayouts() => new()
     {

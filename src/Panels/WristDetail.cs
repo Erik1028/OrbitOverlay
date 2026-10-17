@@ -45,6 +45,7 @@ public sealed partial class WristPanel
         "rgb" => "rgb",
         "memory" => "memory",
         "temps" => "temps",
+        "avatar" => "avatar",
         _ => null,
     };
 
@@ -193,6 +194,7 @@ public sealed partial class WristPanel
             case "rgb": RgbDetail(c, d); break;
             case "memory": PhotoDetail(E, d); break;
             case "temps": TempsDetail(c, d); break;
+            case "avatar": AvatarDetail(E, d); break;         // every button of the avatar (WristAvatar.cs)
         }
         _ui.Inert = inert;
         if (zoom) _p.PopScale();
@@ -628,6 +630,7 @@ public sealed partial class WristPanel
             case "light": Light95Detail(c, d); break;
             case "rgb": Rgb95Detail(c, d); break;
             case "temps": Temps95Detail(c, d); break;
+            case "avatar": Avatar95Detail(c, d); break;       // (WristAvatar95.cs)
         }
     }
 
