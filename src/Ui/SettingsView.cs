@@ -493,7 +493,7 @@ public sealed partial class SettingsView
         var t = C.Theater;
         p.Line(lx, 440, 984, 440, Theme.Border, 1);
         ui.Section(new RectangleF(lx, 450, 352, 22), "Theater mode");
-        // three switches on the left (Auto theater, Erik 10-18: a little closer together to fit), the two sliders on the right
+        // three switches on the left (Auto theater joined them 10-18: a little closer together to fit), the two sliders on the right
         bool b = t.Bar;
         if (ui.Toggle("th.bar", new RectangleF(lx - 10, 474, 362, 48), "Bar under the monitors", ref b,
                 "point at a monitor's bottom: Theater + settings")) t.Bar = b;

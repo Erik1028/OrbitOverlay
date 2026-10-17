@@ -56,12 +56,12 @@ public sealed partial class OrbitApp
         if (!_auto.Own) _autoScreen = null;
     }
 
-    // Does the front window's player play? Its media session says so - or, with no session of its own (or another player's session in
-    // front of it), its sound: any of its streams on the output device peaking in the last 2 s.
+    // Does the front window's player play? Its own media session says (paused is paused) - or, with no session of its own (VLC, mpv;
+    // or another app's session in front of it: Spotify), its sound: any of its streams on the output device peaking in the last 2 s.
     bool AutoPlaying(double now, string exe)
     {
         var (playing, app) = _media.Source();
-        if (playing && AutoTheater.SessionIs(exe, app)) return true;
+        if (AutoTheater.SessionIs(exe, app)) return playing;
         if (!ReferenceEquals(exe, _autoExeFor))
         {
             _autoExeFor = exe;
