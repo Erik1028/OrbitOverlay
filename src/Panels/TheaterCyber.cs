@@ -65,8 +65,7 @@ public sealed partial class Theater
         bool cy = Theme.Cyber && _p != null;
         if (!cy)
         {
-            if (_cityOn) { _dim.SetTexture(_black.Tex); _cityOn = false; }
-            _ringR = -1;
+            if (_cityOn) { _dim.SetTexture(_black.Tex); _cityOn = false; _ringR = -1; }     // (the backdrop sets the wall's place)
             _band?.Hide();
             return false;
         }

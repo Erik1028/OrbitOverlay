@@ -80,6 +80,9 @@ public sealed partial class Theater : IDisposable
     // 55° above and below the middle and fading out by 80° - no edge to see when you look up or turn round (Erik 10-16: half a
     // circle with a hard top edge "showed very clearly"). It is under the screen both by sort order and by distance, so it can't
     // end up in front of it whichever one SteamVR goes by (1.8.0 used a sheet on the headset, 0.5 m away: in front of everything).
+    // (Erik 10-18: since then it stands in the night city's level frame in every style, with the style's backdrop in front of it -
+    // TheaterBackdrop.cs. NB: SteamVR takes an overlay's height from its texture, so this 4 x 256 one is 64 times as tall as it is round:
+    // in fact it darkens all but straight up and down, and WallAlpha's fade only happens there.)
     public const float WallAspect = 2;     // its height for its width (2πr round): the top and bottom 81° from you
     const int WallW = 4, WallH = 256;
 
@@ -113,6 +116,7 @@ public sealed partial class Theater : IDisposable
         _ringR = -1;
         _dim.SetCurvature(1f);
         CreateCyber();
+        CreateBackdrop();                   // (every other style: its own backdrop in front of the wall, TheaterBackdrop.cs)
     }
 
     public void DestroyOverlay()
@@ -122,6 +126,7 @@ public sealed partial class Theater : IDisposable
         _dim = null;
         _band?.Dispose();
         _band = null;
+        DestroyBackdrop();
     }
 
     public ITheaterScreen Screen => On ? _screen : null;
@@ -300,17 +305,14 @@ public sealed partial class Theater : IDisposable
         if (_dim != null)
         {
             float a = Math.Clamp(dim, 0, 0.95f) * Ease(_t);
-            if (a <= 0.004f || _screen == null) { _dim.Hide(); _band?.Hide(); }
+            if (a <= 0.004f || _screen == null) { _dim.Hide(); _band?.Hide(); _back?.Hide(); }
             else
             {
                 const float Behind = 0.6f;
-                if (!CyberWall(a, Behind))          // Cyber: the night city, level and still (TheaterCyber.cs)
-                {
-                    float r = Vector3.Distance(_view.World.Translation, _view.Head) + Behind;
-                    _dim.SetAbsolute(Matrix4x4.CreateTranslation(0, 0, -Behind) * _view.World);
-                    _dim.SetWidth(2 * MathF.PI * r);    // all the way round you at that radius (curvature 1)
-                    _dim.SetAlpha(a);
-                }
+                // Cyber: the night city, level and still (TheaterCyber.cs); every other style: the wall and its backdrop, level and
+                // still the same way (TheaterBackdrop.cs)
+                if (!CyberWall(a, Behind)) BackdropWall(a, Behind, dt);
+                else BackdropOff();
                 _dim.Show();
             }
         }
@@ -363,5 +365,6 @@ public sealed partial class Theater : IDisposable
         _dim?.Dispose();
         _black?.Dispose();
         DisposeCyber();
+        DisposeBackdrop();
     }
 }
