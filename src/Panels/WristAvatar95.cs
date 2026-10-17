@@ -131,6 +131,7 @@ public sealed partial class WristPanel
         _ui.Text95(AvFit95(_avName, lr.Width, true), new RectangleF(c.X, c.Y, lr.Width, 13), Blk95, true);
         _avRow95 ??= AvListRow95;
         int hit = _ui.List95(AvatarList95, lr, n, _av95Sel, _avRow95);
+        _avTiles = Math.Min(n, (int)((lr.Height - 4) / 16));
         if (hit >= 0)
         {
             _av95Sel = hit;

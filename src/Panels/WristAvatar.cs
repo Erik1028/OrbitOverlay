@@ -89,8 +89,8 @@ public sealed partial class WristPanel
         string from = s.Source switch
         {
             AvatarSource.Live => Lang.T("Live from VRChat"),
-            AvatarSource.Log => Lang.T("From VRChat's log · no live values"),
-            AvatarSource.Newest => Lang.T("The config used last · no live values"),
+            AvatarSource.Log => Lang.T("No live values · is OSC on in VRChat?"),
+            AvatarSource.Newest => Lang.T("Maybe not the avatar worn · is OSC on in VRChat?"),
             _ => "",
         };
         int n = a?.Buttons.Length ?? 0;

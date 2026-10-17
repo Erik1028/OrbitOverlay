@@ -313,13 +313,26 @@ static class AvatarViewTools
         bool newest = l.State.Source == AvatarSource.Newest && l.State.Avatar?.Name == "Made-up Cat";
         Log.Info($"avatar link: no OSCQuery - your own switch from the log, another player's not {fromLog} (want True), a later switch followed {followed} (want True); " +
                  $"no log - the config written last {newest} (want True)");
+        // a local test build worn (its id no file name): live, its config the one of the name in the log
+        query = true;
+        worn = "local:00000000-0000-4000-8000-00000000f0c5";
+        File.WriteAllText(Path.Combine(logs, "output_log_2026-10-18_10-00-00.txt"),
+            "2026.10.18 10:00:01 Debug      -  User Authenticated: Made-up Tester (usr_00000000-0000-4000-8000-0000000e0e0e)\n" +
+            "2026.10.18 10:00:05 Debug      -  [Behaviour] Switching Made-up Tester to avatar Made-up Fox\n");
+        l.ReadNow();
+        bool local = l.State.Ready && l.State.Live && l.State.Avatar?.Name == "Made-up Fox";
+        Log.Info($"avatar link: a local test build worn - live, its config found by the log's name {local} (want True)");
         // the configs were only read
         bool same = File.ReadAllBytes(foxFile).SequenceEqual(Bytes(Json(FoxId, "Made-up Fox", FoxParams)));
         Log.Info($"avatar link: the configs read, never written {same} (want True)");
         // a tree of VRChat's with the paths nested (a / in a name), bools as true / false
         var (tid, tv) = AvatarLink.ParseTree(Tree(FoxId, FoxParams, n => FoxValues().TryGetValue(n, out float v) ? v : 0));
+        // a bool told by its type tag alone, a path with an escaped space
+        var (_, tv2) = AvatarLink.ParseTree("{\"FULL_PATH\":\"/avatar\",\"CONTENTS\":{\"parameters\":{\"FULL_PATH\":\"/avatar/parameters\",\"CONTENTS\":{" +
+            "\"A\":{\"FULL_PATH\":\"/avatar/parameters/A\",\"TYPE\":\"T\"},\"B C\":{\"FULL_PATH\":\"/avatar/parameters/B%20C\",\"TYPE\":\"f\",\"VALUE\":[0.5]}}}}}");
         Log.Info($"avatar link: VRChat's tree read: the id {tid == FoxId} (want True), a nested bool {tv?.GetValueOrDefault("/avatar/parameters/VF12_Clothes/Hoodie")} " +
-                 $"(want 1), an int {tv?.GetValueOrDefault("/avatar/parameters/Outfit")} (want 2), HOST_INFO's port {AvatarLink.HostOscPort(HostInfo)} (want 9010)");
+                 $"(want 1), an int {tv?.GetValueOrDefault("/avatar/parameters/Outfit")} (want 2), a bool by its type tag {tv2?.GetValueOrDefault("/avatar/parameters/A")} " +
+                 $"(want 1), an escaped space {tv2?.GetValueOrDefault("/avatar/parameters/B C")} (want 0.5), HOST_INFO's port {AvatarLink.HostOscPort(HostInfo)} (want 9010)");
         Directory.Delete(root, true);
     }
 
@@ -579,7 +592,7 @@ static partial class Tools
                 else { ui.Begin(ptr, 1.5f); painter.Begin(surf.Bitmap, Theme.Bg, 1.5f); view.Draw(ui); painter.End(); ui.End(); }
                 ui.HitSpy = null;
             }
-            foreach (var (style, name) in new[] { ((string)null, "modern"), (CyberHud.Id, "cyber"), ("classic", "95"), ("xp", "xp") })
+            foreach (var (style, name) in new[] { ((string)null, "modern"), (CyberHud.Id, "cyber"), ("classic", "95"), ("xp", "xp"), ("aero", "aero"), ("mac", "mac"), ("terminal", "term") })
             {
                 cfg.Data.Appearance = new AppearanceConfig { Style = style, Clock24h = true };
                 Theme.Apply(cfg.Data.Appearance);

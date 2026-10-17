@@ -493,7 +493,17 @@ public sealed class AvatarLink : IDisposable
         if (tree != null) (id, values) = ParseTree(tree);
         AvatarConfigFile a = null;
         var src = AvatarSource.None;
-        if (id != null) { a = FindById(id); src = AvatarSource.Live; }
+        if (id != null)
+        {
+            a = FindById(id);
+            src = AvatarSource.Live;
+            // a config under another file name (a local test build's): the one of the name the log says - the values are live all the same
+            if (a == null)
+            {
+                var (ln, lu) = LogAvatar();
+                if (ln != null) a = FindByName(ln, lu);
+            }
+        }
         else
         {
             var (name, user) = LogAvatar();
@@ -627,19 +637,27 @@ public sealed class AvatarLink : IDisposable
             void Walk(JsonElement n, int depth)
             {
                 if (n.ValueKind != JsonValueKind.Object || depth > 12) return;
-                if (n.TryGetProperty("FULL_PATH", out var fp) && fp.ValueKind == JsonValueKind.String && n.TryGetProperty("VALUE", out var val) &&
-                    val.ValueKind == JsonValueKind.Array && val.GetArrayLength() > 0)
+                if (n.TryGetProperty("FULL_PATH", out var fp) && fp.ValueKind == JsonValueKind.String)
                 {
                     string path = fp.GetString() ?? "";
-                    var v = val[0];
-                    if (path == "/avatar/change" && v.ValueKind == JsonValueKind.String) id = v.GetString();
+                    if (path.Contains('%')) path = Uri.UnescapeDataString(path);         // (a name with a space, should it come escaped)
+                    bool has = n.TryGetProperty("VALUE", out var val) && val.ValueKind == JsonValueKind.Array && val.GetArrayLength() > 0;
+                    var v = has ? val[0] : default;
+                    if (path == "/avatar/change" && has && v.ValueKind == JsonValueKind.String) id = v.GetString();
                     else if (path.StartsWith("/avatar/parameters/", StringComparison.Ordinal))
-                        switch (v.ValueKind)
+                    {
+                        switch (has ? v.ValueKind : JsonValueKind.Undefined)
                         {
                             case JsonValueKind.True: values[path] = 1; break;
                             case JsonValueKind.False: values[path] = 0; break;
                             case JsonValueKind.Number: values[path] = (float)v.GetDouble(); break;
+                            default:
+                                // OSC's bool is its type tag: T / F (a VALUE left out says it there)
+                                if (n.TryGetProperty("TYPE", out var ty) && ty.ValueKind == JsonValueKind.String && ty.GetString() is "T" or "F")
+                                    values[path] = ty.GetString() == "T" ? 1 : 0;
+                                break;
                         }
+                    }
                 }
                 if (n.TryGetProperty("CONTENTS", out var c) && c.ValueKind == JsonValueKind.Object)
                     foreach (var kid in c.EnumerateObject()) Walk(kid.Value, depth + 1);
@@ -735,6 +753,7 @@ public sealed class AvatarLink : IDisposable
 
     AvatarConfigFile FindById(string id)
     {
+        id = id.Replace(':', '_');                              // (a local test build's id: no ':' in a file name)
         if (id.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0) return null;
         AvatarConfigFile best = null;
         foreach (var dir in AvatarDirs(null))
