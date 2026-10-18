@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.CompilerServices;
 using System.Drawing;
 using System.Numerics;
 
@@ -174,6 +175,11 @@ public sealed partial class Theater
 
     // ---- the band: the skyline all the way round, standing on the horizon (the band's middle row) ----
     // bare: into that texture without its lamps and haze (city life's base: the band under them, TheaterCityLife.cs)
+    // (AggressiveOptimization here, on LampsEnd and LampsRead: run once a session, they ran as the JIT's tier-0 code - the band in 12 ms,
+    // its lamps listed in 4.1 where the same code warm takes 2.9 and 0.7, the band under the lamps in 10 where warm takes 0.8. Compiled
+    // fully the first time they are quick the once they run. Not on the others: DrawCity is D2D's calls, and SparkPixels got 3x slower -
+    // tier-1 folds its static readonly layer table into the code, a first full compile cannot.)
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     void DrawSkyline(Surface bare = null)
     {
         var s = bare ?? _sky;

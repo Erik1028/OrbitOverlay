@@ -273,8 +273,19 @@ static partial class Tools
             now += Dt;
         }
 
-        // before theater: the monitor at its place for a moment (its first frame shown, faded in)
-        for (int i = 0; i < 45; i++) Frame(null);
+        // before theater: the monitor at its place for a moment (its first frame shown, faded in) - and with VR connected and theater off,
+        // Theater makes the style's textures on these idle frames, a piece a frame (TheaterWarm.cs): their cost is here, not in theater's
+        // first frame. Measured like the rest (the pre-frames' worst is the biggest piece).
+        int gcPre = GC.CollectionCount(0);
+        var pre = new PerfRun();
+        var pieces = new System.Text.StringBuilder();
+        for (int i = 0; i < 45; i++)
+        {
+            double was = pre.SumMs;
+            Frame(pre);
+            if (pre.SumMs - was >= 0.5) pieces.Append($" frame {i + 1}: {pre.SumMs - was:0.0};");      // (a piece made: the city, the band ...)
+        }
+        int gcPreN = GC.CollectionCount(0) - gcPre;
         PerfTrace.Reset();
         thTicks = thMax = 0;
         int gc0 = GC.CollectionCount(0);
@@ -290,10 +301,14 @@ static partial class Tools
             pic.Dispose(); picA.Dispose(); picB.Dispose();
             return;
         }
+        Log.Info($"theaterperf: {name} before theater (0.5 s, the textures made ready a piece a frame), 45 frames: a frame {pre.SumMs / 45:0.000} ms " +
+                 $"(worst {pre.MaxMs:0.0} at frame {pre.WorstAt + 1}), {pre.SumBytes / 45:0} B (worst {pre.MaxBytes}); GCs {gcPreN}; the frames over 0.5 ms:{pieces}");
+        rows.Add($"{name} before theater (0.5 s)\tframe ms\t{pre.SumMs / 45:0.0000}\t{pre.MaxMs:0.0000}");
+        rows.Add($"{name} before theater (0.5 s)\tbytes a frame\t{pre.SumBytes / 45:0}\t{pre.MaxBytes}");
         Report(name, "coming in (3 s)", intro, thTicks, thMax, rows);
-        Log.Info($"theaterperf: {name} frame 1 (the textures drawn: the city / the backdrop started, the band and its lamps): {intro.FirstMs:0.0} ms, {intro.FirstBytes} B; " +
-                 $"the band without its lamps + its read-back {th.LifeBuildMs:0.0} ms of frames, the lamps listed {th.LampsEndMs:0.0} ms, the backdrop's thread {th.BackdropMs} ms; " +
-                 $"GCs {GC.CollectionCount(0) - gc0}");
+        Log.Info($"theaterperf: {name} frame 1 (what is still drawn then: the Ambilight's shape; before TheaterWarm.cs the city / the backdrop started, the band and its lamps): " +
+                 $"{intro.FirstMs:0.0} ms, {intro.FirstBytes} B; the band without its lamps + its read-back {th.LifeBuildMs:0.0} ms of frames, the lamps listed {th.LampsEndMs:0.0} ms, " +
+                 $"the backdrop's thread {th.BackdropMs} ms; GCs {GC.CollectionCount(0) - gc0}");
         PerfTrace.Reset();
         thTicks = thMax = 0;
         gc0 = GC.CollectionCount(0);

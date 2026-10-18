@@ -338,6 +338,7 @@ public sealed partial class Theater : IDisposable
             Log.Info($"theater: playing {_screen.TheaterLabel} - {_screen.TheaterState}, " +
                      $"{Vector3.Distance(_view.World.Translation, _view.Head):0.00} m away, {_view.Width:0.00} m wide");
         }
+        if (!On && _screen == null) WarmTheater();       // off: the style's textures made ready a piece a frame, so its first frame draws nothing (TheaterWarm.cs)
     }
 
     static bool Contains(List<ITheaterScreen> live, ITheaterScreen s)

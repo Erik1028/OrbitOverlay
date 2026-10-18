@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.CompilerServices;
 using System.Collections.Generic;
 using System.Numerics;
 using Vortice.Direct3D11;
@@ -158,6 +159,7 @@ public sealed partial class Theater
     }
 
     // the band is drawn: the new stars, then each lamp's patch, what covers it, what lies over it, its place in the read-back pixels
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     void LampsEnd(int bw, int bh, float sunX, float sunR)
     {
         if (!_recOn) return;
@@ -331,6 +333,7 @@ public sealed partial class Theater
     }
 
     // the lamps' patches out of the copy: the band without them on top, as drawn under it
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     static unsafe void LampsRead(Lamp[] lamps, uint[] bse, uint[] drawn, int y0, int rows, IntPtr data, long pitch)
     {
         foreach (var L in lamps)
