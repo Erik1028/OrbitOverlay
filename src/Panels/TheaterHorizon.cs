@@ -86,7 +86,9 @@ public sealed partial class Theater
         var f = new HorizonFrame
         {
             Ring = ang >= MinAngle,
-            Alpha = MathF.Round(Math.Clamp(city * bright, 0, 1) * 1024) / 1024,     // in 1/1024 steps: no call for a change nobody sees
+            // in 1/256 steps - a level of the ring's brightest texel - so no call goes out for a change nobody sees (1/1024 let the
+            // breathing's smallest moves through: a SetAlpha on 9 frames of 10 with music)
+            Alpha = MathF.Round(Math.Clamp(city * bright, 0, 1) * 256) / 256,
             Width = 2 * ang * rr, Curvature = ang / MathF.PI, U0 = 0.5f - hu, U1 = 0.5f + hu, Radius = rr,
             Angle = ang, SparkAlpha = spark, Sparks = spark > 0.004f, SparkRadius = r - BandIn - SparkIn,
         };

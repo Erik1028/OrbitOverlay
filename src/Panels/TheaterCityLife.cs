@@ -621,6 +621,7 @@ public sealed partial class Theater
     const int CarCount = 3;                  // two cars and a drone
     const uint CarSort = 3;                  // over the band (2) by sort order, the Ambilight's own (they never meet), under every screen
     const float CarDeg = 2.6f, DroneDeg = 0.8f;   // their textures' width seen from you (near; far ones 65 % of it)
+    const float CarAlphaSteps = 128;         // the overlays' alpha is set in steps of 1/128 (Cars)
     const int CarTexW = 52, CarTexH = 18, DroneTexW = 16;
     readonly Car[] _car = new Car[CarCount];
     readonly VrOverlay[] _carOv = new VrOverlay[CarCount];
@@ -692,7 +693,10 @@ public sealed partial class Theater
             if (_carSet[i] != tex) { ov.SetTexture(tex.Tex); _carSet[i] = tex; }     // (once a trip at most)
             ov.SetWidth(wdt);
             ov.SetAbsolute(m);
-            ov.SetAlpha(Math.Min(1, a));
+            // its alpha in 1/128 steps: the fades (3 s each way) and the drone's breathing moved it by less than that most frames, and
+            // VrOverlay sent every move - a SteamVR call a frame for a change under a level of its brightest texel (Erik 10-18: "it must
+            // be optimized"). Mid-trip it is constant anyway. (Its place is sent every frame: it moves, and 45 Hz would be judder.)
+            ov.SetAlpha(MathF.Round(Math.Min(1, a) * CarAlphaSteps) / CarAlphaSteps);
             ov.Show();
         }
     }
