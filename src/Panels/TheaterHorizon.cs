@@ -7,10 +7,10 @@ namespace Orbit;
 // 10-18: "work more on the Cyber style, mainly theater mode"). Gfx/HorizonPulse.cs has the arithmetic and the textures; this puts them
 // on three overlays of their own, all in the city's level frame (TheaterCyber.cs) and following its radius:
 //  - the ring: a thin neon line all the way round (curvature 1) 0.06 m nearer than the skyline band, so it lies along the skyline's foot
-//    on the wall's own horizon line. Sort order 2 like the band and nearer than it (in front of it whichever one SteamVR goes by - the
-//    band and the wall at one distance once swapped now and then), under the Ambilight (3) and every screen;
-//  - two sparks: small flat flares on the horizon, sort 3, a little nearer still (still behind the Ambilight's farthest), shown only
-//    while they run.
+//    on the wall's own horizon line. Its own sort order (SortRing, Theater.cs), over the band and nearer than it, under the sparks, the
+//    cars, the Ambilight and every screen;
+//  - two sparks: small flat flares on the horizon, SortSparks, a little nearer still (still behind the Ambilight's farthest), shown only
+//    while they run (the two share it: they meet only behind you, fading - the same texture, either on top looks the same).
 // Coming in (Motion Full), the moment the city's lights come on, a spark sets off each way from the screen and runs to behind you,
 // lighting the ring behind it: the ring is an arc from the screen out to the sparks - its width and bend grow with them (the same
 // radius) and its texture bounds show as much of the texture as the arc is of the circle, so the line keeps its height and nothing
@@ -146,7 +146,7 @@ public sealed partial class Theater
         {
             EnsureHorizonTex();
             _hzRing = new VrOverlay("erik.orbit.theater.horizon", "OrbitOverlay theater horizon");
-            _hzRing.SetSortOrder(2);                                    // the band's: nearer than it, under the Ambilight and the screens
+            _hzRing.SetSortOrder(SortRing);                             // over the band (and nearer), under the sparks, cars, glow and screens
             _hzRing.SetFlag(Valve.VR.VROverlayFlags.IsPremultiplied, true);
             _hzRing.SetTexture(_hzRingTex.Tex);                          // once: it never changes
             _hzSparkL = Spark("erik.orbit.theater.spark.l");
@@ -165,7 +165,7 @@ public sealed partial class Theater
     VrOverlay Spark(string key)
     {
         var o = new VrOverlay(key, "OrbitOverlay theater spark");
-        o.SetSortOrder(3);
+        o.SetSortOrder(SortSparks);
         o.SetFlag(Valve.VR.VROverlayFlags.IsPremultiplied, true);
         o.SetTexture(_hzSparkTex.Tex);
         return o;

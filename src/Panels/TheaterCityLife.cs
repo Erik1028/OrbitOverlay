@@ -607,10 +607,11 @@ public sealed partial class Theater
 
     // ---- the flying cars and the drone ----
     // Tiny overlays of their own in the city's level frame, nearer than the band (0.05-0.25 m: nearer ones bigger, brighter, quicker) and
-    // well behind the screen. Sort order 3, over the band by sort AND distance: at sort 2 only the distance would put a car over the band's
-    // buildings, and the band's distance is its middle's, in front of you - leaning towards one side a car there could come out farther and
-    // drop behind the buildings and back (a flicker). They never go near the screen and its glow (the glow's sort order is the same; the
-    // screens' are 106+), so nothing else can cross them.
+    // well behind the screen. Their own sort order (SortCars, Theater.cs), over the band, the horizon and its sparks by sort AND distance: at
+    // the band's sort order only the distance would put a car over the band's buildings, and the band's distance is its middle's, in front
+    // of you - leaning towards one side a car there could come out farther and drop behind the buildings and back (a flicker). The three
+    // share it: two crossing are put in order by their distance, right for things this small (their middles are where they are), and
+    // the nearer one is in front. They never go near the screen and its glow (SortGlow; the screens' are 106+).
     struct Car
     {
         public bool Drone;
@@ -622,7 +623,7 @@ public sealed partial class Theater
     }
 
     const int CarCount = 3;                  // two cars and a drone
-    const uint CarSort = 3;                  // over the band (2) by sort order, the Ambilight's own (they never meet), under every screen
+    const uint CarSort = SortCars;           // over the band, the horizon and the sparks by sort order, under the glow and every screen
     const float CarDeg = 2.6f, DroneDeg = 0.8f;   // their textures' width seen from you (near; far ones 65 % of it)
     const float CarAlphaSteps = 128;         // the overlays' alpha is set in steps of 1/128 (Cars)
     const int CarTexW = 52, CarTexH = 18, DroneTexW = 16;

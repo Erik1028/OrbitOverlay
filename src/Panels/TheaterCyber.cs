@@ -19,6 +19,8 @@ namespace Orbit;
 // flickered.
 // While it shows with Motion Full the city lives a little - windows, signs, antenna lights, a few stars, flying cars (TheaterCityLife.cs):
 // DrawSkyline records every lamp it draws for that, and the static city is exactly the one drawn here.
+// (Erik 10-18: the grid "should not go down to infinity, nor be 360° round, and it looks low poly": the floor grid is no longer on the wall
+// but in front only, a short way down, on overlays of its own - TheaterFloor.cs. The wall keeps the sky, the stars and the horizon's glow.)
 public sealed partial class Theater
 {
     Surface _city, _sky;                 // the wall (WallAspect tall, fading like the black one) and the skyline band
@@ -37,7 +39,7 @@ public sealed partial class Theater
     void CreateCyber()
     {
         _band = new VrOverlay("erik.orbit.theater.city", "OrbitOverlay theater city");
-        _band.SetSortOrder(2);                                          // over the wall, under every screen and panel
+        _band.SetSortOrder(SortBand);                                   // over the wall and the floor, under the horizon, cars, glow, screens
         _band.SetFlag(Valve.VR.VROverlayFlags.IsPremultiplied, true);
         _band.SetCurvature(1f);
     }
@@ -72,7 +74,7 @@ public sealed partial class Theater
             _band?.Hide();
             return false;
         }
-        if (_city == null) { _city = new Surface(_g, CityW, (int)(CityW * WallAspect)); DrawCity(); }
+        if (!CityReady) CityRows(CityH);
         if (_sky == null) { _sky = new Surface(_g, BandW, BandH); DrawSkyline(); }
         if (!_cityOn)
         {
@@ -121,63 +123,154 @@ public sealed partial class Theater
     // premultiplied colour at alpha a (the textures are drawn on a transparent clear)
     static uint Pm(uint c, float a) => Theme.WithAlpha(c, Math.Clamp(a, 0, 1));
 
-    // ---- the wall: sky, horizon, floor grid ----
-    void DrawCity()
+    // ---- the wall: the sky, the dim, the horizon's glow, soft stars ----
+    // (Erik 10-18: the floor grid is off the wall - TheaterFloor.cs.) Nothing left on it has the detail SteamVR's columns can show (a
+    // whole circle in a fixed number of flat columns, each many degrees wide): the sky and the dim are smooth gradients, dithered (8 bits
+    // over a wall this size showed bands); the horizon's glow lies at eye level, where the columns bend nothing; the stars are points -
+    // soft round ones now, about two texels across (a 1-texel star was a blocky diamond in the headset), the same stars as before. Its
+    // alpha is WallAlpha everywhere but under a star: the dim as dark as ever, all the way round. Worked out texel by texel straight into
+    // the texture, a slice of rows at a time (no painter: nothing to map; a 256 KB slice, not a 7.6 MB picture).
+    // It is 1850 rows tall, not 2048: the rows past 80° up and down were empty (WallAlpha is 0 there), and SteamVR makes an overlay as tall
+    // as its texture - its top and bottom are at 80° instead of 81°, the same dim, and 0.8 MB that pays for the floor's three textures.
+    public const int CityH = 1850;
+    public static int CityWidth => CityW;
+    const int CitySlice = 64;                // rows uploaded at a time
+    const int CityWarmRows = 240;            // rows a frame while theater is off (TheaterWarm.cs): 8 frames of ~1 ms
+    const float StarDeg = 0.2f;              // a star's softness (its gaussian's sigma, degrees): half its strength 0.47° across
+
+    struct WallStar { public float X, Y, Sx, Sy, A, R, G, B; public int Y0, Y1; }
+    WallStar[] _wallStars;
+    uint[] _cityBuf;
+    readonly uint[] _cityLut = new uint[64];
+    int _cityRow;                            // the wall's rows drawn so far (CityH: all of it)
+    static byte[] _dither;                   // 64 x 64: the same fine noise under every gradient, in 64 steps
+
+    bool CityReady => _city != null && _cityRow >= CityH;
+
+    // the wall's next 'count' rows (made first if it is not there): TheaterWarm a few hundred a frame, CyberWall what is left at once
+    void CityRows(int count)
     {
-        int w = _city.W, h = _city.H, mid = h / 2;
-        _p.Begin(_city.Bitmap, 0x00000000);
-        const int Band = 4;
-        for (int y = 0; y < h; y += Band)
+        if (_city == null) { _city = new Surface(_g, CityW, CityH); _cityRow = 0; }
+        int end = Math.Min(CityH, _cityRow + count);
+        while (_cityRow < end)
         {
-            float f = MathF.Abs(y + Band / 2f - mid) / mid, fade = WallAlpha(f);
-            if (fade <= 0.003f) continue;
-            float deg = RowAngle(f) * 180 / MathF.PI;
-            bool sky = y < mid;
-            // the sky: deep violet at the horizon going black up high; the floor: near black with a violet haze at the horizon
-            uint c = sky ? Theme.Mix(0xFF2A0B36, 0xFF040309, Smooth01(deg / 38))
-                         : Theme.Mix(0xFF1A0822, 0xFF05060B, Smooth01(deg / 14));
-            _p.Fill(new RectangleF(0, y, w, Band), Pm(c, fade));
+            int y1 = Math.Min(end, _cityRow + CitySlice);
+            DrawCityRows(_cityRow, y1);
+            _cityRow = y1;
         }
-        // a few faint stars (always the same ones)
+        if (_cityRow >= CityH) _cityBuf = null;
+    }
+
+    // the elevation of the wall's row y (degrees, + up)
+    public static float CityRowEl(float y) => RowAngle((CityH / 2f - y - 0.5f) / CityW) * 180 / MathF.PI;
+
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    void DrawCityRows(int y0, int y1)
+    {
+        _wallStars ??= WallStars();
+        var dk = _dither ??= MakeDither();
+        int w = CityW;
+        var buf = _cityBuf ??= new uint[CityW * CitySlice];
+        var lut = _cityLut;
+        for (int y = y0; y < y1; y++)
+        {
+            float f = (CityH / 2f - y - 0.5f) / CityW, fa = MathF.Abs(f), fade = WallAlpha(fa);
+            float deg = RowAngle(fa) * 180 / MathF.PI;
+            // the sky: deep violet at the horizon going black up high; below it the faintest violet haze going near black (no floor)
+            uint c = f > 0 ? Theme.Mix(0xFF2A0B36, 0xFF040309, Smooth01(deg / 38)) : Theme.Mix(0xFF1A0822, 0xFF05060B, Smooth01(deg / 14));
+            float r = ((c >> 16) & 0xFF) / 255f * fade, g = ((c >> 8) & 0xFF) / 255f * fade, b = (c & 0xFF) / 255f * fade, a = fade;
+            // the horizon: a neon line with its glow, soft (half its core 2 rows, 0.7°, across) - the horizon ring's sharper line lies on it
+            float dy = y + 0.5f - CityH / 2f;
+            Over(ref r, ref g, ref b, ref a, 1f, 0.165f, 0.427f, 0.5f * MathF.Exp(-0.5f * dy * dy / (2.6f * 2.6f)));
+            Over(ref r, ref g, ref b, ref a, 1f, 0.361f, 0.576f, 0.85f * MathF.Exp(-0.5f * dy * dy / (0.9f * 0.9f)));
+            // the row is one colour: its 64 dithered texels worked out once, the row laid from them
+            for (int k = 0; k < 64; k++) lut[k] = Pack(r, g, b, a, (k + 0.5f) / 64);
+            int o = (y - y0) * w, dt = (y & 63) * 64;
+            for (int x = 0; x < w; x++) buf[o + x] = lut[dk[dt + (x & 63)]];
+            foreach (ref readonly var s in _wallStars.AsSpan())
+            {
+                if (y < s.Y0 || y > s.Y1) continue;
+                float sy = (y + 0.5f - s.Y) / s.Sy, ey = MathF.Exp(-0.5f * sy * sy);
+                int xr = (int)MathF.Ceiling(3 * s.Sx);
+                for (int x = (int)s.X - xr; x <= (int)s.X + xr; x++)
+                {
+                    float sx = (x + 0.5f - s.X) / s.Sx, sa = s.A * ey * MathF.Exp(-0.5f * sx * sx);
+                    if (sa < 0.002f) continue;
+                    int xx = (x % w + w) % w, i = o + xx;
+                    uint q = buf[i];
+                    float qr = ((q >> 16) & 0xFF) / 255f, qg = ((q >> 8) & 0xFF) / 255f, qb = (q & 0xFF) / 255f, qa = (q >> 24) / 255f;
+                    Over(ref qr, ref qg, ref qb, ref qa, s.R, s.G, s.B, sa);
+                    buf[i] = Pack(qr, qg, qb, qa, (dk[dt + (xx & 63)] + 0.5f) / 64);
+                }
+            }
+        }
+        _g.Ctx.UpdateSubresource<uint>(buf.AsSpan(0, (y1 - y0) * w), _city.Tex, 0, (uint)(w * 4), 0, new Vortice.Mathematics.Box(0, y0, 0, w, y1, 1));
+    }
+
+    // premultiplied (r, g, b, a) as a BGRA texel, dithered by n (0..1): never a colour over its alpha
+    static uint Pack(float r, float g, float b, float a, float n)
+    {
+        uint pa = (uint)Math.Clamp((int)(a * 255 + n), 0, 255);
+        uint pr = Math.Min(pa, (uint)Math.Clamp((int)(r * 255 + n), 0, 255));
+        uint pg = Math.Min(pa, (uint)Math.Clamp((int)(g * 255 + n), 0, 255));
+        uint pb = Math.Min(pa, (uint)Math.Clamp((int)(b * 255 + n), 0, 255));
+        return pa << 24 | pr << 16 | pg << 8 | pb;
+    }
+
+    // straight colour (r, g, b) at alpha k over a premultiplied texel
+    static void Over(ref float r, ref float g, ref float b, ref float a, float cr, float cg, float cb, float k)
+    {
+        r = cr * k + r * (1 - k); g = cg * k + g * (1 - k); b = cb * k + b * (1 - k); a = k + a * (1 - k);
+    }
+
+    // the stars as they always were (the same random ones: where the 1-texel ones were, about as bright), each now a soft round dot -
+    // round as you see it: the wall's rows crowd towards the top, so a star is taller in texels the higher it is
+    static WallStar[] WallStars()
+    {
+        const int Mid = 1024;                                    // (where they are is worked out on the old 2048-row wall, as they were)
+        var list = new System.Collections.Generic.List<WallStar>();
         var rnd = new Random(1028);
+        float texDeg = 360f / CityW;
         for (int i = 0; i < 260; i++)
         {
-            float x = rnd.Next(w), y = rnd.Next((int)(mid * 0.08f), (int)(mid * 0.92f));
-            float f = (mid - y) / mid, fade = WallAlpha(f);
+            float x = rnd.Next(CityW), y = rnd.Next((int)(Mid * 0.08f), (int)(Mid * 0.92f));
+            float f = (Mid - y) / Mid, fade = WallAlpha(f);
             if (fade <= 0.05f || RowAngle(f) * 180 / MathF.PI < 12) continue;
-            _p.Fill(new RectangleF(x, y, 1, 1), Pm(rnd.Next(4) == 0 ? 0xFF9FE9FF : 0xFFE8E0F0, fade * (0.25f + 0.45f * (float)rnd.NextDouble())));
+            uint c = rnd.Next(4) == 0 ? 0xFF9FE9FFu : 0xFFE8E0F0u;
+            float a = fade * (0.25f + 0.45f * (float)rnd.NextDouble());
+            float cy = y + 0.5f - (Mid - CityH / 2f), cos = MathF.Cos(RowAngle((CityH / 2f - cy) / CityW));
+            float sx = StarDeg / (texDeg * cos), sy = StarDeg / (texDeg * cos * cos);
+            list.Add(new WallStar
+            {
+                X = x + 0.5f, Y = cy, Sx = sx, Sy = sy, A = 0.8f * a,
+                R = ((c >> 16) & 0xFF) / 255f, G = ((c >> 8) & 0xFF) / 255f, B = (c & 0xFF) / 255f,
+                Y0 = (int)MathF.Floor(cy - 3 * sy), Y1 = (int)MathF.Ceiling(cy + 3 * sy),
+            });
         }
-        // the floor's rings: distances out from you (1.4 m below your eyes), the row of each - they crowd towards the horizon
-        float[] dist = { 0.9f, 1.2f, 1.6f, 2.1f, 2.8f, 3.7f, 5f, 7f, 10f, 15f, 24f, 40f };
-        foreach (float d in dist)
+        return list.ToArray();
+    }
+
+    // each of its rows the 64 steps of 1/64 in a shuffled order: a gradient's row comes out at its exact level on average (white noise was
+    // off by up to a fifth of a level), and no pattern to see
+    static byte[] MakeDither()
+    {
+        var t = new byte[64 * 64];
+        var rnd = new Random(1018);
+        var row = new byte[64];
+        for (int y = 0; y < 64; y++)
         {
-            float tan = 1.4f / d, f = tan / (WallAspect * MathF.PI), y = mid + f * mid, fade = WallAlpha(f);
-            if (fade <= 0.003f) continue;
-            float near = Smooth01((MathF.Atan(tan) * 180 / MathF.PI - 1.5f) / 25);     // dimmer towards the horizon
-            _p.Fill(new RectangleF(0, MathF.Round(y), w, 1), Pm(Theme.Mix(0xFF5A1A52, 0xFFFF2A6D, 0.35f * near), fade * (0.25f + 0.6f * near)));
+            for (int x = 0; x < 64; x++) row[x] = (byte)x;
+            rnd.Shuffle(row);
+            Array.Copy(row, 0, t, y * 64, 64);
         }
-        // the floor's rays: on the cylinder, a ray along the floor is a vertical line (every 5°), fading as it nears the horizon
-        int rays = 72;
-        for (int y = mid + 2; y < h; y += Band)
-        {
-            float f = (y + Band / 2f - mid) / mid, fade = WallAlpha(f);
-            if (fade <= 0.003f) continue;
-            float near = Smooth01((RowAngle(f) * 180 / MathF.PI - 1) / 22);
-            uint c = Pm(Theme.Mix(0xFF143C46, 0xFF2BD4E4, 0.25f * near), fade * (0.2f + 0.55f * near));
-            for (int i = 0; i < rays; i++) _p.Fill(new RectangleF(MathF.Round(i * (float)w / rays), y, 1, Band), c);
-        }
-        // the horizon: a neon line with its glow
-        for (int k = 6; k >= 1; k--)
-            _p.Fill(new RectangleF(0, mid - k, w, 2 * k), Pm(0xFFFF2A6D, 0.05f + 0.02f * (7 - k)));
-        _p.Fill(new RectangleF(0, mid - 1, w, 2), Pm(0xFFFF5C93, 0.9f));
-        _p.End();
+        return t;
     }
 
     // ---- the band: the skyline all the way round, standing on the horizon (the band's middle row) ----
     // bare: into that texture without its lamps and haze (city life's base: the band under them, TheaterCityLife.cs)
     // (AggressiveOptimization here, on LampsEnd and LampsRead: run once a session, they ran as the JIT's tier-0 code - the band in 12 ms,
     // its lamps listed in 4.1 where the same code warm takes 2.9 and 0.7, the band under the lamps in 10 where warm takes 0.8. Compiled
-    // fully the first time they are quick the once they run. Not on the others: DrawCity is D2D's calls, and SparkPixels got 3x slower -
+    // fully the first time they are quick the once they run. Not on the others: DrawCity (then) was D2D's calls, and SparkPixels got 3x slower -
     // tier-1 folds its static readonly layer table into the code, a first full compile cannot.)
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     void DrawSkyline(Surface bare = null)
@@ -270,8 +363,8 @@ public sealed partial class Theater
     // --snapshot: the wall's and the band's textures
     public Surface GridForTest(float flash)
     {
-        _city ??= new Surface(_g, CityW, (int)(CityW * WallAspect));
-        DrawCity();
+        if (_city != null) _cityRow = 0;
+        CityRows(CityH);
         return _city;
     }
 

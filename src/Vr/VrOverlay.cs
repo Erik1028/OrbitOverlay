@@ -55,6 +55,11 @@ public sealed class VrOverlay : IDisposable
 
     public bool Visible => _visible;
     public IntPtr TextureForTest => _lastTex;        // (the checks: the texture it was given last)
+    public float Alpha => Math.Max(0, _alpha);       // as last set (SteamVR's default is 1; -1 here: never set)
+    // (the checks and the headset-view renderer, CyberFloorTest.cs: what SteamVR was told last - sort order, place, part of the texture)
+    public uint SortOrderForTest => _sort;
+    public Matrix4x4 TransformForTest => _lastM;
+    public (float u0, float v0, float u1, float v1) BoundsForTest => (_u0, _v0, _u1, _v1);
 
     // Night mode: every overlay Orbit shows in VR is multiplied by this (1 = normal brightness).
     // The SteamVR dashboard tab is left alone (it is not created through the public constructor).
