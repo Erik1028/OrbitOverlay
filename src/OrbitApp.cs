@@ -1628,6 +1628,9 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         if (last != null)
         {
             Log.Info($"updated: {last} -> {now}");
+            // the config as the old version left it, kept once as config.backup-<it>.json - nothing of this version is saved over it yet
+            // (the constructor runs before the first SaveIfDue); named for the version that wrote it (LastVersion)
+            if (_cfg.KeepBackup(C.General.LastVersion ?? last) is { } kept) Log.Info("update: the config before it kept as " + System.IO.Path.GetFileName(kept));
             Updates.NoteUpdated(last);
             if (WhatsNew.Since(last).Count > 0)
             {

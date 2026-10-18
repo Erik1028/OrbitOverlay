@@ -441,6 +441,29 @@ public sealed class ConfigStore
 
     static double Now => Clock.Now;
 
+    // The first start of another version (OrbitApp.NoteVersion): the config as the version that wrote it left it, kept next to it as
+    // config.backup-<that version>.json before this one saves anything over it - config.json.bak is only the save before the last, and
+    // two saves after an update nothing of the old file was left. Never written over (a copy already there stays as it is) and never
+    // deleted: it is there to restore by hand. The copy made, or null (no file, a copy there already, or it failed: the log says why).
+    public string KeepBackup(string version)
+    {
+        var safe = new string((version ?? "").Where(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '-' or '+').ToArray()).Trim('.');
+        if (safe.Length == 0 || !File.Exists(Path)) return null;
+        string copy = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(Path) ?? "",
+            System.IO.Path.GetFileNameWithoutExtension(Path) + ".backup-" + safe + System.IO.Path.GetExtension(Path));
+        if (File.Exists(copy)) return null;
+        try
+        {
+            File.Copy(Path, copy, overwrite: false);
+            return copy;
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"update: no copy of the config ({e.Message})");
+            return null;
+        }
+    }
+
     // the file as a save would write it now (--faceshot: a config that was only read must come out byte for byte the same)
     public string Serialized() => JsonSerializer.Serialize(Data, Json);
 
