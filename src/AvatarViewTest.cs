@@ -236,15 +236,19 @@ static class AvatarViewTools
             lock (vals) vals[name] = v switch { bool b => b ? 1 : 0, int i => i, float f => f, _ => 0 };
         }
         (string addr, object v) Last() { lock (sent) return sent.Count == 0 ? ("", null) : sent[^1]; }
-        using var l = new AvatarLink { OscDir = osc, LogDir = logs, Query = Query, Running = () => running, Send = Send, Hold = 0.3, Confirm = 0.05, OscPort = 9000 };
+        // a tap's hold on a made-up clock, stepped past it: a slow moment of the PC (the JIT, a GC) is not the 0.3 s running out
+        var clock = new DateTime(2026, 10, 18, 9, 0, 0, DateTimeKind.Utc);
+        using var l = new AvatarLink { OscDir = osc, LogDir = logs, Query = Query, Running = () => running, Send = Send, Hold = 0.3, Confirm = 0.05, OscPort = 9000,
+            HoldClock = () => clock };
         data.Avatar = l;
         l.ReadNow();
         var s = l.State;
         int I(string name) => s.Avatar != null && s.Avatar.ByName.TryGetValue(name, out int i) ? i : -1;
         int hood = I("VF12_Clothes/Hoodie"), outfit = I("Outfit"), hue = I("HueShift");
         bool live = s.Ready && s.Live && s.Avatar.Id == FoxId && hood >= 0 && s.Values[hood] == 1 && s.Values[outfit] == 2 && MathF.Abs(s.Values[hue] - 0.35f) < 0.001f;
-        Log.Info($"avatar link: the avatar worn and its values from a made-up OSCQuery {live} (want True), the watch says '{wrist.AvatarSays(data)}' (want ready), " +
-                 $"VRChat's OSC port from HOST_INFO {l.SendPort} (want 9010)");
+        string says = wrist.AvatarSays(data);
+        Tools.Want($"avatar link: the avatar worn and its values from a made-up OSCQuery {live}, the watch says '{says}' (want ready), " +
+                   $"VRChat's OSC port from HOST_INFO {l.SendPort} (want 9010)", live && says == "ready" && l.SendPort == 9010);
         // a tap: shown at once and sent as a bool; VRChat does not take it: held against reads for 0.3 s, then back
         l.Toggle(hood);
         bool atOnce = l.State.Values[hood] == 0;
@@ -252,17 +256,17 @@ static class AvatarViewTools
         bool asBool = a1 == "/avatar/parameters/VF12_Clothes/Hoodie" && v1 is bool b1 && !b1;
         l.ReadNow();
         bool held = l.State.Values[hood] == 0 && l.State.Pending;
-        Thread.Sleep(350);
+        clock = clock.AddSeconds(0.35);
         l.ReadNow();
         bool back = l.State.Values[hood] == 1 && !l.State.Pending;
         // VRChat takes it: it stays
         takes = true;
         l.Toggle(hood);
-        Thread.Sleep(350);
+        clock = clock.AddSeconds(0.35);
         l.ReadNow();
         bool stays = l.State.Values[hood] == 0;
-        Log.Info($"avatar link: a tap shown at once {atOnce} (want True), sent as the bool False to its address {asBool} (want True), held against an older read " +
-                 $"{held} (want True), back when VRChat did not take it {back} (want True), kept when it did {stays} (want True)");
+        Tools.Want($"avatar link: a tap shown at once {atOnce}, sent as the bool False to its address {asBool}, held against an older read {held}, " +
+                   $"back when VRChat did not take it {back}, kept when it did {stays} -", atOnce && asBool && held && back && stays);
         // a stepper: an int; a slider dragged: a float, at most 20 a second, its last value always
         l.Step(outfit, +1);
         var (a2, v2) = Last();
@@ -278,15 +282,16 @@ static class AvatarViewTools
         int total;
         lock (sent) total = sent.Count - before;
         bool asFloat = a3 == "/avatar/parameters/HueShift" && v3 is float f3 && MathF.Abs(f3 - 0.9f) < 0.001f;
-        Log.Info($"avatar link: a stepper sent the int 3 {asInt} (want True); a slider dragged through 11 values sent {total} (want fewer than 4), its last as the " +
-                 $"float 0.9 {asFloat} (want True), {during} while dragging (want 1)");
+        // (1 while dragging on a PC that keeps up; a stall of 50 ms in the loop lets one more go - without the 20-a-second gap it is all 11)
+        Tools.Want($"avatar link: a stepper sent the int 3 {asInt}; a slider dragged through 11 values sent {total} (want fewer than 4), its last as the " +
+                   $"float 0.9 {asFloat}, {during} while dragging (want 1, at most 3) -", asInt && total < 4 && asFloat && during >= 1 && during <= 3);
         // OSC's bytes: T / F, i, f after the address; an address with letters ASCII has not, in UTF-8
         bool tags = Encoding.ASCII.GetString(OscSender.Encode("/avatar/parameters/X", true)).Contains(",T") &&
                     Encoding.ASCII.GetString(OscSender.Encode("/avatar/parameters/X", 3)).Contains(",i") &&
                     Encoding.ASCII.GetString(OscSender.Encode("/avatar/parameters/X", 0.5f)).Contains(",f");
         var utf = OscSender.Encode("/avatar/parameters/Füle", true);
         bool utf8 = Encoding.UTF8.GetString(utf).StartsWith("/avatar/parameters/Füle\0", StringComparison.Ordinal) && utf.Length % 4 == 0;
-        Log.Info($"avatar osc: a bool T, an int i, a float f {tags} (want True), an address with ü in UTF-8, padded to 4 {utf8} (want True)");
+        Tools.Want($"avatar osc: a bool T, an int i, a float f {tags}, an address with ü in UTF-8, padded to 4 {utf8} -", tags && utf8);
         // another avatar worn: its buttons
         worn = CatId;
         l.ReadNow();
