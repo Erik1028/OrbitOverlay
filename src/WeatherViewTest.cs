@@ -91,13 +91,13 @@ static class WeatherViewTools
                       MathF.Abs(r.WindDir - 225) < 0.01f;
         bool bad = false;
         try { Weather.Parse("{\"latitude\":1}"); } catch (FormatException) { bad = true; }
-        Log.Info($"weather parse: a sample Open-Meteo answer reads 18.4 °C, partly cloudy by day, 36 hours, 7 days, sunrise 07:06 {parsed} (want True); " +
-                 $"an answer without the weather now is refused {bad} (want True)");
+        Tools.Want($"weather parse: a sample Open-Meteo answer reads 18.4 °C, partly cloudy by day, 36 hours, 7 days, sunrise 07:06 {parsed}; " +
+                   $"an answer without the weather now is refused {bad} -", parsed && bad);
         var place = Weather.ParsePlace(GeoJson);
         bool geo = place is { Name: Town, Region: Land } p0 && Math.Abs(p0.Lat - 12.34) < 1e-6 && Weather.ParsePlace(GeoNone) == null;
         bool coords = Weather.TryCoords(" 12.5 , -45.25", out double la, out double lo) && la == 12.5 && lo == -45.25 && !Weather.TryCoords("Orbitville", out _, out _) &&
                       !Weather.TryCoords("95,10", out _, out _);
-        Log.Info($"weather place: the geocoding's answer read {geo} (want True), \"lat,lon\" taken as numbers {coords} (want True)");
+        Tools.Want($"weather place: the geocoding's answer read {geo}, \"lat,lon\" taken as numbers {coords} -", geo && coords);
 
         // the cache: written and read back, only for the same place
         string wd = Path.Combine(dir, "weather_test");
@@ -111,7 +111,7 @@ static class WeatherViewTools
         bool round = back is { } b && b.place == place.Value && Math.Abs((b.fetched - fetched).TotalSeconds) < 1 && rb != null &&
                      rb.Temp == r.Temp && rb.Hours.Length == r.Hours.Length && rb.Days[3].Code == r.Days[3].Code;
         bool other = Weather.LoadCache(cache, "Somewhere Else") == null;
-        Log.Info($"weather cache: written and read back the same report {round} (want True), another place's cache not used {other} (want True)");
+        Tools.Want($"weather cache: written and read back the same report {round}, another place's cache not used {other} -", round && other);
 
         // the thread, on made-up answers
         var asked = new List<string>();
@@ -142,7 +142,7 @@ static class WeatherViewTools
             data.Weather = st;
             bool kept = st.HasData && st.Place == Town && MathF.Abs(st.Temp - 18.4f) < 0.01f;
             bool shows = wrist.WeatherStaleShown(data);
-            Log.Info($"weather stale: a fetch that fails keeps the last report {kept} (want True), marked stale {st.Stale} (want True), the watch shows it so {shows} (want True)");
+            Tools.Want($"weather stale: a fetch that fails keeps the last report {kept}, marked stale {st.Stale}, the watch shows it so {shows} -", kept && st.Stale && shows);
         }
         // nothing kept and no answer: why
         File.Delete(cache);
@@ -153,7 +153,8 @@ static class WeatherViewTools
             s.Active = true;
             var st = Wait(s, x => x.Status == WxStatus.Offline);
             data.Weather = st;
-            Log.Info($"weather offline: nothing kept and no answer says '{wrist.WeatherShown(data)}' (want No connection)");
+            string said = wrist.WeatherShown(data);
+            Tools.Want($"weather offline: nothing kept and no answer says '{said}' (want No connection)", said == "No connection");
         }
         // no place here or in Hexpad
         using (var s = new WeatherService { CachePath = cache, HexpadDir = emptyHex, Get = Answer })
@@ -167,7 +168,8 @@ static class WeatherViewTools
             Thread.Sleep(100);
             bool quiet;
             lock (asked) quiet = asked.Count == 0;
-            Log.Info($"weather no place: none here or in Hexpad says '{wrist.WeatherShown(data)}' (want Set a location), nothing asked of the network {quiet} (want True)");
+            string said = wrist.WeatherShown(data);
+            Tools.Want($"weather no place: none here or in Hexpad says '{said}' (want Set a location), nothing asked of the network {quiet} -", said == "Set a location" && quiet);
         }
         // Hexpad's place (a made-up Hexpad config and cache, read only): taken, and not looked up again
         string hex = Path.Combine(wd, "hexpad");
@@ -190,18 +192,22 @@ static class WeatherViewTools
                 atHex = asked.Any(u => u.Contains("latitude=10.5&longitude=20.25"));
             }
             bool untouched = File.ReadAllText(Path.Combine(hex, "config.json")) == hexCfg0;
-            Log.Info($"weather Hexpad: no place set - Hexpad's ('Starfall Bay', a made-up config) used {fromHex} (want True), where its own cache found it, not looked up " +
-                     $"again {noGeo && atHex} (want True), Hexpad's file unchanged {untouched} (want True)");
+            Tools.Want($"weather Hexpad: no place set - Hexpad's ('Starfall Bay', a made-up config) used {fromHex}, where its own cache found it, not looked up " +
+                       $"again {noGeo && atHex}, Hexpad's file unchanged {untouched} -", fromHex && noGeo && atHex && untouched);
             // the setting wins over Hexpad's
             lock (asked) asked.Clear();
             s.SetLocation(Town);
             var st2 = Wait(s, x => x.HasData && x.Place == Town);
-            Log.Info($"weather place: the setting wins over Hexpad's {st2.Place == Town && !st2.FromHexpad} (want True), looked up by its name {asked.Any(u => u.Contains("geocoding"))} (want True)");
+            bool looked;
+            lock (asked) looked = asked.Any(u => u.Contains("geocoding"));
+            Tools.Want($"weather place: the setting wins over Hexpad's {st2.Place == Town && !st2.FromHexpad}, looked up by its name {looked} -",
+                       st2.Place == Town && !st2.FromHexpad && looked);
             // a place the geocoding does not know
             s.SetLocation("Nowhere At All");
             var st3 = Wait(s, x => x.Status == WxStatus.NotFound);
             data.Weather = st3;
-            Log.Info($"weather place: one the geocoding does not know says '{wrist.WeatherShown(data)}' (want Place not found)");
+            string said = wrist.WeatherShown(data);
+            Tools.Want($"weather place: one the geocoding does not know says '{said}' (want Place not found)", said == "Place not found");
         }
         // °F: the same report in the other units
         var wx0 = cfg.Data.Weather;
@@ -210,15 +216,16 @@ static class WeatherViewTools
         cfg.Data.Weather = new WeatherConfig { Units = "f" };
         string f0 = wrist.WeatherShown(data);
         cfg.Data.Weather = wx0;
-        Log.Info($"weather units: 18.4 °C shows {c0} (want 18°), in °F {f0} (want 65°)");
-        Log.Info($"weather data: the next hours shown {wrist.WeatherHoursShown(data)} (want 12), days {wrist.WeatherDaysShown(data)} (want 6)");
+        Tools.Want($"weather units: 18.4 °C shows {c0} (want 18°), in °F {f0} (want 65°)", c0 == "18°" && f0 == "65°");
+        int hoursN = wrist.WeatherHoursShown(data), daysN = wrist.WeatherDaysShown(data);
+        Tools.Want($"weather data: the next hours shown {hoursN} (want 12), days {daysN} (want 6)", hoursN == 12 && daysN == 6);
         // the config: nothing written for the defaults, a place / units read back
         var opts = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
         string plain = System.Text.Json.JsonSerializer.Serialize(new Config(), opts);
         var set = new Config { Weather = new WeatherConfig { Location = Town, Units = "f" } };
         var rt = System.Text.Json.JsonSerializer.Deserialize<Config>(System.Text.Json.JsonSerializer.Serialize(set, opts), opts);
-        Log.Info($"weather config: a config without it writes nothing {!plain.Contains("\"Weather\"")} (want True), a place and °F read back " +
-                 $"{rt.Weather?.Location == Town && rt.Weather?.Units == "f"} (want True)");
+        Tools.Want($"weather config: a config without it writes nothing {!plain.Contains("\"Weather\"")}, a place and °F read back " +
+                   $"{rt.Weather?.Location == Town && rt.Weather?.Units == "f"} -", !plain.Contains("\"Weather\"") && rt.Weather?.Location == Town && rt.Weather?.Units == "f");
         data.Weather = Report();
         try { Directory.Delete(wd, true); } catch { }
     }
@@ -300,7 +307,7 @@ static class WeatherViewTools
         bool shut = x != null && !wrist.IsOpen;
         Settle(wrist, data);
         wrist.CloseForTest();
-        Log.Info($"weather view{tag}: a tap on the card opened it {opened} (want True), its X closed it {shut && !wrist.DetailShown} (want True)");
+        Tools.Want($"weather view{tag}: a tap on the card opened it {opened}, its X closed it {shut && !wrist.DetailShown} -", opened && shut && !wrist.DetailShown);
         // no garbage a frame: the weather sizes at rest, then opened
         wcfg.Widgets = new List<WatchWidget> { W(0, 0, 2, 2), W(2, 0, 4, 1), W(2, 1, 2, 1), W(4, 1, 1, 1) };
         long Bytes()
@@ -326,8 +333,8 @@ static class WeatherViewTools
         if (Environment.GetEnvironmentVariable("ORBIT_PERF_TYPES") == "1") Tools.WeatherAllocTypes("volume opened" + tag, () => wrist.Draw(data));
         wrist.CloseForTest();
         if (Environment.GetEnvironmentVariable("ORBIT_PERF_TYPES") == "1") Tools.WeatherAllocTypes("others" + tag, () => wrist.Draw(data));
-        Log.Info($"weather view{tag}: a frame of its sizes at rest makes {rest} B of garbage (want 0); opened {open} B - its window's frame, as every opened view's " +
-                 $"(the volume opened {otherOpen} B; a face of the batteries, now playing, the volume and the frame rate {other} B, an empty one {empty} B)");
+        Tools.Want($"weather view{tag}: a frame of its sizes at rest makes {rest} B of garbage (want 0); opened {open} B - its window's frame, as every opened view's " +
+                   $"(the volume opened {otherOpen} B; a face of the batteries, now playing, the volume and the frame rate {other} B, an empty one {empty} B) -", rest == 0);
     }
 
     static void Pictures(WristPanel wrist, PanelData data, WristConfig wcfg, Gpu gpu, string dir, string tag)
@@ -391,8 +398,8 @@ static class WeatherViewTools
             bool cleared = cfg.Data.Weather?.Location == null;
             ClickM(612 + 356 - 75, y0 + 24 + 19);
             bool none = cfg.Data.Weather == null && !cfg.Serialized().Contains("\"Weather\"");
-            Log.Info($"weather settings: Change asks the desktop window and keeps the place {set} (want True), °F picked {fahrenheit} (want True); " +
-                     $"an empty answer brings Hexpad's place back {cleared} (want True), °C again writes nothing {none} (want True)");
+            Tools.Want($"weather settings: Change asks the desktop window and keeps the place {set}, °F picked {fahrenheit}; " +
+                       $"an empty answer brings Hexpad's place back {cleared}, °C again writes nothing {none} -", set && fahrenheit && cleared && none);
             // VR (no text box): the button is shown only; Cyber; the 95 family's dialog
             view.AskText = null;
             cfg.Data.Weather = new WeatherConfig { Location = Town };
@@ -501,6 +508,7 @@ static partial class Tools
 
     static int WeatherOnly(WristPanel wrist, PanelData data, ConfigStore cfg, Painter painter, Gpu gpu, string dir)
     {
+        int failed0 = WantsFailed, layout = 0;
         var culture = CultureInfo.CurrentCulture;
         CultureInfo.CurrentCulture = SnapCulture;
         data.Weather = WeatherViewTools.Report();
@@ -511,7 +519,7 @@ static partial class Tools
             Theme.Apply(cfg.Data.Appearance);
             WeatherViewTools.Run(wrist, data, cfg, gpu, dir, tag);
             string f0 = cfg.Data.Wrist.Face;
-            LayoutCheckRun(wrist, data, cfg, painter, gpu, dir, tag.Length > 0 ? tag[1..] : "modern", onlyKind: "weather");
+            layout += LayoutCheckRun(wrist, data, cfg, painter, gpu, dir, tag.Length > 0 ? tag[1..] : "modern", onlyKind: "weather");
             cfg.Data.Wrist.Face = f0;
             cfg.Data.Wrist.Widgets = null;
         }
@@ -523,6 +531,6 @@ static partial class Tools
             WeatherViewTools.SettingsChecks(new SettingsView(host), new Ui(painter), surf, new PointerState(), painter, gpu, cfg, wrist, data, dir);
         CultureInfo.CurrentCulture = culture;
         Log.Info("snapshot (weather only) written to " + dir);
-        return 0;
+        return layout > 0 ? 1 : WantsExit(failed0);
     }
 }

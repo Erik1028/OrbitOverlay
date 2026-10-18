@@ -170,13 +170,20 @@ static class AvatarViewTools
         var a = Fox();
         string L(string name) => a.ByName.TryGetValue(name, out int i) ? a.Buttons[i].Label : "(left out)";
         AvatarKind? K(string name) => a.ByName.TryGetValue(name, out int i) ? a.Buttons[i].Kind : null;
-        Log.Info($"avatar filter: {a.Total} parameters, {a.Writable} writable (want 39, 36), {a.Buttons.Length} buttons (want 25); left out: face tracking " +
-                 $"{a.Dropped[(int)AvatarFilter.Why.FaceTracking]} (want 4), PhysBone {a.Dropped[(int)AvatarFilter.Why.PhysBone]} (want 3), helpers " +
-                 $"{a.Dropped[(int)AvatarFilter.Why.Helper]} (want 2), internal {a.Dropped[(int)AvatarFilter.Why.Internal]} (want 1), Orbit's own " +
-                 $"{a.Dropped[(int)AvatarFilter.Why.Orbit]} (want 1), not writable {a.Dropped[(int)AvatarFilter.Why.NotWritable]} (want 3)");
-        Log.Info($"avatar filter: names '{L("VF12_Clothes/Hoodie")}' (want Hoodie), '{L("VF3_VF12_Props/Hat")}' / '{L("Clothes/Hat")}' (want Hat (Props) / Hat (Clothes)), " +
-                 $"'{L("glassesOn")}' (want Glasses), '{L("ToggleTail")}' (want Tail), '{L("ShowWings")}' (want Wings), '{L("RGBMode")}' (want RGB Mode), '{L("Jump&Fall")}' (want Jump&Fall), " +
-                 $"'{L("EyeGlow")}' (want Eye Glow), '{L("Lipstick")}' (want Lipstick), '{L("Go/Locomotion")}' (want Locomotion)");
+        int D(AvatarFilter.Why w) => a.Dropped[(int)w];
+        Tools.Want($"avatar filter: {a.Total} parameters, {a.Writable} writable (want 39, 36), {a.Buttons.Length} buttons (want 25); left out: face tracking " +
+                   $"{D(AvatarFilter.Why.FaceTracking)} (want 4), PhysBone {D(AvatarFilter.Why.PhysBone)} (want 3), helpers {D(AvatarFilter.Why.Helper)} (want 2), " +
+                   $"internal {D(AvatarFilter.Why.Internal)} (want 1), Orbit's own {D(AvatarFilter.Why.Orbit)} (want 1), not writable {D(AvatarFilter.Why.NotWritable)} (want 3)",
+                   a.Total == 39 && a.Writable == 36 && a.Buttons.Length == 25 && D(AvatarFilter.Why.FaceTracking) == 4 && D(AvatarFilter.Why.PhysBone) == 3 &&
+                   D(AvatarFilter.Why.Helper) == 2 && D(AvatarFilter.Why.Internal) == 1 && D(AvatarFilter.Why.Orbit) == 1 && D(AvatarFilter.Why.NotWritable) == 3);
+        var names = new (string name, string label)[]
+        {
+            ("VF12_Clothes/Hoodie", "Hoodie"), ("VF3_VF12_Props/Hat", "Hat (Props)"), ("Clothes/Hat", "Hat (Clothes)"), ("glassesOn", "Glasses"), ("ToggleTail", "Tail"),
+            ("ShowWings", "Wings"), ("RGBMode", "RGB Mode"), ("Jump&Fall", "Jump&Fall"), ("EyeGlow", "Eye Glow"), ("Lipstick", "Lipstick"), ("Go/Locomotion", "Locomotion"),
+        };
+        Tools.Want($"avatar filter: names '{L("VF12_Clothes/Hoodie")}' (want Hoodie), '{L("VF3_VF12_Props/Hat")}' / '{L("Clothes/Hat")}' (want Hat (Props) / Hat (Clothes)), " +
+                   $"'{L("glassesOn")}' (want Glasses), '{L("ToggleTail")}' (want Tail), '{L("ShowWings")}' (want Wings), '{L("RGBMode")}' (want RGB Mode), '{L("Jump&Fall")}' (want Jump&Fall), " +
+                   $"'{L("EyeGlow")}' (want Eye Glow), '{L("Lipstick")}' (want Lipstick), '{L("Go/Locomotion")}' (want Locomotion)", names.All(n => L(n.name) == n.label));
         bool kinds = K("VF12_Clothes/Hoodie") == AvatarKind.Toggle && K("Outfit") == AvatarKind.Stepper && K("HueShift") == AvatarKind.Slider &&
                      K("ShowWings") == AvatarKind.Toggle && K("RGBMode") == AvatarKind.Stepper;
         bool gone = new[] { "EarsPhys_IsGrabbed", "EarsPhys_Angle", "FT/v2/JawOpen", "EyeLeftX", "MouthSmileLeft", "v2/EyeLid", "VF7_HueSync", "OSCm/Proxy/JawOpen",
@@ -187,12 +194,13 @@ static class AvatarViewTools
         var picked = new List<int>();
         AvatarFilter.Shown(a, new List<string> { "HueShift", "Outfit", "nope", "VF12_Clothes/Hoodie" }, picked);
         bool order = picked.Count == 3 && a.Buttons[picked[0]].Name == "HueShift" && a.Buttons[picked[2]].Name == "VF12_Clothes/Hoodie";
-        Log.Info($"avatar filter: a bool a toggle, an int a stepper (one named Show... a toggle), a float a slider {kinds} (want True); face tracking, PhysBone, " +
-                 $"helpers, internals, Orbit's own and the read-only ones left out {gone} (want True); the default {def.Count} are toggles, the prefab's last {toggles} " +
-                 $"(want True); picks shown in their order, an unknown one skipped {order} (want True)");
+        Tools.Want($"avatar filter: a bool a toggle, an int a stepper (one named Show... a toggle), a float a slider {kinds}; face tracking, PhysBone, " +
+                   $"helpers, internals, Orbit's own and the read-only ones left out {gone}; the default {def.Count} are toggles, the prefab's last {toggles}; " +
+                   $"picks shown in their order, an unknown one skipped {order} -", kinds && gone && toggles && order);
         // the words: VRCFury's nested prefix, a run of capitals, a number
-        Log.Info($"avatar filter: '{AvatarFilter.Label("VF1_VF22_Hats/topHat2")}' (want Top Hat 2), '{AvatarFilter.Label("toggle_hood_up")}' (want Hood up), " +
-                 $"'{AvatarFilter.Label("LEDColor")}' (want LED Color), '{AvatarFilter.StripVf("VF12_")}' (want VF12_)");
+        string l1 = AvatarFilter.Label("VF1_VF22_Hats/topHat2"), l2 = AvatarFilter.Label("toggle_hood_up"), l3 = AvatarFilter.Label("LEDColor"), l4 = AvatarFilter.StripVf("VF12_");
+        Tools.Want($"avatar filter: '{l1}' (want Top Hat 2), '{l2}' (want Hood up), '{l3}' (want LED Color), '{l4}' (want VF12_)",
+                   l1 == "Top Hat 2" && l2 == "Hood up" && l3 == "LED Color" && l4 == "VF12_");
     }
 
     static void LinkChecks(WristPanel wrist, PanelData data, string dir)
@@ -293,8 +301,9 @@ static class AvatarViewTools
         l.ReadNow();
         bool off = l.State.Status == AvatarStatus.NoVrchat;
         string sayOff = wrist.AvatarSays(data);
-        Log.Info($"avatar link: another avatar's buttons {cat} (want True); one without a config {none} '{sayNone}' (want True No OSC config for this avatar); " +
-                 $"VRChat not running {off} '{sayOff}' (want True VRChat isn't running)");
+        Tools.Want($"avatar link: another avatar's buttons {cat}; one without a config {none} '{sayNone}' (want No OSC config for this avatar); " +
+                   $"VRChat not running {off} '{sayOff}' (want VRChat isn't running) -",
+                   cat && none && sayNone == "No OSC config for this avatar" && off && sayOff == "VRChat isn't running");
         // no OSCQuery: your own last switch in the newest log (another player's after it does not count), a later one followed; no
         // log: the config written last
         running = true;
@@ -315,8 +324,8 @@ static class AvatarViewTools
         File.Delete(log);
         l.ReadNow();
         bool newest = l.State.Source == AvatarSource.Newest && l.State.Avatar?.Name == "Made-up Cat";
-        Log.Info($"avatar link: no OSCQuery - your own switch from the log (you named after the first look), another player's not {fromLog} (want True), a later switch followed {followed} (want True); " +
-                 $"no log - the config written last {newest} (want True)");
+        Tools.Want($"avatar link: no OSCQuery - your own switch from the log (you named after the first look), another player's not {fromLog}, a later switch followed {followed}; " +
+                   $"no log - the config written last {newest} -", fromLog && followed && newest);
         // a local test build worn (its id no file name): live, its config the one of the name in the log
         query = true;
         worn = "local:00000000-0000-4000-8000-00000000f0c5";
@@ -325,18 +334,21 @@ static class AvatarViewTools
             "2026.10.18 10:00:05 Debug      -  [Behaviour] Switching Made-up Tester to avatar Made-up Fox\n");
         l.ReadNow();
         bool local = l.State.Ready && l.State.Live && l.State.Avatar?.Name == "Made-up Fox";
-        Log.Info($"avatar link: a local test build worn - live, its config found by the log's name {local} (want True)");
+        Tools.Want("avatar link: a local test build worn - live, its config found by the log's name", local);
         // the configs were only read
         bool same = File.ReadAllBytes(foxFile).SequenceEqual(Bytes(Json(FoxId, "Made-up Fox", FoxParams)));
-        Log.Info($"avatar link: the configs read, never written {same} (want True)");
+        Tools.Want("avatar link: the configs read, never written", same);
         // a tree of VRChat's with the paths nested (a / in a name), bools as true / false
         var (tid, tv) = AvatarLink.ParseTree(Tree(FoxId, FoxParams, n => FoxValues().TryGetValue(n, out float v) ? v : 0));
         // a bool told by its type tag alone, a path with an escaped space
         var (_, tv2) = AvatarLink.ParseTree("{\"FULL_PATH\":\"/avatar\",\"CONTENTS\":{\"parameters\":{\"FULL_PATH\":\"/avatar/parameters\",\"CONTENTS\":{" +
             "\"A\":{\"FULL_PATH\":\"/avatar/parameters/A\",\"TYPE\":\"T\"},\"B C\":{\"FULL_PATH\":\"/avatar/parameters/B%20C\",\"TYPE\":\"f\",\"VALUE\":[0.5]}}}}}");
-        Log.Info($"avatar link: VRChat's tree read: the id {tid == FoxId} (want True), a nested bool {tv?.GetValueOrDefault("/avatar/parameters/VF12_Clothes/Hoodie")} " +
-                 $"(want 1), an int {tv?.GetValueOrDefault("/avatar/parameters/Outfit")} (want 2), a bool by its type tag {tv2?.GetValueOrDefault("/avatar/parameters/A")} " +
-                 $"(want 1), an escaped space {tv2?.GetValueOrDefault("/avatar/parameters/B C")} (want 0.5), HOST_INFO's port {AvatarLink.HostOscPort(HostInfo)} (want 9010)");
+        float? T(Dictionary<string, float> t, string addr) => t != null && t.TryGetValue(addr, out float v) ? v : null;
+        float? nested = T(tv, "/avatar/parameters/VF12_Clothes/Hoodie"), outfitV = T(tv, "/avatar/parameters/Outfit"), byTag = T(tv2, "/avatar/parameters/A"),
+               spaced = T(tv2, "/avatar/parameters/B C");
+        Tools.Want($"avatar link: VRChat's tree read: the id {tid == FoxId}, a nested bool {nested} (want 1), an int {outfitV} (want 2), a bool by its type tag {byTag} " +
+                   $"(want 1), an escaped space {spaced} (want 0.5), HOST_INFO's port {AvatarLink.HostOscPort(HostInfo)} (want 9010) -",
+                   tid == FoxId && nested == 1 && outfitV == 2 && byTag == 1 && spaced == 0.5f && AvatarLink.HostOscPort(HostInfo) == 9010);
         Directory.Delete(root, true);
     }
 
@@ -389,8 +401,11 @@ static class AvatarViewTools
             float k = classic ? 2 : 1;
             Tap(wrist, data, new Vector2((c1.X + c1.Width / 2) * k, (c1.Y + c1.Height * 0.6f) * k));
             string one = Last();
-            Log.Info($"avatar view{tag}: a tap on a toggle sent '{hood}' (want /avatar/parameters/VF12_Clothes/Hoodie False), on a stepper's + '{step}' " +
-                     $"(want /avatar/parameters/Outfit 3), on the 1x1 '{one}' (want /avatar/parameters/VF12_Clothes/Hoodie True)");
+            // (a tile not found taps nothing: the line shows what was sent before, and fails)
+            Tools.Want($"avatar view{tag}: a tap on a toggle sent '{hood}' (want /avatar/parameters/VF12_Clothes/Hoodie False), on a stepper's + '{step}' " +
+                       $"(want /avatar/parameters/Outfit 3), on the 1x1 '{one}' (want /avatar/parameters/VF12_Clothes/Hoodie True)",
+                       t0 != null && t1 != null && hood == "/avatar/parameters/VF12_Clothes/Hoodie False" && step == "/avatar/parameters/Outfit 3" &&
+                       one == "/avatar/parameters/VF12_Clothes/Hoodie True");
             // a tap on the 2x2's header opens all of them; the stick scrolls; a tap in it sends; its X closes
             var card = WatchWidgets.CellRect(0, 0, 2, 2, classic);
             Tap(wrist, data, new Vector2((card.X + card.Width * 0.5f) * k, (card.Y + (classic ? 7 : 14)) * k));
@@ -414,8 +429,9 @@ static class AvatarViewTools
             for (int i = 0; i < 11; i++) { Thread.Sleep(30); wrist.Draw(data); }
             bool shut = !wrist.IsOpen;
             wrist.CloseForTest();
-            Log.Info($"avatar view{tag}: a tap on the header opened it {opened} (want True) with {tiles} buttons drawn (want more than 0), the stick scrolled it " +
-                     $"{scrolled > 0} (want True), a tap in it sent '{inView}' (want a parameter), its X closed it {shut} (want True)");
+            Tools.Want($"avatar view{tag}: a tap on the header opened it {opened} with {tiles} buttons drawn (want more than 0), the stick scrolled it {scrolled > 0}, " +
+                       $"a tap in it sent '{inView}' (want a parameter), its X closed it {shut} -",
+                       opened && tiles > 0 && scrolled > 0 && inView.StartsWith("/avatar/parameters/", StringComparison.Ordinal) && shut);
             // no garbage a frame at rest (only avatar widgets: the time's own text is not this widget's)
             wcfg.Widgets = Face64().Where(x => x.Type == "avatar").ToList();
             long Bytes()
@@ -440,8 +456,8 @@ static class AvatarViewTools
             wrist.OpenForTest("light");
             long shared = Bytes();
             wrist.CloseForTest();
-            Log.Info($"avatar view{tag}: a frame at rest makes {rest} B of garbage (want 0), without VRChat {none} B (want 0), opened {open} B (want 0, or no " +
-                     $"more than the style's own window: the light's opened makes {shared} B)");
+            Tools.Want($"avatar view{tag}: a frame at rest makes {rest} B of garbage (want 0), without VRChat {none} B (want 0), opened {open} B (want 0, or no " +
+                       $"more than the style's own window: the light's opened makes {shared} B)", rest == 0 && none == 0 && open <= shared);
             // the pictures
             void Shot(string name, List<WatchWidget> face, AvatarState s, string grid = null, bool openIt = false)
             {
@@ -520,6 +536,7 @@ static partial class Tools
     // the editor with an avatar widget selected
     static int AvatarOnly(WristPanel wrist, PanelData data, ConfigStore cfg, Painter painter, Gpu gpu, string dir)
     {
+        int failed0 = WantsFailed, layout = 0;
         var culture = System.Globalization.CultureInfo.CurrentCulture;
         System.Globalization.CultureInfo.CurrentCulture = SnapCulture;
         AvatarViewTools.DataChecks(wrist, data, dir);
@@ -532,7 +549,7 @@ static partial class Tools
             AvatarViewTools.Run(wrist, data, cfg, gpu, dir, tag);
             AvatarViewTools.Fake(data);
             string f0 = cfg.Data.Wrist.Face;
-            LayoutCheckRun(wrist, data, cfg, painter, gpu, dir, tag.Length > 0 ? tag[1..] : "modern", onlyKind: "avatar");
+            layout += LayoutCheckRun(wrist, data, cfg, painter, gpu, dir, tag.Length > 0 ? tag[1..] : "modern", onlyKind: "avatar");
             cfg.Data.Wrist.Face = f0;
             cfg.Data.Wrist.Widgets = null;
         }
@@ -540,10 +557,10 @@ static partial class Tools
         cfg.Data.Appearance = new AppearanceConfig { Clock24h = true };
         Theme.Apply(cfg.Data.Appearance);
         AvatarViewTools.Fake(data);
-        StylesRun(wrist, data, painter, cfg, gpu, dir);           // every kind in every look (the avatar's among them): edges, bands, contrast
+        layout += StylesRun(wrist, data, painter, cfg, gpu, dir);           // every kind in every look (the avatar's among them): edges, bands, contrast
         System.Globalization.CultureInfo.CurrentCulture = culture;
         Log.Info("snapshot (avatar only) written to " + dir);
-        return 0;
+        return layout > 0 ? 1 : WantsExit(failed0);
     }
 
     // the watch editor with an avatar widget selected: Modern, Cyber (chips under the watch), 95 (its line, its dialog); a pick changes
@@ -614,7 +631,7 @@ static partial class Tools
                     dialog = Crossings();
                     view.AvatarDialogForTest(false);
                 }
-                Log.Info($"avatar editor {name}: {crossed} control(s) crossing another (want 0){(classic ? $", the dialog {dialog} (want 0)" : "")}");
+                Tools.Want($"avatar editor {name}: {crossed} control(s) crossing another (want 0){(classic ? $", the dialog {dialog} (want 0)" : "")}", crossed == 0 && dialog == 0);
             }
             // the desktop window: letters typed narrow the chips ("ha": Hat (Props), Hat (Clothes), Shades)
             cfg.Data.Appearance = new AppearanceConfig { Clock24h = true };
@@ -630,7 +647,7 @@ static partial class Tools
             Draw(false);
             int all = hits.Where(h => h.id.StartsWith("wavp", StringComparison.Ordinal)).Select(h => h.id).Distinct().Count();
             view.AskFile = ask0;
-            Log.Info($"avatar editor: \"ha\" typed in the desktop window leaves {chips} chips (want 3), Esc all of the first page {all} (want 16)");
+            Tools.Want($"avatar editor: \"ha\" typed in the desktop window leaves {chips} chips (want 3), Esc all of the first page {all} (want 16)", chips == 3 && all == 16);
             // a pick in the editor: the widget shows it at its end (the first pick starts from what the widget showed)
             cfg.Data.Avatars.Shown.Remove(AvatarViewTools.FoxId);
             cfg.Data.Appearance = new AppearanceConfig { Clock24h = true };
@@ -641,8 +658,8 @@ static partial class Tools
             wrist.Draw(data);
             string after = wrist.AvatarShownLabels(data);
             var mine = cfg.Data.Avatars.Shown.GetValueOrDefault(AvatarViewTools.FoxId);
-            Log.Info($"avatar editor: a pick added Hue Shift after the {before.Split(", ").Length} shown {after == before + ", Hue Shift"} (want True), kept for this " +
-                     $"avatar only {mine?.Count == 13 && cfg.Data.Avatars.Shown.Count == 1} (want True)");
+            Tools.Want($"avatar editor: a pick added Hue Shift after the {before.Split(", ").Length} shown {after == before + ", Hue Shift"}, kept for this " +
+                       $"avatar only {mine?.Count == 13 && cfg.Data.Avatars.Shown.Count == 1} -", after == before + ", Hue Shift" && mine?.Count == 13 && cfg.Data.Avatars.Shown.Count == 1);
         }
         finally
         {

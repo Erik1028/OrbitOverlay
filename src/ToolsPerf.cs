@@ -23,6 +23,7 @@ static partial class Tools
         ConfigStore cfg, KeyboardPanel kb, PanelData data, string dir, IReadOnlyList<MonitorInfo> mons, Windows.Graphics.DirectX.Direct3D11.IDirect3DDevice dev)
     {
         System.Globalization.CultureInfo.CurrentCulture = SnapCulture;
+        int failed0 = WantsFailed;
         bool still = Motion.Still;
         Motion.Still = false;                          // the loops run as on the headset
         bool types = Environment.GetEnvironmentVariable("ORBIT_PERF_TYPES") == "1";
@@ -180,7 +181,7 @@ static partial class Tools
 
         File.WriteAllLines(Path.Combine(dir, "perf.tsv"), rows.Select(r => $"{r.style}\t{r.what}\t{r.ms:0.000}\t{r.bytes}\t{r.layouts:0.0}"));
         Motion.Still = still;
-        return 0;
+        return WantsExit(failed0);
     }
 
     static int _perfFrames;
@@ -270,7 +271,7 @@ static partial class Tools
         ui.ResetAnimations();
         cfg.Data.Appearance.Style = style0;
         Theme.Apply(cfg.Data.Appearance);
-        Log.Info($"perf: the retro styles' pixel text from kept layouts against DrawText, {shots} pictures: {diff} pixels differ (want 0)");
+        Want($"perf: the retro styles' pixel text from kept layouts against DrawText, {shots} pictures: {diff} pixels differ (want 0)", diff == 0 && shots > 0);
     }
 
     // the modern keyboard's kept picture (KeyboardPanel.Draw: the frame and the keys at rest kept, only the keys doing something drawn
@@ -314,7 +315,7 @@ static partial class Tools
         typeof(KeyboardPanel).GetField("_chat", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.SetValue(kb, false);
         cfg.Data.Appearance.Style = style0;
         Theme.Apply(cfg.Data.Appearance);
-        Log.Info($"perf: the modern keyboard's kept picture against the whole picture drawn, {shots} states: {diff} pixels differ (want 0)");
+        Want($"perf: the modern keyboard's kept picture against the whole picture drawn, {shots} states: {diff} pixels differ (want 0)", diff == 0 && shots > 0);
     }
 
     // the VR settings panel's corners cut after drawing (Painter.CutCorners) against the clip layer they replaced, every tab: the
