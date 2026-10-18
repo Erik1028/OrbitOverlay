@@ -13,7 +13,8 @@ namespace Orbit;
 //  - the picture (sort 2, 0.15 m nearer - at one distance SteamVR swapped two layers now and then): the style's own backdrop. Its
 //    alpha deepens the dark round the screen (a vignette: the world shows least round the film, more behind you and up high) and its
 //    colours are light on that dark. It is drawn once, on a thread of its own (30-120 ms: nothing waits - the black wall is there
-//    meanwhile, the picture fades in when it comes), and kept until the style changes.
+//    meanwhile, the picture fades in when it comes) into one buffer kept for every draw, put into the texture a quarter a frame, and
+//    kept until the style changes. (Theater off, it is drawn ahead: TheaterWarm.cs.)
 // The backdrops (TheaterBackdropRetro.cs for the retro ones):
 //  - Modern: a dark cinema hall - the screen's light in a faint pool on the floor below it, rows of seat backs in silhouette against
 //    it, a few warm step lights down the aisles;
@@ -55,8 +56,12 @@ public sealed partial class Theater
     float _backLit;                   // how far its lights are up (BackdropLit: they never jump)
     Thread _job;                      // drawing one (one at a time)
     Backdrop _jobKind, _backFailed;
-    uint[] _jobPx;
+    uint[] _jobBuf, _jobPx;           // the pixels: one buffer kept for every draw (8 MB: a new one each time was a gen2 GC, every thread stopped)
     long _jobMs;
+    uint[] _upload;                   // the picture drawn, on its way into the texture a slice a frame (8 MB in one go was a 3 ms frame)
+    int _uploadRow;
+    Backdrop _uploadKind;
+    const int UploadSlices = 4;
     public long BackdropMs => _jobMs;          // how long the last one took to draw (the log; --snapshot)
 
     void CreateBackdrop()
@@ -114,6 +119,12 @@ public sealed partial class Theater
             _cityOn = false;
         }
         if (want == Backdrop.None || want == _backFailed || (_backTex != null && _backKind == want)) return;
+        if (_upload != null)
+        {
+            // drawn, going into the texture a slice a frame
+            if (_uploadKind == want) { UploadSlice(); return; }
+            _upload = null;                                                 // (the style changed meanwhile: dropped, the new one drawn below)
+        }
         if (_job != null)
         {
             if (_job.IsAlive) return;
@@ -122,16 +133,30 @@ public sealed partial class Theater
             if (px == null) { _backFailed = _jobKind; return; }          // it threw (the log says why): the black wall, no retrying
             if (_jobKind == want)
             {
-                _backTex ??= new Surface(_g, BackW, BackH);                 // one texture, whichever style's picture is in it
-                _g.Ctx.UpdateSubresource(px, _backTex.Tex, 0, BackW * 4, 0, null);
-                _backKind = want;
-                _backSet = Backdrop.None;
                 Log.Info($"theater: the {want} backdrop drawn in {_jobMs} ms");
+                _upload = px;
+                _uploadRow = 0;
+                _uploadKind = want;
+                UploadSlice();
                 return;
             }
         }
         // the style changed while one was drawn: that one is dropped, this one drawn now
         BackdropJob(want);
+    }
+
+    // the next quarter of the picture into the texture; the last one makes it the picture in use (the overlay is given it then)
+    void UploadSlice()
+    {
+        if (_backTex == null) { _backTex = new Surface(_g, BackW, BackH); return; }    // one texture, whichever style's picture is in it (its own frame: 8 MB)
+        int y0 = _uploadRow, y1 = Math.Min(BackH, y0 + BackH / UploadSlices);
+        _g.Ctx.UpdateSubresource<uint>(_upload.AsSpan(y0 * BackW, (y1 - y0) * BackW), _backTex.Tex, 0, BackW * 4, 0,
+            new Vortice.Mathematics.Box(0, y0, 0, BackW, y1, 1));
+        _uploadRow = y1;
+        if (y1 < BackH) return;
+        _upload = null;
+        _backKind = _uploadKind;
+        _backSet = Backdrop.None;
     }
 
     // (its own method: the lambda's closure over 'want' is made only here - in BackdropTextures the compiler made it on entry, every
@@ -144,9 +169,10 @@ public sealed partial class Theater
             try
             {
                 var sw = Stopwatch.StartNew();
-                var px = PaintBackdrop(want);
+                var buf = _jobBuf ??= new uint[BackW * BackH];     // (the first time, here: 8 MB made and cleared off the main thread)
+                PaintBackdrop(want, buf);
                 _jobMs = sw.ElapsedMilliseconds;
-                Volatile.Write(ref _jobPx, px);
+                Volatile.Write(ref _jobPx, buf);
             }
             catch (Exception e) { Log.Error("theater backdrop: " + e); }
         }) { IsBackground = true, Name = "theater backdrop", Priority = ThreadPriority.BelowNormal };
@@ -158,6 +184,7 @@ public sealed partial class Theater
         _backTex?.Dispose();
         _backTex = null;
         _backKind = _backSet = Backdrop.None;
+        _upload = null;                   // (a picture half way into the texture goes with it: drawn again when that style is back)
     }
 
     // how much of the picture shows as theater comes in (t: 0..1). Full motion: the picture comes up a little after the dimming, like the
@@ -230,6 +257,14 @@ public sealed partial class Theater
 
     public static uint[] PaintBackdrop(Backdrop k)
     {
+        var px = new uint[BackW * BackH];
+        PaintBackdrop(k, px);
+        return px;
+    }
+
+    // into px (BackW x BackH; cleared first: the rows past the fade are left clear)
+    public static void PaintBackdrop(Backdrop k, uint[] px)
+    {
         Art art = k switch
         {
             Backdrop.Starfield => new StarfieldArt(),
@@ -239,7 +274,7 @@ public sealed partial class Theater
             Backdrop.Phosphor => new PhosphorArt(),
             _ => new HallArt(),
         };
-        var px = new uint[BackW * BackH];
+        Array.Clear(px);
         float[] a = new float[BackW], r = new float[BackW], g = new float[BackW], b = new float[BackW];
         for (int y = 0; y < BackH; y++)
         {
@@ -261,7 +296,6 @@ public sealed partial class Theater
             }
         }
         art.Sprites(px);
-        return px;
     }
 
     static uint Q(float v, float n) => (uint)Math.Clamp((int)(v * 255 + n), 0, 255);

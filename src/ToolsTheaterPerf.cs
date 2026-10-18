@@ -284,6 +284,7 @@ static partial class Tools
             double was = pre.SumMs;
             Frame(pre);
             if (pre.SumMs - was >= 0.5) pieces.Append($" frame {i + 1}: {pre.SumMs - was:0.0};");      // (a piece made: the city, the band ...)
+            if (!Theme.Cyber) Thread.Sleep(1);     // (a backdrop is drawn on a thread, ~35 ms: in the app these 45 frames are 0.5 s and it lands in them)
         }
         int gcPreN = GC.CollectionCount(0) - gcPre;
         PerfTrace.Reset();
