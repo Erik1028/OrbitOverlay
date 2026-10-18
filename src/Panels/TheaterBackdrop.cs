@@ -122,6 +122,7 @@ public sealed partial class Theater
             _city?.Dispose(); _city = null;
             _sky?.Dispose(); _sky = null;
             _cityOn = false;
+            LifeDrop();                     // (the band's read-back left half way goes with it: TheaterCityLife.cs)
         }
         if (want == Backdrop.None || want == _backFailed || (_backTex != null && _backKind == want)) return;
         if (_upload != null)
@@ -142,6 +143,10 @@ public sealed partial class Theater
                 _upload = px;
                 _uploadRow = 0;
                 _uploadKind = want;
+                // the texture holds no whole picture from its first slice on: the style going back to the one before within the upload's
+                // frames must draw that one again - it found "_backKind == want" above and kept the half and half (the new one's top over
+                // the old one's rest) as its backdrop
+                _backKind = Backdrop.None;
                 UploadSlice();
                 return;
             }
@@ -198,6 +203,7 @@ public sealed partial class Theater
     public static float BackdropLights(Backdrop k, float t, bool coming, bool full)
     {
         if (!coming || !full) return 1;
+        if (k == Backdrop.None) return Smooth01((t - 0.45f) / 0.45f);         // Cyber's city: its lights after the wall's tube (TheaterCyber.cs)
         if (k == Backdrop.Phosphor)
         {
             float w = Smooth01((t - 0.15f) / 0.85f);
@@ -248,6 +254,8 @@ public sealed partial class Theater
 
     public bool CityHeldForTest => _city != null || _sky != null;
     public bool BackdropHeldForTest => _backTex != null;
+    public void BackdropFrameForTest(Backdrop k) => BackdropTextures(k);     // a frame's share of it: a picture's job looked at, a slice uploaded
+    public bool BackdropUploadingForTest => _upload != null;
     // what the wall's overlay was given last (a fake SteamVR): the black wall / the city
     public bool WallIsBlackForTest => _dim != null && _dim.TextureForTest == _black.Tex.NativePointer;
     public bool WallIsCityForTest => _dim != null && _city != null && _dim.TextureForTest == _city.Tex.NativePointer;

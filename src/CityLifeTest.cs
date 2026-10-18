@@ -17,6 +17,9 @@ namespace Orbit;
 //  - the cars: in the city's level frame (level, facing you), nearer than the band and behind the screen, never near the screen and its
 //    glow, slow, at most three, fading smoothly;
 //  - Motion Reduced / Off, theater gone: the band back to exactly the city as drawn, the cars away, nothing done a frame;
+//  - in VR (a fake SteamVR): the warm-up's read-back of the band interrupted half way (the style changed, Motion turned down, SteamVR
+//    gone) - nothing of it held after; a quick off / on as theater comes in - the skyline never brighter after the off, the tube's blink
+//    not played a second time;
 //  - pictures in <dir>/citylife: a stretch of the band over seconds (windows, a sign, antennas), a sign's stutter and an antenna's beat
 //    tick by tick, the whole skyline with the cars over 17 s (the screen's place greyed), a car crossing, the cars' textures.
 static partial class Tools
@@ -294,7 +297,91 @@ static partial class Tools
             Want($"{(drone ? "drone" : "car")} texture {w}x{h}: nothing at its rim ({rim}, want 3 or less), soft (the biggest alpha step between texels {step}, want 110 or less)",
                 rim <= 3 && step <= 110);
         }
+        CityInVr(painter, gpu, Want);
         return fails;
+    }
+
+    // in VR (a fake SteamVR: the overlays exist, nothing is sent), with theater off the warm-up (TheaterWarm.cs) and a theater coming in
+    static void CityInVr(Painter painter, Gpu gpu, Action<string, bool> Want)
+    {
+        bool fake0 = VrOverlay.Fake;
+        VrOverlay.Fake = true;
+        try
+        {
+            var vr = new VrSession();
+            vr.Device[0] = Matrix4x4.CreateTranslation(0, 1.5f, 0);
+            vr.DeviceValid[0] = true;
+            var scr = new AmbScreen { HomeWorld = Matrix4x4.CreateTranslation(0, 1.4f, -1.1f) };
+            var live = new List<ITheaterScreen> { scr };
+            var tcfg = new TheaterConfig();
+            using var tv = new Theater(gpu, painter) { LifeSeed = 1018 };
+            tv.CreateOverlay();
+            void Frame() => tv.Update(vr, 1 / 90f, tcfg.Dim, live);
+            // theater off: frames until the warm-up is half way through the band's read-back (1: copied, 3: being read out)
+            bool HalfWay() { for (int i = 0; i < 60; i++) { Frame(); if (tv.LifeStateForTest is 1 or 3) return true; } return false; }
+            Theme.Apply(new AppearanceConfig { Style = CyberHud.Id });
+            Motion.Level = MotionLevel.Full;
+            bool half1 = HalfWay();
+            Theme.Apply(new AppearanceConfig { Style = "modern" });
+            Frame(); Frame();
+            bool style = tv.LifeStateForTest == 0 && !tv.LifeHeldForTest;
+            Theme.Apply(new AppearanceConfig { Style = CyberHud.Id });
+            bool half2 = HalfWay();
+            Motion.Level = MotionLevel.Reduced;
+            Frame();
+            bool motion = tv.LifeStateForTest == 0 && !tv.LifeHeldForTest;
+            Motion.Level = MotionLevel.Full;
+            bool half3 = HalfWay();
+            tv.DestroyOverlay();
+            bool steamvr = tv.LifeStateForTest == 0 && !tv.LifeHeldForTest;
+            tv.CreateOverlay();
+            for (int i = 0; i < 300 && !tv.LifeReadyForTest; i++) { Frame(); System.Threading.Thread.Sleep(1); }
+            Want($"warm-up: the band's read-back half way ({half1}, {half2}, {half3}) and then let go with it - the style changed {style} (want True), Motion " +
+                 $"turned down {motion} (want True), SteamVR gone {steamvr} (want True); back in Cyber it is read through {tv.LifeReadyForTest}",
+                half1 && half2 && half3 && style && motion && steamvr && tv.LifeReadyForTest);
+
+            // a quick off as it comes in, the city's lights on their way up: from the off on the skyline is never brighter than the frame before
+            for (int i = 0; i < 10; i++) Frame();
+            tv.Start(scr, scr, vr, tcfg);
+            for (int i = 0; i < 3; i++) Frame();
+            for (int i = 0; i < 60 && tv.PowerUpForTest.city < 0.3f; i++) Frame();
+            float band0 = tv.BandAlphaForTest, city0 = tv.PowerUpForTest.city;
+            bool halfUp = city0 >= 0.3f && city0 < 0.9f;
+            tv.Stop(vr, tcfg);
+            float last = band0, most = 0;
+            for (int i = 0; i < 60; i++) { Frame(); float b = tv.BandAlphaForTest; most = MathF.Max(most, b - last); last = b; }
+            bool noPop = most <= 1e-4f;
+            // the tube: off in the middle of its blink and on again on the way out - it carries on from there, its two blinks played once
+            // (the frames the wall shows)
+            for (int i = 0; i < 60; i++) Frame();
+            var tube = new List<float>();
+            void Rec(int n) { for (int i = 0; i < n; i++) { Frame(); if (tv.WallUpForTest) tube.Add(tv.PowerUpForTest.tube); } }
+            tv.Start(scr, scr, vr, tcfg);
+            int k = 0;
+            while (k++ < 40 && !(tube.Count > 0 && tube[^1] == 0.15f)) Rec(1);
+            bool midBlink = tube.Count > 0 && tube[^1] == 0.15f;
+            tv.Stop(vr, tcfg);
+            int offAt = tube.Count;
+            Rec(3);
+            bool held = true;
+            for (int i = offAt; i < tube.Count; i++) held &= tube[i] == tube[offAt - 1];
+            tv.Start(scr, scr, vr, tcfg);
+            Rec(90);
+            int drops = 0;
+            for (int i = 1; i < tube.Count; i++) if (tube[i] < tube[i - 1] - 1e-4f) drops++;
+            tv.Stop(null, tcfg);
+            tv.DestroyOverlay();
+            Want($"a quick off as it comes in (the city's lights at {city0:0.00} {halfUp}, the band at {band0:0.00}): the band never brighter after it - the " +
+                 $"most it rose {most:0.0000} (want 0) {noPop} (want True); the tube off mid-blink ({midBlink}) held there {held} (want True), on again it " +
+                 $"carried on - {drops} drop(s) in all (want 2: its own two blinks)", halfUp && midBlink && noPop && held && drops == 2);
+        }
+        finally
+        {
+            VrOverlay.Fake = fake0;
+            VrOverlay.Calls.Reset();
+            Theme.Apply(new AppearanceConfig { Style = CyberHud.Id, Clock24h = true });     // (CityLifeOnly's look, put back after it)
+            Motion.Level = MotionLevel.Full;
+        }
     }
 
     static (int n, int max) TexelDiff(uint[] a, uint[] b)

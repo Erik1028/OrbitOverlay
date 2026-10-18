@@ -26,6 +26,7 @@ public sealed partial class Theater
         if (FloorTextureStep(FloorWarmRows)) return;                           // (the floor's three, a quarter of one a frame: TheaterFloor.cs)
         if (_hzRingTex == null || _hzSparkTex == null) { EnsureHorizonTex(); return; }
         if (_carTex == null || _droneTex == null) { CarTextures(); return; }
-        if (_lifeState != 2 && _lifeState != 4 && CyberFx.Full) LifeBase();     // (a frame each: the bare band and its copy, the map, the read-out)
+        if (!CyberFx.Full) { LifeDrop(); return; }                         // (Motion turned down half way through the read-back: let go)
+        if (_lifeState != 2 && _lifeState != 4) LifeBase();                 // (a frame each: the bare band and its copy, the map, the read-out)
     }
 }

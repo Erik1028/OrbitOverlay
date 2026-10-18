@@ -19,6 +19,8 @@ public interface ITheaterScreen : IPointerTarget
     Surface TheaterPicture(out long frame) { frame = 0; return null; }
     // its own (saved) place, size, bend and opacity, where the screen grows from and goes back to
     bool Home(out Matrix4x4 world, out float width, out float curvature, out float opacity);
+    // its saved place alone, never a drawn override (a monitor's gaze focus): what the big screen lines up with (Theater.Where)
+    bool SavedHome(out Matrix4x4 world) => Home(out world, out _, out _, out _);
 }
 
 // Where the theater screen is. Place / Size / Bend are the theater's own (grabbing moves and sizes them, in memory
@@ -179,11 +181,13 @@ public sealed partial class Theater : IDisposable
     // Where the big screen goes: out along the line from your head through the anchor (the middle of your monitors),
     // tilted like it, at the theater distance. NOT where you look: theater mode is started from the watch, so at that
     // moment you look at your wrist (lying back with the arm up, that put the screen on the ceiling). A screen on a
-    // hand or the head has no such place: then level in front of you.
+    // hand or the head has no such place: then level in front of you. The anchor's saved place, not the one gaze focus
+    // draws it at: OrbitApp.Recenter moves the saved layout and re-places the screen at once, and GazeFocus catches up
+    // only later in the frame - the drawn place put the big screen on the line through where the monitors had been.
     public static Matrix4x4 Where(ITheaterScreen anchor, VrSession vr, float dist)
     {
         var head = vr.Hmd.Translation;
-        if (anchor.HomeInWorld && anchor.Home(out var home, out _, out _, out _))
+        if (anchor.HomeInWorld && anchor.SavedHome(out var home))
         {
             var dir = home.Translation - head;
             if (dir.Length() > 0.2f)
@@ -317,10 +321,12 @@ public sealed partial class Theater : IDisposable
             else Blend();
         }
         long pt = PerfTrace.Now();              // (the perf tools: where a theater frame's time goes, section by section - PerfTrace.cs)
+        float a = Math.Clamp(dim, 0, 0.95f) * Ease(_t);
+        bool wall = a > 0.004f && _screen != null;
+        CityLit(wall);                          // Cyber's power-up, remembered frame to frame (the wall and the horizon both use it: TheaterCyber.cs)
         if (_dim != null)
         {
-            float a = Math.Clamp(dim, 0, 0.95f) * Ease(_t);
-            if (a <= 0.004f || _screen == null) { _dim.Hide(); _band?.Hide(); _back?.Hide(); }
+            if (!wall) { _dim.Hide(); _band?.Hide(); _back?.Hide(); }
             else
             {
                 const float Behind = 0.6f;

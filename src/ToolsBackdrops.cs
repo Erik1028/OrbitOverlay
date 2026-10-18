@@ -24,6 +24,7 @@ namespace Orbit;
 //  - premultiplied: no colour over its alpha;
 //  - one texture at a time: the city's let go when a backdrop is made, the backdrop's when Cyber's city is on - and in VR (a fake
 //    SteamVR) with the style changed while theater is off, the wall's overlay never keeps a texture that is gone (TheaterWarm.cs);
+//  - the style back to the one before while the new picture is half way into the texture: the old one drawn again, never half and half;
 //  - the motion: Terminal's slow warm-up only with Motion Full; the picture comes up after the dim (Full).
 static partial class Tools
 {
@@ -127,6 +128,18 @@ static partial class Tools
             th.CyberForTest();
             Log.Info($"backdrops: the city held in Cyber {city0} (want True), let go when a backdrop is made {cityGone} (want True), the backdrop held " +
                      $"{backHeld} (want True) and let go in Cyber {!th.BackdropHeldForTest} (want True)");
+
+            // a picture half way into the texture (a quarter a frame) when the style goes back to the one before: that one drawn and uploaded
+            // again - never the new one's top over the old one's rest kept as its backdrop
+            th.BackdropForTest(Theater.Backdrop.Hall);
+            var up = System.Diagnostics.Stopwatch.StartNew();
+            while (!th.BackdropUploadingForTest && up.ElapsedMilliseconds < 20000) { th.BackdropFrameForTest(Theater.Backdrop.Hills); System.Threading.Thread.Sleep(2); }
+            bool halfway = th.BackdropUploadingForTest;
+            var again = th.BackdropForTest(Theater.Backdrop.Hall)?.ReadPixels(gpu);
+            bool whole = again != null && again.AsSpan().SequenceEqual(Theater.PaintBackdrop(Theater.Backdrop.Hall));
+            th.CyberForTest();
+            Log.Info($"backdrops: the XP picture a quarter into the texture {halfway} (want True), the style back to Modern then - the hall drawn and uploaded " +
+                     $"again, the texture read back exactly it {whole} (want True)");
 
             // in VR (a fake SteamVR), the style changed with theater off: TheaterWarm.cs makes the new style's textures on idle frames and
             // lets the old style's go - the wall's overlay must not keep a texture that is gone. After a Cyber theater, a Modern one starts

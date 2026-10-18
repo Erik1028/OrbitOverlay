@@ -9,7 +9,8 @@ namespace Orbit;
 // city - a violet sky with a few stars over a glowing neon horizon, a synthwave floor grid running out to it (on the cylinder the
 // floor's rays are its vertical lines and its rings rows that crowd towards the horizon), and on a second, sharper band of its own a
 // skyline round the horizon: building silhouettes, lit windows, the odd neon sign. Both textures are drawn ONCE (a few ms, the first
-// time) and kept; coming in, the wall powers up like a tube (a flicker of its alpha) and the city's lights come on after it (Full).
+// time) and kept; coming in, the wall powers up like a tube (a flicker of its alpha) and the city's lights come on after it (Full) - a
+// quick off / on carries on from where it got to, nothing jumps (CityLit).
 // The screen's own lock-on and scan, and the switch's unfold over the old one, are CyberScreenFx's (the panels').
 //
 // The city has a frame of its own (Erik 10-17: it moved and tilted with the screen, "the houses must be level"): level, round your
@@ -28,6 +29,8 @@ public sealed partial class Theater
     bool _cityOn;
     Matrix4x4 _level = Matrix4x4.Identity;  // the city's frame: level, at your head, facing the screen (Start / Recenter)
     float _ringR = -1;                       // its radius set last (-1: set it again)
+    float _tubeLit = 1, _tubeAt, _cityLit = 1;  // the power-up now (CityLit): the wall's tube, how far its blink has played, the city's lights
+    bool _wallUp;                            // the wall showed the frame before (else theater starts from nothing)
     const float BandIn = 0.15f;              // the band this much nearer than the wall
     const int CityW = 1024, BandW = 4096, BandH = 512;   // the band: an eighth of its width tall - 21° above and below the horizon
 
@@ -94,17 +97,40 @@ public sealed partial class Theater
             _band?.SetAbsolute(Ring(r - BandIn));
             _band?.SetWidth(2 * MathF.PI * (r - BandIn));
         }
-        // coming in (Full): the wall flickers on like a tube, the city's lights after it; going: both fade with the screen
-        bool coming = On && CyberFx.Full && _t < 1;
-        float wall = coming ? Flicker(_t) : 1, lights = coming ? Smooth01((_t - 0.45f) / 0.45f) : 1;
-        _dim.SetAlpha(a * wall);
+        // coming in (Full): the wall flickers on like a tube, the city's lights after it; going: both fade with the screen (CityLit)
+        _dim.SetAlpha(a * _tubeLit);
         if (_band == null) return true;
-        float ba = a * lights;
+        float ba = a * _cityLit;
         if (ba <= 0.004f) { _band.Hide(); return true; }
         _bandA = Math.Min(1, ba * 1.3f);              // (city life's cars fade with it)
         _band.SetAlpha(_bandA);                       // the lights a little brighter than the dimming itself
         _band.Show();
         return true;
+    }
+
+    // The power-up frame by frame (Update, before the wall and the horizon; up: the wall shows this frame). It has a memory, like a
+    // backdrop's lights (BackdropLit): a quick off no longer pops the skyline (and the horizon ring with it) to full - its lights were
+    // worked out from On and _t alone, 1 the moment theater stopped coming in - and a quick on again no longer blinks the tube a second time.
+    void CityLit(bool up)
+    {
+        bool fresh = !_wallUp;
+        _wallUp = up;
+        if (!up) return;
+        bool full = CyberFx.Full;
+        _cityLit = BackdropLit(_cityLit, fresh, Backdrop.None, _t, On, full);
+        _tubeLit = TubeLit(_tubeLit, ref _tubeAt, fresh, _t, On, full);
+    }
+
+    // the tube: coming in (Full) it plays Flicker once, only as t goes past where it has been (on again after a quick off: it carries on from
+    // there); once theater is in it is on; going out it stays as it is and fades with the dim. fresh: from nothing.
+    public static float TubeLit(float lit, ref float reached, bool fresh, float t, bool on, bool full)
+    {
+        if (fresh) { lit = 0; reached = 0; }
+        if (!on) return lit;
+        if (!full || t >= 1) { reached = 1; return 1; }
+        if (t <= reached) return lit;
+        reached = t;
+        return Flicker(t);
     }
 
     // a tube switching on: two short blinks, then up
@@ -374,6 +400,11 @@ public sealed partial class Theater
         DrawSkyline();
         return _sky;
     }
+
+    // the power-up now (the tube, the city's lights) and the band's alpha as shown (0: hidden)
+    public (float tube, float city) PowerUpForTest => (_tubeLit, _cityLit);
+    public float BandAlphaForTest => _band != null && _band.Visible ? _bandA : 0;
+    public bool WallUpForTest => _wallUp;
 
     void DisposeCyber()
     {

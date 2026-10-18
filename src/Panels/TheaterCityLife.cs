@@ -355,6 +355,16 @@ public sealed partial class Theater
         _lifeBare?.Dispose(); _lifeBare = null;
     }
 
+    // the read-back left half way (1: the bare band and its copy made, 3: the copy mapped and being read out) - the city let go, SteamVR
+    // gone, Motion turned down while theater was off: the 8 MB band and the mapped copy let go with it, read again from the start next time
+    // (else they stayed until a Cyber theater with Motion Full came back, beside another style's backdrop)
+    void LifeDrop()
+    {
+        if (_lifeState != 1 && _lifeState != 3) return;
+        LifeFree();
+        _lifeState = 0;
+    }
+
     // ---- a frame ----
 
     // after the wall (Theater.Update): the city's life while it shows (no SteamVR - --snapshot - drives it itself)
@@ -417,7 +427,7 @@ public sealed partial class Theater
             if (wrote > 0) Send();
         }
         LampsAsDrawn();
-        if (_lifeState == 1 || _lifeState == 3) { LifeFree(); _lifeState = 0; }      // (not read back yet: read it next time)
+        LifeDrop();                                         // (not read back yet: read it next time)
         _lifeOn = false;
         _buzz = -1;
         CarsOff();
@@ -817,13 +827,15 @@ public sealed partial class Theater
 
     // ---- going ----
 
-    // the cars' overlays (SteamVR going away; Theater.DestroyOverlay)
+    // the cars' overlays (SteamVR going away; Theater.DestroyOverlay) - and a read-back left half way (nothing warms the theater up
+    // until VR is back)
     void DestroyCityLife()
     {
         for (int i = 0; i < CarCount; i++) { _carOv[i]?.Dispose(); _carOv[i] = null; _carSet[i] = null; }
         _carsFailed = false;
         _carsUp = false;
         _lifeOn = false;                     // (the band's lamps are put back as drawn the next frame it shows without life)
+        LifeDrop();
     }
 
     void DisposeCityLife()
@@ -859,6 +871,8 @@ public sealed partial class Theater
     public Matrix4x4 LevelForTest => _level;
     public bool LifeOnForTest => _lifeOn;
     public bool LifeReadyForTest => _lifeState == 2;
+    public int LifeStateForTest => _lifeState;
+    public bool LifeHeldForTest => _lifeBare != null || _lifeStage != null;    // the read-back's bare band / its copy
     public bool LifeDirtyForTest => _lifeDirty;
     public int LampCount => _lamps.Length;
     public (int wins, int lit, int signs, int ants, int stars) LampKinds
