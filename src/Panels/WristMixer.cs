@@ -41,6 +41,7 @@ public sealed partial class WristPanel
     const float KnobR = 7;                                   // the slider's knob (the bar is inset by it: it never leaves the card)
 
     readonly List<MixerApp> _mixShown = new();               // the rows as drawn (their order kept while the laser is on them)
+    readonly List<MixerApp> _mixSrc = new();                 // the mixer's apps this frame (a copy: its worker changes the list)
     bool _mixHold, _mixHoldNext;
     int _mixVersion = -1;
     float _mixAcc;                                           // the stick's notches, whole ones passed on
@@ -78,7 +79,8 @@ public sealed partial class WristPanel
         _mixCards.Clear();
         _mixHits.Clear();
         _mixWheelUsed = false;
-        var src = m.Apps;
+        if (!m.TryApps(_mixSrc)) return;                 // (the mixer's worker is reading the device: the rows of the last frame)
+        var src = _mixSrc;
         if (!_mixHold)
         {
             _mixShown.Clear();

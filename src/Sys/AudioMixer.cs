@@ -71,17 +71,68 @@ public sealed class AudioMixer : IDisposable
     // The watch shows a mixer (a widget or the opened view): keep the list fresh for the next moment
     public void Want(double now)
     {
-        bool was = now < _wantedUntil;
-        _wantedUntil = now + 1.5;
-        if (!was) _nextPoll = _nextEnum = 0;
+        bool was = now < Volatile.Read(ref _wantedUntil);
+        Volatile.Write(ref _wantedUntil, now + 1.5);
+        if (!was) { _pollNow = true; _wake.Set(); }
         if (Fake) Tick(now, _vr);                    // the tools: no main loop - the made-up list now
     }
 
-    // The app's main loop, every frame: the default device (each second), the master sync while SteamVR runs (vr), the list while wanted
+    // ---- the app's: Tick on a worker of its own ----
+    // In VR (a device that ignores its own volume) every app's session is enumerated and read each second - Core Audio calls to the
+    // audio service, ~45 of them with 15 apps: they held the main loop ~9 ms every second or two (Erik 10-18, the spike line). The
+    // worker ticks under Gate; the main thread's changes (a slider, a mute, the master) take Gate, its readers (the watch's rows,
+    // auto theater, the horizon's meter) only try it and keep what they had when the worker is busy.
+    public readonly object Gate = new();
+    Thread _worker;
+    readonly AutoResetEvent _wake = new(false);
+    volatile bool _stop, _vrOn, _pollNow;
+    float _lastPeak = -1;
+
+    // the main loop, each frame: SteamVR on or off (the worker ticks every 30 ms while it is on or a mixer is wanted, else twice a second)
+    public void Pump(double now, bool vr)
+    {
+        if (Fake) { Tick(now, vr); return; }
+        bool was = _vrOn;
+        _vrOn = vr;
+        if (_worker == null)
+        {
+            _worker = new Thread(Work) { IsBackground = true, Name = "OrbitOverlay mixer" };
+            _worker.Start();
+        }
+        else if (vr && !was) _wake.Set();
+    }
+
+    void Work()
+    {
+        while (!_stop)
+        {
+            double now = Clock.Now;
+            lock (Gate) Tick(now, _vrOn);
+            bool busy = _vrOn || now < Volatile.Read(ref _wantedUntil);
+            _wake.WaitOne(busy ? 30 : 500);
+        }
+    }
+
+    // the apps as they are (a copy, for the main thread): false while the worker is busy - keep what you had
+    public bool TryApps(List<MixerApp> into)
+    {
+        if (!Monitor.TryEnter(Gate)) return false;
+        try
+        {
+            into.Clear();
+            into.AddRange(Apps);
+            return true;
+        }
+        finally { Monitor.Exit(Gate); }
+    }
+
+    // The mixer's work: the default device (each second), the master sync while SteamVR runs (vr), the list while wanted - the app's
+    // worker (Pump), the tools' own thread
     public void Tick(double now, bool vr)
     {
         _vr = vr;
-        bool wanted = now < _wantedUntil;
+        if (_pollNow) { _pollNow = false; _nextPoll = _nextEnum = 0; }
+        bool wanted = now < Volatile.Read(ref _wantedUntil);
         // nothing to do: SteamVR is off and no mixer shows - not even the default device is looked at
         if (!vr && !wanted)
         {
@@ -151,6 +202,11 @@ public sealed class AudioMixer : IDisposable
     // one app's own volume (every session of it); with the sync on, its balance against the master from now on
     public void SetApp(MixerApp a, float level)
     {
+        lock (Gate) SetAppNow(a, level);
+    }
+
+    void SetAppNow(MixerApp a, float level)
+    {
         level = Math.Clamp(level, 0, 1);
         foreach (var s in a.Sessions)
         {
@@ -163,6 +219,11 @@ public sealed class AudioMixer : IDisposable
     }
 
     public void ToggleAppMute(MixerApp a)
+    {
+        lock (Gate) ToggleAppMuteNow(a);
+    }
+
+    void ToggleAppMuteNow(MixerApp a)
     {
         bool m = !a.Muted;
         foreach (var s in a.Sessions)
@@ -178,6 +239,11 @@ public sealed class AudioMixer : IDisposable
     // The master (the watch's volume, the mixer's top row): on a device that ignores it, the endpoint and the apps at once (no echo);
     // else the endpoint, as Windows' slider does
     public void SetMaster(float level, bool mute)
+    {
+        lock (Gate) SetMasterNow(level, mute);
+    }
+
+    void SetMasterNow(float level, bool mute)
     {
         level = Math.Clamp(level, 0, 1);
         try
@@ -311,9 +377,21 @@ public sealed class AudioMixer : IDisposable
 
     // What the device plays now, every app together (its own meter), 0..1; -1: no device / no meter. Theater's Cyber horizon breathes
     // with it (TheaterHorizon.cs): one COM call, asked once a frame only while that shows - the device is the one Tick follows anyway.
-    public float OutputPeak() => _dev.Peak();
+    // the device's meter now (theater's horizon, a frame); the last one while the worker ticks
+    public float OutputPeak()
+    {
+        if (!Monitor.TryEnter(Gate)) return _lastPeak;
+        try { return _lastPeak = _dev.Peak(); }
+        finally { Monitor.Exit(Gate); }
+    }
 
-    public void Dispose() => _dev.Dispose();
+    public void Dispose()
+    {
+        _stop = true;
+        _wake.Set();
+        _worker?.Join(1000);
+        lock (Gate) _dev.Dispose();
+    }
 }
 
 // One app on the device as the mixer shows it: its sessions together

@@ -600,9 +600,13 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             }
             Perf(5, ref t);
             Spikes.Mark(Spikes.Desktops);
+            long rp = System.Diagnostics.Stopwatch.GetTimestamp();
             UpdateDashboard(now, dash);
+            Spikes.Piece("rest: dashboard tab", rp); rp = System.Diagnostics.Stopwatch.GetTimestamp();
             _notifyPanel.Update(_notifyIn, now, dt);
+            Spikes.Piece("rest: notification cards", rp); rp = System.Diagnostics.Stopwatch.GetTimestamp();
             AutoKeyboard(now);
+            Spikes.Piece("rest: keyboard pop-up", rp); rp = System.Diagnostics.Stopwatch.GetTimestamp();
             // night mode fades in / out over a moment
             float dimWant = C.Appearance.NightMode ? Math.Clamp(C.Appearance.NightBrightness, 0.1f, 1f) : 1f;
             _dimNow = Motion.Any ? _dimNow + (dimWant - _dimNow) * Math.Min(1f, dt * 8) : dimWant;      // Motion off: at once
@@ -613,6 +617,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
                 _nextOsc = now + 0.1;
                 SendOsc(now);
             }
+            Spikes.Piece("rest: osc", rp); rp = System.Diagnostics.Stopwatch.GetTimestamp();
             if (now >= _nextStatus)
             {
                 _nextStatus = now + 1;
@@ -620,33 +625,44 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
                 _status.Update(now, C.Chatbox.StatusLine, C.General.OscPort,
                     StatusLine.Compose(C.Chatbox, (m.has, m.title, m.artist, m.playing), DateTime.Now, _data.VrSince, C.Appearance.Clock24h));
             }
+            Spikes.Piece("rest: status line", rp); rp = System.Diagnostics.Stopwatch.GetTimestamp();
             UpdateGpuPriority(now);
+            Spikes.Piece("rest: gpu priority", rp);
             Perf(6, ref t);
             Spikes.Mark(Spikes.Rest);
             GpuProbeIssue();
             PerfFrame(now);
         }
 
+        long ap = System.Diagnostics.Stopwatch.GetTimestamp();       // (each watcher's time: the spike line's slowest piece, Sys/Spikes.cs)
         _notifyIn.SetEnabled(C.General.Notifications && _vr.Connected);
         _media.Active = _vr.Connected;
         WatchWidgets.DockAvailable = C.Dock.Enabled && _hexpad.Present;     // the editor offers the dock widget (also on the desktop)
         _room.Active = _vr.Connected && C.Room.Enabled;
         _data.Room = C.Room.Enabled ? _roomSnap : null;
+        Spikes.Piece("app: notifications, media, room", ap); ap = System.Diagnostics.Stopwatch.GetTimestamp();
         UpdatePhotos(now);                  // VRChat's photos for the latest photo widget (OrbitApp.Photos.cs)
+        Spikes.Piece("app: photos", ap); ap = System.Diagnostics.Stopwatch.GetTimestamp();
         UpdateSocial(now);                  // VRCX's friends online, the session and its recap (OrbitApp.Social.cs)
+        Spikes.Piece("app: friends + recap (VRCX)", ap); ap = System.Diagnostics.Stopwatch.GetTimestamp();
         UpdateMemories(now);                // this day's photos of earlier years, On this day (OrbitApp.Memories.cs)
+        Spikes.Piece("app: on this day", ap); ap = System.Diagnostics.Stopwatch.GetTimestamp();
         UpdateTemps(now);                   // the temperatures widget / the hot alert's sensors (OrbitApp.Temps.cs)
+        Spikes.Piece("app: temperatures", ap); ap = System.Diagnostics.Stopwatch.GetTimestamp();
         UpdateAvatar(now);                  // the VRChat avatar's toggles (OrbitApp.Avatar.cs)
+        Spikes.Piece("app: avatar", ap); ap = System.Diagnostics.Stopwatch.GetTimestamp();
         // the weather: the place from the settings (else Hexpad's), fetched while a weather widget is on one of the pages
         _weather.SetLocation(C.Weather?.Location);
         _weather.Active = C.Wrist.Face == "custom" && WatchPages.Any(C.Wrist, "weather");
         _data.Weather = _weather.Report;
+        Spikes.Piece("app: weather", ap); ap = System.Diagnostics.Stopwatch.GetTimestamp();
         // the light and the RGB: their apps asked while their widget is on one of the pages (the bulb read again when the watch shows)
         _lumos.SetKey(C.Lights?.Key);
         _lumos.SetBulb(C.Lights?.Bulb);
         _lumos.Active = C.Wrist.Face == "custom" && WatchPages.Any(C.Wrist, "light");
         _lumos.Watched = _wrist?.Alpha > 0.02f;
         _prisma.Active = C.Wrist.Face == "custom" && WatchPages.Any(C.Wrist, "rgb");
+        Spikes.Piece("app: light + rgb", ap);
         _data.Lamp = _lumos;
         _data.Rgb = _prisma;
         _data.StatusLine = C.Chatbox.StatusLine;
@@ -660,7 +676,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         Spikes.Mark(Spikes.App);
         // the output device's apps follow the Windows volume while SteamVR runs (a device that ignores its own); the mixer's list
         AudioMixer.Mode = C.General.VolumeToApps is "on" or "off" ? C.General.VolumeToApps : "auto";
-        _mixer.Tick(now, _vr.Connected);
+        _mixer.Pump(now, _vr.Connected);   // (its Core Audio work on a worker of its own: Sys/AudioMixer.cs)
         Spikes.Mark(Spikes.Mixer);
         _win.Tick(now);
         _cfg.SaveIfDue();

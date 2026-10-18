@@ -19,6 +19,7 @@ public sealed partial class OrbitApp
     string _autoName;                       // the program it started for (the log)
     string _autoExeFor, _autoExe;           // "\vlc.exe": the mixer's key ends with it (made once per program)
     double _autoNext, _autoHeard = -10, _autoAsked = -10;
+    readonly List<MixerApp> _autoApps = new();  // the mixer's apps when asked (a copy: its worker changes the list)
 
     // from Tick after the theater's own update, every frame (it looks only every 0.25 s)
     void UpdateAutoTheater(double now, bool awake)
@@ -76,8 +77,9 @@ public sealed partial class OrbitApp
         }
         _mixer.Want(now);                   // the list kept fresh (with its meters) for the next looks
         if (!fresh) { _autoHeard = -10; return false; }
-        foreach (var a in _mixer.Apps)
-            if (a.Peak > 0.002f && a.Key != null && a.Key.EndsWith(_autoExe, StringComparison.OrdinalIgnoreCase)) _autoHeard = now;
+        if (_mixer.TryApps(_autoApps))                      // (its worker busy: as it was)
+            foreach (var a in _autoApps)
+                if (a.Peak > 0.002f && a.Key != null && a.Key.EndsWith(_autoExe, StringComparison.OrdinalIgnoreCase)) _autoHeard = now;
         return now - _autoHeard < 2;
     }
 
