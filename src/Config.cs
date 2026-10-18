@@ -164,6 +164,14 @@ public sealed class TheaterConfig
     public bool Auto { get; set; }                       // a video going full screen starts it by itself (Sys/AutoTheater.cs); off: not written
 }
 
+// Gaze focus (Panels/GazeFocus.cs, Erik 10-18): in a row of monitors the one you look at is drawn full size, the others smaller beside
+// it. Null in Config = off with the defaults, written only once set.
+public sealed class FocusConfig
+{
+    public bool Enabled { get; set; }
+    public float Others { get; set; } = GazeFocus.OthersDefault;    // the others' width as a part of their own (0.4 .. 0.75)
+}
+
 // The VRChat chatbox as a status line (Sys/StatusLine.cs)
 public sealed class ChatboxConfig
 {
@@ -333,6 +341,8 @@ public sealed class Config
     public LightsConfig Lights { get; set; }           // the light widget's bulb (null = none set)
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public AvatarsConfig Avatars { get; set; }         // the avatar toggles' picks per avatar (null = none picked)
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public FocusConfig Focus { get; set; }             // Desktops > Focus the monitor you look at (null = off)
 
     public static List<LayoutProfile> DefaultLayouts() => new()
     {

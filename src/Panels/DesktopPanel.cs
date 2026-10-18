@@ -72,12 +72,14 @@ public sealed class DesktopPanel : ITheaterScreen, IDisposable
         float dt = (float)Math.Clamp(now - _lastNow, 0, 0.1);
         _lastNow = now;
         var th = Theater;
+        var fv = Focus;
         bool want = (globallyVisible || th != null) && !TheaterHidden && Cfg.Enabled && (Cfg.Place.M != null || th != null) && _cap != null && !_cap.Closed;
         if (want)
         {
             // the theater screen draws over the other panels; while switching, the new one over the old one
             Ov.SetSortOrder(th == null ? BaseSort : th.Behind ? 106u : 107u);
             if (th != null) Ov.SetAbsolute(th.World);
+            else if (fv != null) Ov.SetAbsolute(fv.World);                   // its row's gaze focus draws it (Panels/GazeFocus.cs)
             else if (!Placement.Apply(Cfg.Place, vr, Ov)) want = false;     // attached to a device that is gone
         }
         // fade in once there is a picture, fade out when hidden
@@ -90,8 +92,8 @@ public sealed class DesktopPanel : ITheaterScreen, IDisposable
             // and as big as it played, not shrunk to its own size
             if (want)
             {
-                Ov.SetWidth(th?.Width ?? Cfg.Width);
-                Ov.SetCurvature(th?.Curvature ?? Cfg.Curvature);
+                Ov.SetWidth(th?.Width ?? fv?.Width ?? Cfg.Width);
+                Ov.SetCurvature(th?.Curvature ?? fv?.Curvature ?? Cfg.Curvature);
                 _opacity = th?.Opacity ?? Cfg.Opacity;
             }
             Ov.SetAlpha(_opacity * (1 - MathF.Pow(1 - _vis, 3)));
@@ -119,6 +121,7 @@ public sealed class DesktopPanel : ITheaterScreen, IDisposable
     float EffectiveFps(VrSession vr, int fps) =>
         !SmartCapture ? fps
         : Theater is { } th ? SmartFps(vr, th.World, th.Width, _hovering[0] || _hovering[1], fps)
+        : Focus is { } fv ? SmartFps(vr, fv.World, fv.Width, _hovering[0] || _hovering[1], fps)
         : SmartFps(vr, Cfg.Place, Cfg.Width, _hovering[0] || _hovering[1], fps);
 
     // Paces captures to an exact average rate on a loop that runs at the compositor's rate:
@@ -269,11 +272,18 @@ public sealed class DesktopPanel : ITheaterScreen, IDisposable
     public bool Grabbable => true;
 
     bool DrivesCursor(Hand h) => Cfg.Mouse && _mouse.Hand == h && _mouse.Panel == this;
-    public float LaserCursorScale(Hand h) => DrivesCursor(h) ? (Theater?.Width ?? Cfg.Width) / Math.Max(1, Mon.W) : 0;
+    public float LaserCursorScale(Hand h) => DrivesCursor(h) ? (Theater?.Width ?? Focus?.Width ?? Cfg.Width) / Math.Max(1, Mon.W) : 0;
 
     public Matrix4x4 WorldTransform =>
         Theater is { } th ? th.World
+        // a grab works on the saved layout: the hand's offset is taken from the saved place (the laser asks right after GrabBegin);
+        // GazeFocus eases the drawn row back to the saved sizes meanwhile
+        : Focus is { } fv && !Grabbing ? fv.World
         : _vr != null && Placement.TryWorld(Cfg.Place, _vr, out var w) ? w : MathUtil.FromArray(Cfg.Place.M);
+
+    // ---- gaze focus (Panels/GazeFocus.cs): the row's draw override while it is on; like Theater, nothing here is saved ----
+    public FocusView Focus { get; set; }
+    public bool Grabbing { get; private set; }        // between GrabBegin and GrabEnd
 
     // ---- theater mode (Panels/Theater.cs): the big screen is an override, nothing here is saved ----
     public TheaterView Theater { get; set; }
@@ -292,7 +302,10 @@ public sealed class DesktopPanel : ITheaterScreen, IDisposable
     {
         width = Cfg.Width; curvature = Cfg.Curvature; opacity = Cfg.Opacity;
         world = default;
-        return _vr != null && Cfg.Place.M != null && Placement.TryWorld(Cfg.Place, _vr, out world);
+        if (_vr == null || Cfg.Place.M == null) return false;
+        // its row's gaze focus draws it smaller / elsewhere: the big screen grows out of that and goes back into it (no jump)
+        if (Focus is { } fv) { world = fv.World; width = fv.Width; curvature = fv.Curvature; return true; }
+        return Placement.TryWorld(Cfg.Place, _vr, out world);
     }
 
     DesktopLayout.Snap? _snap;
@@ -306,6 +319,7 @@ public sealed class DesktopPanel : ITheaterScreen, IDisposable
     {
         _snap = null;
         _grabView = Theater;
+        Grabbing = true;
         if (Theater != null) return;
         if (detach && Cfg.Group != null) Layout?.Detach(this);
     }
@@ -356,6 +370,7 @@ public sealed class DesktopPanel : ITheaterScreen, IDisposable
     {
         bool layout = _grabView == null && Theater == null;
         _grabView = null;
+        Grabbing = false;
         if (layout && _snap is { } s && Layout != null) Layout.Join(this, s);
         _snap = null;
         _twoRow = null;
@@ -364,6 +379,7 @@ public sealed class DesktopPanel : ITheaterScreen, IDisposable
 
     // used by --snapshot
     public MonitorCapture StartCaptureOnly(IDirect3DDevice dev) => _cap = new MonitorCapture(_g, dev, Mon);
+    public void AttachSession(VrSession vr) => _vr = vr;      // (GazeFocusTest: a grab without an overlay)
 
     public void Dispose() => DestroyOverlay();
 }

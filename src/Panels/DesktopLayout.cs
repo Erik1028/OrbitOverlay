@@ -33,9 +33,12 @@ public sealed class DesktopLayout
     static void SetWorld(DesktopPanel p, in Matrix4x4 m) => p.Cfg.Place.M = MathUtil.ToArray(m);
 
     // Where a monitor of width wN sits right (+1) or left (-1) of a monitor with transform W, width w, radius r.
-    public static Matrix4x4 Neighbor(in Matrix4x4 W, float w, float r, float wN, int side)
+    public static Matrix4x4 Neighbor(in Matrix4x4 W, float w, float r, float wN, int side) => Neighbor(W, w, r, wN, side, 0);
+
+    // ... 'gap' metres further along the arc (gaze focus redraws a row with the gaps it was saved with, Panels/GazeFocus.cs)
+    public static Matrix4x4 Neighbor(in Matrix4x4 W, float w, float r, float wN, int side, float gap)
     {
-        float s = side * (w / 2 + wN / 2);
+        float s = side * (w / 2 + wN / 2 + gap);
         if (float.IsInfinity(r)) return Matrix4x4.CreateTranslation(s, 0, 0) * W;
         float phi = s / r;
         var x = new Vector3(MathF.Cos(phi), 0, MathF.Sin(phi));

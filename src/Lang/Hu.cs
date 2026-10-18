@@ -1578,6 +1578,12 @@ static class Hu
         ("Auto theater", "Automatikus mozi"),
         ("starts when a video goes full screen", "elindul, ha egy videó teljes képernyőre vált"),
         ("A&uto theater when a video goes full screen", "Au&tomatikus mozi teljes képernyős videónál"),
+        // ---- Gaze focus (Desktops, Panels/GazeFocus.cs) ----
+        ("Focus the monitor you look at", "A nézett monitor fókuszban"),
+        ("look at one and the others shrink beside it", "amelyikre nézel, az nagy, a többi kicsi mellette"),
+        ("Others", "A többi"),
+        ("Focus the monitor you &look at (the others shrink)", "A nézett monitor &fókuszban (a többi összemegy)"),
+        ("Ot&hers:", "A &többi:"),
 
     };
 }

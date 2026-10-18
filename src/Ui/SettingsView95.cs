@@ -244,9 +244,15 @@ public sealed partial class SettingsView
         float fps = C.General.CaptureFps;
         TrackRow(ui, "d95.fps", 388, 266, 476, 150, 90, "Ca&pture rate:", ref fps, 15, 90, $"{Math.Round(fps):0} fps", !smart);
         C.General.CaptureFps = (int)Math.Round(fps);
-        if (ui.Button95("d95.join", new RectangleF(388, 312, 170, 23), "&Join into one curved screen", _h.VrConnected)) _h.JoinAllDesktops();
-        if (ui.Button95("d95.sep", new RectangleF(564, 312, 75, 23), "S&eparate")) _h.SeparateDesktops();
-        Hint(ui, 388, 344, 334, "Drop a monitor next to another one in VR and it snaps into the row. Click a monitor above to set it up.", 28);
+        if (ui.Button95("d95.join", new RectangleF(388, 304, 170, 23), "&Join into one curved screen", _h.VrConnected)) _h.JoinAllDesktops();
+        if (ui.Button95("d95.sep", new RectangleF(564, 304, 75, 23), "S&eparate")) _h.SeparateDesktops();
+        Hint(ui, 388, 332, 334, "Drop a monitor next to another one in VR and it snaps into the row. Click a monitor above to set it up.", 28);
+        // gaze focus (Panels/GazeFocus.cs, 10-18): the one you look at full size, the others of its row smaller beside it
+        bool focus = C.Focus?.Enabled ?? false;
+        if (ui.Check95("d95.focus", 388, 366, "Focus the monitor you &look at (the others shrink)", ref focus)) (C.Focus ??= new FocusConfig()).Enabled = focus;
+        float oth = C.Focus?.Others ?? GazeFocus.OthersDefault;
+        if (TrackRow(ui, "d95.others", 388, 390, 476, 150, 90, "Ot&hers:", ref oth, GazeFocus.OthersMin, GazeFocus.OthersMax, $"{oth * 100:0}%", focus))
+            (C.Focus ??= new FocusConfig()).Others = oth;
     }
 
     // ---------------- Windows ----------------
