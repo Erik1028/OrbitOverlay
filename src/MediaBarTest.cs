@@ -467,8 +467,9 @@ static partial class Tools
                         if (d > 2) { off++; break; }
                     }
                 }
-                Want($"selected: brackets drawn {lit} px (want > 0), the lock-on's last frame with the bar up = the selected picture at {selA:0.00}: {off} px off by more than 2 " +
-                     $"(want 0, largest {smaxd}); without the bar it fades to nothing as before (alpha {maxA0}, want <= 3)", lit > 0 && off == 0 && maxA0 <= 3);
+                // (the faint strength is in the picture: with the bar up the overlay's alpha stays 1 through the hand-over - selA 1)
+                Want($"selected: brackets drawn {lit} px (want > 0), the lock-on's last frame with the bar up = the selected picture at overlay alpha {selA:0.00} (want 1.00): {off} px off by more than 2 " +
+                     $"(want 0, largest {smaxd}); without the bar it fades to nothing as before (alpha {maxA0}, want <= 3)", lit > 0 && off == 0 && maxA0 <= 3 && selA == 1);
                 SaveCrop(selS, gpu, Path.Combine(md, "mediabar_selected.png"), new RectangleF(0, 0, selS.W, selS.H), keepAlpha: true);
                 // what you see: a made-up picture on the screen, the brackets over it at their strength, the night round it
                 var sview = new uint[selPx.Length];

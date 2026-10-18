@@ -269,6 +269,11 @@ public sealed class MediaInfo : IDisposable
                 await Task.Delay(150);
                 _now = true;
                 _wake.Set();
+                // once more a moment later: a player that lands the jump only after buffering (a video) reports it then, and no event
+                // tells us (the timeline isn't watched) - else the bar would show the old place again until the 10 s safety read
+                await Task.Delay(850);
+                _now = true;
+                _wake.Set();
             }
             catch (Exception e) { Log.Warn("media seek: " + e.Message); }
         });

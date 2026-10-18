@@ -17,7 +17,10 @@ namespace Orbit;
 // At rest none of it is there: the bounds are the whole texture again, the frame overlay hidden, nothing drawn. Every other style:
 // nothing at all (this is not even made).
 // The big screen while the bar under it is up (Panels/TheaterBarMedia.cs, BarSelect): the lock-on's brackets stay on faintly, as if the
-// console had the screen selected - the frame overlay drawn once with them and only faded with the bar after that (Reduced too).
+// console had the screen selected - the frame overlay drawn once with them (at their faint strength) and only faded with the bar after
+// that (Reduced too). The strength is in the picture, not the overlay's alpha: with the bar up the alpha stays 1 from the lock-on to
+// "selected" and back to the let-go, so a new texture and a new alpha never have to land on the same compositor frame (they don't
+// always: a frame of full-strength brackets would flash at every theater start / end).
 public sealed class CyberScreenFx : IDisposable
 {
     public static Painter Painter;                   // the app's (OrbitApp); null in the tools: no frame overlay
@@ -96,7 +99,7 @@ public sealed class CyberScreenFx : IDisposable
         }
     }
 
-    // only the bar up under the big screen: its brackets as the lock-on leaves them, drawn once, faded with the bar
+    // only the bar up under the big screen: its brackets as the lock-on leaves them (at SelA), drawn once, the overlay faded with the bar
     void Selected(VrOverlay panel, Vector2 tex)
     {
         try
@@ -106,7 +109,7 @@ public sealed class CyberScreenFx : IDisposable
             {
                 var p = Painter;
                 p.Begin(_surf.Bitmap, 0x00000000);
-                SelectCorners(p, 1);
+                SelectCorners(p, SelA);
                 p.End();
                 _hud.SetTexture(_surf.Tex);
                 _selShown = true;
@@ -117,7 +120,7 @@ public sealed class CyberScreenFx : IDisposable
             _hud.SetWidth(panel.Width * scale);
             _hud.SetCurvature(Math.Clamp(panel.Curvature * scale, 0, 1));
             _hud.SetSortOrder(109u);
-            _hud.SetAlpha(SelA * _sel);
+            _hud.SetAlpha(_sel);
             _hud.Show();
         }
         catch (Exception e)
@@ -125,6 +128,7 @@ public sealed class CyberScreenFx : IDisposable
             Log.Warn($"cyber screen fx ({_key}): {e.Message}");
             _hud?.Dispose();
             _hud = null;
+            _selShown = false;              // a new overlay gets the picture again
         }
     }
 
@@ -262,14 +266,14 @@ public sealed class CyberScreenFx : IDisposable
         return _surf;
     }
 
-    // --snapshot: the "selected" picture as the overlay gets it (its alpha is the bar's fade times SelA)
+    // --snapshot: the "selected" picture as the overlay gets it; alpha: the overlay's with the bar up (the bar's fade - 1 once it is in)
     public Surface SelectForTest(Painter p, Vector2 tex, out float alpha)
     {
         EnsureSurf(tex);
         p.Begin(_surf.Bitmap, 0x00000000);
-        SelectCorners(p, 1);
+        SelectCorners(p, SelA);
         p.End();
-        alpha = SelA;
+        alpha = 1;
         return _surf;
     }
 
