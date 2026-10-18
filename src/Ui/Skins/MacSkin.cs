@@ -485,12 +485,7 @@ public sealed partial class MacSkin : Win95Skin
         string t = null;
         if (!string.IsNullOrEmpty(title))
         {
-            t = Fit(p, title, bar.Width - 34, Ui.F95, true);
-            // too long for the middle ("Volume M..." on a 2 x 2): whole, off-centre between the close box and the edge, if it fits so
-            float room = bar.Width - (box ? 14 : 2) - 10;
-            if (t != title && ChicagoWidth(p, title) <= room) t = title;
-            // still not whole: its last word, if that fits whole ("Volume Mixer" -> "Mixer")
-            else if (t != title && title.LastIndexOf(' ') is int sp and > 0 && ChicagoWidth(p, title[(sp + 1)..]) <= room) t = title[(sp + 1)..];
+            t = TitleFit(p, title, bar.Width, box);
             tw = ChicagoWidth(p, t);
         }
         float x0 = bar.X + (box ? 14 : 2), sy = bar.Y + 2;
@@ -504,6 +499,24 @@ public sealed partial class MacSkin : Win95Skin
             Say(p, t, new RectangleF(tx, bar.Y, tw + 2, bar.Height), CaptionText, true, TextAlignment.Leading);
         }
         else Stripes(p, x0, bar.Right - 2, sy, 5);
+    }
+
+    // the title as the bar shows it, kept for its width: a widget's title that does not fit ("System Monitor" on a 2 x 2) was cut
+    // again in every frame - new strings at rest
+    readonly Dictionary<(string, float, bool), string> _titleFits = new();
+    int _titleLang = -1;
+
+    string TitleFit(Painter p, string title, float width, bool box)
+    {
+        if (_titleLang != Lang.Version || _titleFits.Count > 64) { _titleFits.Clear(); _titleLang = Lang.Version; }
+        if (_titleFits.TryGetValue((title, width, box), out var t)) return t;
+        t = Fit(p, title, width - 34, Ui.F95, true);
+        // too long for the middle ("Volume M..." on a 2 x 2): whole, off-centre between the close box and the edge, if it fits so
+        float room = width - (box ? 14 : 2) - 10;
+        if (t != title && ChicagoWidth(p, title) <= room) t = title;
+        // still not whole: its last word, if that fits whole ("Volume Mixer" -> "Mixer")
+        else if (t != title && title.LastIndexOf(' ') is int sp and > 0 && ChicagoWidth(p, title[(sp + 1)..]) <= room) t = title[(sp + 1)..];
+        return _titleFits[(title, width, box)] = t;
     }
 
     // ---- push buttons ----

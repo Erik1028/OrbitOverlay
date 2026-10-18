@@ -201,12 +201,25 @@ public sealed partial class WristPanel
         return x + mw - x0;
     }
 
+    // a reading's caption in capitals cut to w - the language's shorter word first where the whole does not fit ("short|Longest":
+    // Magyar "REKORD", not "LEGHOSS…"; the capitals have no short form of their own to find), kept as FrCut keeps its cuts
+    readonly Dictionary<(string, float), string> _rcCaps = new();
+    int _rcCapsLang = -1;
+
+    string RcCap(string cap, float w)
+    {
+        if (_rcCapsLang != Lang.Version || _rcCaps.Count > 32) { _rcCaps.Clear(); _rcCapsLang = Lang.Version; }
+        if (_rcCaps.TryGetValue((cap, w), out var done)) return done;
+        string c = Upper(cap);
+        if (_p.MeasureWidth(c, CapSize, FontWeight.SemiBold) > w && Lang.Short(cap) is { } sh) c = Upper(sh);
+        return _rcCaps[(cap, w)] = FrCut(c, w, CapSize, FontWeight.SemiBold);
+    }
+
     // a small reading: its caption over its value
     void RcMini(RectangleF r, string cap, string value)
     {
-        string c = Upper(cap);
         float by = r.Y + MathF.Min(r.Height * 0.42f, 22);
-        CapText(FrCut(c, r.Width, CapSize, FontWeight.SemiBold), r.X, by, r.Width, Sub);
+        CapText(RcCap(cap, r.Width), r.X, by, r.Width, Sub);
         float vs = MathF.Max(17, FitSize(value, r.Width, _big ? 28 : 22, FontWeight.Bold, Theme.Display));
         TextAt(FrCut(value, r.Width, vs, FontWeight.Bold, Theme.Display), r.X, MathF.Min(r.Bottom - 4, by + vs + 4), r.Width + 2, Bento.Text, vs, FontWeight.Bold,
             TextAlignment.Leading, Theme.Display);
@@ -299,7 +312,7 @@ public sealed partial class WristPanel
     {
         _p.Fill(r, Bento.Tile, 14);
         if (Bento.Edge != 0) _p.Stroke(RectangleF.Inflate(r, -0.6f, -0.6f), Bento.Edge, Bento.EdgeWidth, 13.4f);
-        CapText(FrCut(Upper(cap), r.Width - 24, CapSize, FontWeight.SemiBold), r.X + 12, r.Y + 22, r.Width - 24, Sub);
+        CapText(RcCap(cap, r.Width - 24), r.X + 12, r.Y + 22, r.Width - 24, Sub);
         float vs = MathF.Max(17, FitSize(value, r.Width - 24, 26, FontWeight.Bold, Theme.Display));
         TextAt(FrCut(value, r.Width - 24, vs, FontWeight.Bold, Theme.Display), r.X + 12, r.Y + 52, r.Width - 22, Bento.Text, vs, FontWeight.Bold,
             TextAlignment.Leading, Theme.Display);

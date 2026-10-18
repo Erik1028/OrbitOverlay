@@ -606,7 +606,7 @@ static partial class Tools
         {
             wcfg.Face = "custom";
             wcfg.Grid = null; wcfg.Pages = null; wcfg.Page = 0;
-            wcfg.Widgets = new List<WatchWidget> { new() { Type = "avatar", X = 0, Y = 0, W = 3, H = 2 }, new() { Type = "time", X = 3, Y = 0, W = 3, H = 1 } };
+            wcfg.Widgets = new List<WatchWidget> { new() { Type = "avatar", X = 0, Y = 0, W = 3, H = 2 }, new() { Type = "time", X = 3, Y = 0, W = 3, H = 1 }, new() { Type = "light", X = 0, Y = 2, W = 2, H = 1 } };
             AvatarViewTools.Fake(data);
             view.Tab = SettingsView.TabWrist;
             view.EditingWatch = true;
@@ -655,6 +655,10 @@ static partial class Tools
                     surf.SavePng(gpu, Path.Combine(dir, $"settings_avatar_{name}_dialog.png"));
                     dialog = Crossings();
                     view.AvatarDialogForTest(false);
+                    view.SelectKindForTest("light");
+                    Draw(true);
+                    surf.SavePng(gpu, Path.Combine(dir, $"TEMP_settings_light_{name}.png"));
+                    view.SelectKindForTest("avatar");
                 }
                 Tools.Want($"avatar editor {name}: {crossed} control(s) crossing another (want 0){(classic ? $", the dialog {dialog} (want 0)" : "")}", crossed == 0 && dialog == 0);
             }

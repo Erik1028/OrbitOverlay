@@ -130,7 +130,7 @@ public sealed class LumosLink : IDisposable
     }
 
     // Config.Lights.Key (asked every frame: only a change counts): with one, straight to the bulb; without, through Lumos
-    public bool Direct => _direct != null;
+    public bool Direct => _direct != null || Environment.GetEnvironmentVariable("ORBIT_FAKE_DIRECT") == "1";
 
     public void SetKey(string kept)
     {

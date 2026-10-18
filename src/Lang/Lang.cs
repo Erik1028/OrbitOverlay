@@ -38,6 +38,7 @@ public static class Lang
     static Dictionary<string, string> _t;                    // English -> the language (null: English)
     static Dictionary<string, string> _caps;                 // ENGLISH IN CAPITALS -> THE LANGUAGE IN CAPITALS
     static HashSet<string> _values;                          // the translations themselves (Miss: not missing)
+    static Dictionary<(string, string), string> _ctx;        // the "context|text" lines by (context, text): C and Short
     static CultureInfo _culture, _system;
 
     public static bool English => _t == null;
@@ -77,6 +78,7 @@ public static class Lang
         code = Normalize(code);
         if (code == Code && (code == null) == (_t == null)) { ApplyCulture(); return; }
         Dictionary<string, string> t = null, caps = null;
+        Dictionary<(string, string), string> ctx = null;
         HashSet<string> values = null;
         CultureInfo culture = null;
         var table = code == null ? null : TableOf(code);
@@ -95,8 +97,10 @@ public static class Lang
                     if (tr.Contains('&')) values.Add(NoKey(tr));      // drawn without its access key
                 }
             caps = new Dictionary<string, string>(StringComparer.Ordinal);
+            ctx = new Dictionary<(string, string), string>();
             foreach (var (en, tr) in t)
             {
+                if (en.IndexOf('|') is int bar and > 0) ctx[(en[..bar], en[(bar + 1)..])] = tr;
                 string ue = en.ToUpperInvariant();
                 if (ue == en || t.ContainsKey(ue)) continue;
                 string ut = tr.ToUpper(up);
@@ -105,6 +109,7 @@ public static class Lang
         }
         _caps = caps;
         _values = values;
+        _ctx = ctx;
         _culture = culture;
         _t = t;
         Code = code;
@@ -141,13 +146,15 @@ public static class Lang
         return s;
     }
 
-    // a word that means two things in English ("Muted": a keyboard's soft click, a microphone that is off): the table's line
-    // "context|word" first, else the word's own line
+    // a word that means two things in English ("Muted": a keyboard's soft click, a microphone that is off), or a one-word one that a
+    // name could be ("rgb|Static": a friend called Static is not the effect): the table's line "context|word" first, else the word's
+    // own line. (Found by its two parts: context + "|" + s made a string on every call, and some are asked in every frame.)
     public static string C(string context, string s)
     {
         var t = _t;
-        if (t == null || string.IsNullOrEmpty(s)) return s;
-        return t.TryGetValue(context + "|" + s, out var v) ? v : T(s);
+        var c = _ctx;
+        if (t == null || c == null || string.IsNullOrEmpty(s)) return s;
+        return c.TryGetValue((context, s), out var v) ? v : T(s);
     }
 
     // a text made of parts: the pattern translated, then filled in (formatted like $"..." - the culture's numbers)
@@ -190,9 +197,10 @@ public static class Lang
     public static bool Has(string key) => _t != null && key != null && _t.ContainsKey(key);
 
     // a shorter form the language has of this English text, for where its whole one does not fit ("short|Monitors": Magyar
-    // "Monitor" on a 1x1 tile; a text cut to fit tries it before the ellipsis); null: none (English: always none)
+    // "Monitor" on a 1x1 tile; a text cut to fit tries it before the ellipsis); null: none (English: always none). Found like C: the cut
+    // helpers ask on every frame, and "short|" + english made a string each time (Magyar's garbage at rest)
     public static string Short(string english) =>
-        _t != null && english != null && _t.TryGetValue("short|" + english, out var v) ? v : null;
+        _ctx != null && english != null && _ctx.TryGetValue(("short", english), out var v) ? v : null;
 
     // T, then in capitals the language's way
     // (English: ToUpperInvariant, as the code did)

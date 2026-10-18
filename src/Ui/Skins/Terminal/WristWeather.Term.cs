@@ -140,12 +140,14 @@ public sealed partial class WristPanel
         TPut(WxTFit(t.TUvHumRain, nw), nx, y + 33, ink);
         TPut(WxTFit(t.TSun, nw), nx, y + 44, T.MID);
         y += 60;
-        // the hours: two lines, a column of four characters each
-        float hcw = MathF.Floor(c.Width / WxHours);
+        // the hours: two lines, a column of four characters each; a first word wider than its column (Magyar's "Most", cut to "Mo…")
+        // takes what it needs from the others - the hours are two characters
+        float hcw = MathF.Floor(c.Width / WxHours), lead = t.HourN > 0 ? MathF.Max(0, T.W(t.HourShort[0]) + 4 - hcw) : 0;
+        if (lead > 0) hcw = MathF.Floor((c.Width - lead) / WxHours);
         for (int i = 0; i < t.HourN; i++)
         {
-            float x = c.X + i * hcw;
-            TPut(WxTFit(t.HourShort[i], hcw - 2), x, y, i == 0 ? T.HOT : T.DIM);
+            float x = c.X + (i == 0 ? 0 : lead) + i * hcw;
+            TPut(WxTFit(t.HourShort[i], i == 0 ? hcw + lead - 2 : hcw - 2), x, y, i == 0 ? T.HOT : T.DIM);
             TPut(WxTFit(t.HourT[i], hcw - 2), x, y + 11, ink);
         }
         y += 26;

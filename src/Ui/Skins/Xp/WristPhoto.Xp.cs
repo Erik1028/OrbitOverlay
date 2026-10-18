@@ -96,11 +96,16 @@ public sealed partial class WristPanel
         if (XpRound("wph95n", new RectangleF(bx + 26, by, 24, 22), true, _phIndex > 0)) PhotoStep(-1);
         _p.Fill(new RectangleF(bx + 56, by + 2, 1, 18), XpViewerBar);
         var close = new RectangleF(bar.Right - 6 - 56, by, 56, 22);
-        float gw = MathF.Min(_ui.Width95(OpenGallery) + 30, close.X - 6 - (bx + 62));
+        // the gallery's button leaves the counter its room: its short form ("VR Gallery", as the 95 and Mac viewers say) where the
+        // whole would take it (Magyar's "Megnyitás a VR Galleryben" left a cut "5")
+        float room = close.X - 6 - (bx + 62), need = p != null ? _ui.Width95(words.Count) + 12 : 0;
+        string gl = OpenGallery;
+        if (_ui.Width95(gl) + 30 > room - need && Lang.Short(OpenGallery) is { } sh) gl = sh;
+        float gw = MathF.Min(_ui.Width95(gl) + 30, room);
         var gal = new RectangleF(close.X - 6 - gw, by, gw, 22);
         if (p != null) _ui.Text95(PhotoCut(words.Count, gal.X - 6 - (bx + 62), Ui.F95, FontWeight.Normal, null, 1), new RectangleF(bx + 62, by + 4, gal.X - 6 - (bx + 62), 13),
             XpGrey);
-        if (XpTool("wphgal", gal, OpenGallery, true, p != null)) PhotoOpen(p);
+        if (XpTool("wphgal", gal, gl, true, p != null)) PhotoOpen(p);
         if (_ui.Button95("wd95ok", close, "Close")) { CloseDetail(); return; }
         var view = new RectangleF(body.X + 8, body.Y + 8, body.Width - 16, bar.Y - 18 - (body.Y + 8));
         if (p == null)

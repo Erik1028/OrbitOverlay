@@ -51,7 +51,7 @@ public sealed partial class WristPanel
             bool white = i < 2;
             int at = TLampAt[i];
             bool sel = white ? t.WhiteAt == at : t.HueAt == at;
-            if (!TKey(Ui.Id("wlq", id * 8 + i), k, Upper(TLampKeys[i]), sel, white ? t.S.HasTemp : t.S.HasColor)) continue;
+            if (!TKey(Ui.Id("wlq", id * 8 + i), k, Upper(Lang.C("light", TLampKeys[i])), sel, white ? t.S.HasTemp : t.S.HasColor)) continue;
             if (white) lamp?.SetTemp(LampWhites[at]); else lamp?.SetColor(LampHues[at].h, LampHues[at].s);
             _dirty = true;
         }
@@ -80,8 +80,10 @@ public sealed partial class WristPanel
         float v = t.Frac;
         if (TLxBar(Ui.Id("wrb", id), new RectangleF(c.X + 3, top + 18, c.Width - 6, 11), ref v, !t.Off)) { rgb?.SetBrightness(BrightOf(v)); _dirty = true; }
         if (w.H < 2) return;
-        // the effect by name, four colours as keys
-        TCaps(TLxFit(Upper(t.Name), c.Width - 8), c.X + 4, top + 36, T.MID);
+        // the effect by name (its shorter name where the whole does not fit: SZIVÁRVÁNY, not SZIVÁRVÁNYHUL...), four colours as keys
+        string nm = Upper(t.Name);
+        if (t.NameShort != null && T.W(nm) > c.Width - 8) nm = Upper(t.NameShort);
+        TCaps(TLxFit(nm, c.Width - 8), c.X + 4, top + 36, T.MID);
         float kw = MathF.Floor((c.Width - 6 - 3) / 2), kh = MathF.Min(16, MathF.Floor((c.Bottom - top - 50 - 3) / 2));
         for (int i = 0; i < 4; i++)
         {

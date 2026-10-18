@@ -409,11 +409,22 @@ public sealed partial class TerminalSkin : Win95Skin
             return RectangleF.Inflate(r, -3, -3);
         }
         Box(p, new RectangleF(r.X, r.Y + 5, r.Width, r.Height - 5), FRAME);
-        string t = Fit(p, Up(title), r.Width - 12);
+        string t = FrameTitle(p, title, r.Width - 12);
         float tw = W(t);
         p.Fill(new RectangleF(r.X + 3, r.Y, tw + 4, 11), BG);
         Put(p, t, r.X + 5, r.Y, INK);
         return new RectangleF(r.X + 3, r.Y + 11, r.Width - 6, r.Height - 14);
+    }
+
+    // a box's title cut to its width ("SEN..." on a 1x1), kept: it was cut again in every frame - new strings at rest
+    readonly Dictionary<(string, float), string> _frameTitles = new();
+    int _frameTitlesLang = -1;
+
+    string FrameTitle(Painter p, string title, float w)
+    {
+        if (_frameTitlesLang != Lang.Version || _frameTitles.Count > 64) { _frameTitles.Clear(); _frameTitlesLang = Lang.Version; }
+        if (_frameTitles.TryGetValue((title, w), out var t)) return t;
+        return _frameTitles[(title, w)] = Fit(p, Up(title), w);
     }
 
     // ---- controls ----
@@ -446,7 +457,12 @@ public sealed partial class TerminalSkin : Win95Skin
         t = Up(t);
         uint c = lit ? BG : !enabled ? DIM : hover ? HOT : INK;
         float avail = r.Width - 6;
-        if (TextWidth(p, t, false, Ui.F95) > avail) t = Fit(p, t, avail);
+        if (TextWidth(p, t, false, Ui.F95) > avail)
+        {
+            // a dialog's "..." left out where the word then fits whole: KIVÁLASZTÁS, not KIVÁLASZ... in a 75 px button
+            string bare = t.EndsWith("...") ? t[..^3] : null;
+            t = bare != null && TextWidth(p, bare, false, Ui.F95) <= avail ? bare : Fit(p, t, avail);
+        }
         Text(p, t, new RectangleF(r.X + 1, r.Y, r.Width - 2, r.Height), c, false, TextAlignment.Center, true, false, Ui.F95);
         if (key >= 0 && enabled && !lit && key < t.Length && !t.EndsWith("..."))
         {

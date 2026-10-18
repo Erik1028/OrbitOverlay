@@ -184,8 +184,9 @@ public sealed partial class WristPanel
         float top = c.Y + 1;
         if (tall)
         {
-            // the effect running, by name
-            _ui.Text95(LxFit95(t.Name, c.Width - 4, true), new RectangleF(c.X + 2, top, c.Width - 4, 13), Blk95, true);
+            // the effect running, by name (its shorter name where the whole does not fit: "Szivárvány", not "Szivárványhu...")
+            string nm = t.NameShort != null && _ui.Width95(t.Name, true) > c.Width - 4 ? t.NameShort : t.Name;
+            _ui.Text95(LxFit95(nm, c.Width - 4, true), new RectangleF(c.X + 2, top, c.Width - 4, 13), Blk95, true);
             top += 16;
         }
         // the four effects as toolbar buttons, the one running pressed in

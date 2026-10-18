@@ -211,10 +211,15 @@ static class OnThisDayTempsTools
             wcfg.Widgets = Face().FindAll(x => x.Type is "memory" or "temps");
             using var appOnly = Tools.AppAllocs();
             wrist.Settle();
+            // (--lang's count of the texts drawn without a translation makes garbage of its own on every text: off while it is measured)
+            var miss = Lang.Miss;
+            Lang.Miss = null;
             for (int i = 0; i < 6; i++) wrist.Draw(data);
             long a0 = GC.GetAllocatedBytesForCurrentThread();
             for (int i = 0; i < 20; i++) wrist.Draw(data);
             long perFrame = (GC.GetAllocatedBytesForCurrentThread() - a0) / 20;
+            if (Environment.GetEnvironmentVariable("ORBIT_PERF_TYPES") == "1") Tools.OnThisDayAllocTypes("onthisday/temps" + tag, () => wrist.Draw(data));
+            Lang.Miss = miss;
             Want($"onthisday/temps view{tag}: On this day shows its newest {memShown}, opened on it {memOpen}, the arrow steps to the one before {stepped}, " +
                  $"none: its empty state {memEmpty}; temperatures GPU/CPU '{temps}' (want '66/61'), nothing read '{dash}' (want '–/–') -",
                  memShown && memOpen && stepped && memEmpty && temps == "66/61" && dash == "–/–");
@@ -278,4 +283,9 @@ static class OnThisDayTempsTools
         sheet.Save(path, ImageFormat.Png);
         Log.Info("onthisday/temps: every style side by side: " + path);
     }
+}
+
+static partial class Tools
+{
+    internal static void OnThisDayAllocTypes(string what, Action draw) => AllocTypes(what, draw, null);
 }
