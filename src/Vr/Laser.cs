@@ -465,7 +465,7 @@ public sealed class Laser : IDisposable
     {
         bool seen = GazeSpot(vr, targets, out var look);
         int on = HandOn(vr, targets, _handO, hand);
-        if (on == 2) { if (_eyeOn) EyeOff(); return; }     // the hand on the keyboard, the watch, a bar
+        if (on == 2) { if (_eyeOn) { EyeDiag(vr, targets, "off - the hand on another panel (keyboard / watch / bar)"); EyeOff(); } return; }
         // the hand towards the screens: its ray on any monitor / window - the eyes then go anywhere on all of them (Erik 10-19: on the
         // side monitors the cursor stopped half-way - the far half was past 50 deg from a hand on the middle one); else near the spot
         bool handOnScreen = on == 1;
@@ -475,18 +475,67 @@ public sealed class Laser : IDisposable
             _eyeOn = true;                               // the hand towards the screens, the eyes on one: the cursor where the eyes are
             _eye.Start(look, hand);
             _eyeSeenAt = _clock;
+            _eyeLostAt = -1;
+            EyeDiag(vr, targets, handOnScreen ? "on - the hand on a monitor" : "on - the hand near the look");
             ClearWarp();
             _filter.Reset();
             return;
         }
-        if (seen) _eyeSeenAt = _clock;
-        if ((!handOnScreen && EyeSpot.Angle(hand, Vector3.Normalize(_eye.Spot(_clock) - _handO)) > EyeRelease) || _clock - _eyeSeenAt > EyeAway)
+        if (seen)
         {
+            if (_eyeLostAt >= 0 && _eyeLostLogged) EyeDiag(vr, targets, $"the look back on a screen after {(_clock - _eyeLostAt) * 1000:0} ms");
+            _eyeSeenAt = _clock;
+            _eyeLostAt = -1;
+            _eyeLostLogged = false;
+        }
+        else
+        {
+            if (_eyeLostAt < 0) _eyeLostAt = _clock;
+            if (!_eyeLostLogged && _clock - _eyeLostAt > 0.12) { _eyeLostLogged = true; EyeDiag(vr, targets, "the look left the screens - the cursor waits"); }
+        }
+        bool turned = !handOnScreen && EyeSpot.Angle(hand, Vector3.Normalize(_eye.Spot(_clock) - _handO)) > EyeRelease;
+        if (turned || _clock - _eyeSeenAt > EyeAway)
+        {
+            EyeDiag(vr, targets, turned ? "off - the hand turned away from the screens" : $"off - the look off the screens for {EyeAway:0.0} s");
             EyeOff();                                    // the hand turned away, or the eyes on the world: the laser / the game again
             return;
         }
+        if (_clock >= _eyeDiagNext) { _eyeDiagNext = _clock + 3; EyeDiag(vr, targets, "following"); }
         _eye.Step(look, seen, vr.GazeOrigin, _eye.HandRef, false, _clock, dt);     // the eyes alone (the hand never fine-tunes)
     }
+
+    // ---- why the eye cursor does what it does (Erik 10-19 "még nem jó"): a log line on each change and every 3 s while it follows ----
+    double _eyeLostAt = -1, _eyeDiagNext;
+    bool _eyeLostLogged;
+
+    void EyeDiag(VrSession vr, IReadOnlyList<IPointerTarget> targets, string what)
+    {
+        var inv = MathUtil.Invert(vr.Hmd);
+        var g = Vector3.Normalize(Vector3.TransformNormal(vr.Gaze, inv));            // the look in the head's frame
+        var f = Vector3.Normalize(MathUtil.Forward(vr.Hmd));
+        float Yaw(Vector3 v) => MathF.Atan2(v.X, -v.Z) * 180 / MathF.PI;
+        float Pitch(Vector3 v) => MathF.Asin(Math.Clamp(v.Y, -1, 1)) * 180 / MathF.PI;
+        // what the look hits (any panel), and where the cursor's spot is
+        string hit = "nothing";
+        float nearest = float.MaxValue;
+        Vector2 hitUv = default;
+        for (int i = 0; i < targets.Count; i++)
+        {
+            var t = targets[i];
+            if (t == null || t.Overlay == null) continue;
+            if (t.Overlay.RaycastLocal(vr, vr.GazeOrigin, vr.Gaze, out float dist, out var uv, out _, out _) && dist < nearest)
+            {
+                nearest = dist;
+                hitUv = uv;
+                hit = Name(t) + (t.Interactive ? "" : " (not interactive)") + (t.WarpTarget ? "" : " (not a screen)");
+            }
+        }
+        Log.Info($"eye cursor ({_hand}): {what} | eyes {(vr.EyesValid ? "tracked" : "NOT tracked")}, in the head {Yaw(g):0} deg {Pitch(g):0} deg, " +
+                 $"head {Yaw(f):0} deg {Pitch(f):0} deg | the look hits {hit}{(nearest < float.MaxValue ? $" at {hitUv.X:0.00},{hitUv.Y:0.00}" : "")}" +
+                 $" | the cursor on {(_hover != null ? Name(_hover) + $" at {_lastPx.X:0},{_lastPx.Y:0} px" : "nothing")}");
+    }
+
+    static string Name(IPointerTarget t) => t is DesktopPanel dp ? dp.Mon.Name + (dp.Focus != null ? " (focus drawn)" : "") : t.GetType().Name;
 
     void EyeOff()
     {
