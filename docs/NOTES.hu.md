@@ -196,6 +196,27 @@ dotnet publish -c Release -o dist
   és a billentyűzetet számolja; az Orbit saját lebegő beállításpanelje nem (Erik: a DXOverlay
   elindult, amikor csak a beállításokat nyitotta meg).
 
+## 1.15.0 – új widgetek, fókusz mód, mozi minden stílusban (2026-10-18)
+
+- **Új widgetek**: Photo, Weather, Folder (`WatchFolders.cs`), Friends online + Session recap (VRCX, `immutable=1`),
+  On this day (`PhotoMemories.cs`), Temperatures (ADL + PawnIO), Light (`RoomLights.cs`: Lumos HTTP 8770, vagy közvetlenül
+  `TapoDirect.cs` – KLAP, csak a SHA256(SHA1(e-mail)+SHA1(jelszó)) kulcs DPAPI-val, a sorszám InvariantCulture-rel: a hu-HU
+  mínusz U+2212!), RGB (Prisma pipe), Avatar kapcsolók (`AvatarToggles.cs`: OSC JSON + VRChat OSCQuery, a 9001-et nem foglalja).
+- **Paletta**: kategóriák + keresés (az asztali ablakban gépelve).
+- **Fókusz mód** (`GazeFocus.cs`): rajzolási felülírás mint a TheaterView, a mentett elrendezést sosem írja; 0,3 s rátekintés,
+  15 % szélsáv, a szélső monitor a helyén nő; `ORBIT_SNAP_ONLY=focus`.
+- **Mozi mód**: Ambilight (`Ambilight.cs`, sort 8), stílusonkénti háttér (`TheaterBackdrop*.cs`), Auto theater
+  (`AutoTheater.cs`, alapból ki), `TheaterWarm.cs` előre rajzol. Cyber: városélet (`TheaterCityLife.cs`, 5 Hz folt-frissítés,
+  autók), hangra lélegző horizont (`HorizonPulse.cs`), médiakonzol a sávon (`TheaterBarMedia.cs`), a padló csak elöl 156°-ban
+  és 14°-ig lefelé, 3 külön overlayen (`TheaterFloor.cs`: a SteamVR az íves overlay-t N lapos oszlopból rajzolja – a teljes
+  körön a padló körei sokszögek lettek). Rétegsorrend: fal 1, háttér 2, padló 3, sáv 4, gyűrű 5, szikrák 6, autók 7,
+  fény 8, képernyők 106+. `ORBIT_SNAP_ONLY=cyfloor` szimulált headset-nézet 16/32/64 oszloppal.
+- **Teljesítmény**: `VrOverlay.Calls` + `PerfTrace` + `ORBIT_SNAP_ONLY=theaterperf` (költségkerettel); Modern billentyűzet
+  0,84 → 0,13 ms, beállítások csak változásra (`LiveSig`), belépés a mozi módba 23 → 1,5 ms, 0 B/képkocka a mozi módban.
+- **Javítások** (átnézés 10-18): TapoDirect átirányítás nélkül, 64 KB-os válaszkorlát; `config.backup-<verzió>.json`
+  frissítéskor; a Recenter mozi + fókusz módban a mentett helyhez igazít; a cyber fények gyors ki-be kapcsolásnál nem
+  villannak; a tesztek tényleg elbuknak hibánál (KLAP álizzó-teszt).
+
 ## 1.14.1 – Notifications nagy nézet, Cyber mozi-háttér, billentyűzet a kijelzők alá (2026-10-17)
 
 - **Notifications** kinyílik (`Panels/WristNotes.cs`, `ORBIT_SNAP_ONLY=notes`): az utolsó 20, Clear, stick-görgetés;

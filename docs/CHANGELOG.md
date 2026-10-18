@@ -3,6 +3,28 @@
 This file is built into the app: after an update, the "What's new" window shows every section newer than the
 version you came from. Format: "## <version> | <title>", then "- " points (an indented line continues a point).
 
+## 1.15.0 | New widgets, gaze focus, a theater for every style
+- New watch widgets: Photo (your newest VRChat photos), Weather, Folder (widgets grouped behind one card), Friends
+  online and Session recap (from VRCX), On this day (a photo from a year ago), Temperatures (CPU and GPU, with a hot
+  alert), Light (your Tapo bulb - through Lumos, or straight to the bulb: "Go direct" in the editor), RGB (Prisma)
+  and Avatar toggles (the avatar you wear: its toggles, numbers and sliders, sent to VRChat over OSC).
+- The editor's widget list has categories and a search (type in the desktop window).
+- Gaze focus (Desktops > "Focus the monitor you look at"): the monitor you look at is full size, the others tuck in
+  small beside it - a row of three is a lot narrower.
+- Theater mode: an Ambilight glow round the screen in its picture's colours; a backdrop of its own in every style (a
+  dark cinema hall, Windows 95's starfield, an XP night over the hills, 7's glass ribbons, a calm Mac night, green
+  phosphor); Auto theater starts it when a video goes full screen (Layouts > Theater mode, off by default).
+- Cyber's night city lives: windows light up and go dark, a sign buzzes now and then, antennas blink, cars and a drone
+  glide along the skyline; the neon horizon breathes with the sound and a spark runs round it as the city powers up.
+  Its floor grid is only in front of you and only a short way down, smooth - no more low-poly edges.
+- The Cyber theater bar is a media console: what is playing, its progress, play / pause and 10 s back / forward.
+- Recenter puts the keyboard under the bar too, and in theater under the big screen.
+- Faster: the Modern keyboard draws 6 times faster at rest, the settings panel only redraws when something on it
+  changes, coming into theater no longer stutters, and the panels make far less garbage.
+- Your settings from the version before are kept as config.backup-<version>.json after an update.
+- Fixed: the light widget said "bulb not reachable" when Lumos was not running; Cyber's skyline flickered and moved
+  with the screen; the 1x1 analog clock and some small notes were off on coloured cards; Hungarian words cut short.
+
 ## 1.14.1 | Notifications opened, a night city for Cyber's theater
 - The Notifications widget opens into a big view like the others: the last notifications, newest first, with where
   they came from and when; the stick scrolls, Clear empties the list. Every style draws it its own way (the retro ones
