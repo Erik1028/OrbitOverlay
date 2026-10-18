@@ -244,7 +244,17 @@ public sealed partial class TerminalSkin : Win95Skin
     public void Put(Painter p, string s, float x, float y, uint c, int n = 1, bool bold = false) =>
         Put(p, s, new RectangleF(x, y, W(s, n, bold) + 1, CellH * n), c, n, bold);
 
-    public static string Up(string s) => s?.ToUpperInvariant();
+    // capitals, kept per text (a label drawn every frame made a new string each time) - one table a thread
+    [ThreadStatic] static Dictionary<string, string> _ups;
+
+    public static string Up(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return s;
+        var ups = _ups ??= new Dictionary<string, string>(StringComparer.Ordinal);
+        if (ups.TryGetValue(s, out var u)) return u;
+        if (ups.Count > 512) ups.Clear();
+        return ups[s] = s.ToUpperInvariant();
+    }
 
     public static void Box(Painter p, RectangleF r, uint c)
     {

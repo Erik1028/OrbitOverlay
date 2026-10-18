@@ -279,15 +279,24 @@ public sealed partial class AeroSkin : Win95Skin
         p.Fill(new RectangleF(r.X, r.Y, r.Width, MathF.Round(r.Height * 0.45f)), A(0xFFFFFFFF, 0.22f));
         p.PushClip(r);
         p.Smooth(true);
+        var s = _streak ??= new Vector2[4];     // (one per thread, reused: two new arrays a streak a frame were the light card's garbage)
         for (float sx = r.X + 40; sx < r.Right + r.Height; sx += 150)
         {
-            var s1 = new[] { new Vector2(sx, r.Y), new Vector2(sx + 22, r.Y), new Vector2(sx + 22 - r.Height * 0.7f, r.Bottom), new Vector2(sx - r.Height * 0.7f, r.Bottom) };
-            p.Polygon(s1, A(0xFFFFFFFF, 0.13f));
-            var s2 = new[] { new Vector2(sx + 30, r.Y), new Vector2(sx + 36, r.Y), new Vector2(sx + 36 - r.Height * 0.7f, r.Bottom), new Vector2(sx + 30 - r.Height * 0.7f, r.Bottom) };
-            p.Polygon(s2, A(0xFFFFFFFF, 0.10f));
+            Streak(s, sx, sx + 22, r);
+            p.Polygon(s, 4, A(0xFFFFFFFF, 0.13f));
+            Streak(s, sx + 30, sx + 36, r);
+            p.Polygon(s, 4, A(0xFFFFFFFF, 0.10f));
         }
         p.Smooth(false);
         p.PopClip();
+    }
+
+    [ThreadStatic] static Vector2[] _streak, _thumbOuter, _thumbInner;
+
+    static void Streak(Vector2[] s, float x0, float x1, RectangleF r)
+    {
+        float lean = r.Height * 0.7f;
+        s[0] = new Vector2(x0, r.Y); s[1] = new Vector2(x1, r.Y); s[2] = new Vector2(x1 - lean, r.Bottom); s[3] = new Vector2(x0 - lean, r.Bottom);
     }
 
     // a line between sections: Windows 7's light separator
@@ -613,18 +622,15 @@ public sealed partial class AeroSkin : Win95Skin
             : h >= 1 ? (0xFFF2FAFE, 0xFFD9F0FC, 0xFFA9DBF6) : h <= 0 ? (0xFFF8F8F8, 0xFFE9E9E9, 0xFFD3D3D3)
             : (Theme.Mix(0xFFF8F8F8, 0xFFF2FAFE, h), Theme.Mix(0xFFE9E9E9, 0xFFD9F0FC, h), Theme.Mix(0xFFD3D3D3, 0xFFA9DBF6, h));
         // the outline (body 11 x 14, the point 5 rows), then the gloss inside
-        var outer = new[]
-        {
-            new Vector2(x + 1, y), new Vector2(x + 10, y), new Vector2(x + 11, y + 1), new Vector2(x + 11, y + 14),
-            new Vector2(x + 5.5f, y + 19.5f), new Vector2(x, y + 14), new Vector2(x, y + 1),
-        };
-        var inner = new[]
-        {
-            new Vector2(x + 1, y + 1), new Vector2(x + 10, y + 1), new Vector2(x + 10, y + 13.6f), new Vector2(x + 5.5f, y + 18.1f),
-            new Vector2(x + 1, y + 13.6f),
-        };
+        // (into two arrays kept per thread: a new pair a thumb a frame was the light card's garbage at rest)
+        var outer = _thumbOuter ??= new Vector2[7];
+        outer[0] = new Vector2(x + 1, y); outer[1] = new Vector2(x + 10, y); outer[2] = new Vector2(x + 11, y + 1); outer[3] = new Vector2(x + 11, y + 14);
+        outer[4] = new Vector2(x + 5.5f, y + 19.5f); outer[5] = new Vector2(x, y + 14); outer[6] = new Vector2(x, y + 1);
+        var inner = _thumbInner ??= new Vector2[5];
+        inner[0] = new Vector2(x + 1, y + 1); inner[1] = new Vector2(x + 10, y + 1); inner[2] = new Vector2(x + 10, y + 13.6f);
+        inner[3] = new Vector2(x + 5.5f, y + 18.1f); inner[4] = new Vector2(x + 1, y + 13.6f);
         p.Smooth(true);
-        p.Polygon(outer, border);
+        p.Polygon(outer, border);               // (the kept-geometry one: it copies the points it keeps)
         p.Polygon(inner, c);
         p.Smooth(false);
         p.GradientRaw(new RectangleF(x + 1, y + 1, 9, 13), a, b, c);
