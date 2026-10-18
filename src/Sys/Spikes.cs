@@ -21,13 +21,27 @@ public static class Spikes
     static readonly long[] _frame = new long[Count], _worst = new long[Count];
     static long _mark, _worstTotal;
     static int _worstFrames;
+    // the slowest piece inside a part (a widget of the watch, the watch's flush): the frame keeps its slowest, the line names it
+    static long _noteTicks, _worstNoteTicks;
+    static string _note, _worstNote;
     static readonly StringBuilder _sb = new();
 
     // a frame starts
     public static void Begin()
     {
         Array.Clear(_frame);
+        _noteTicks = 0;
+        _note = null;
         _mark = Stopwatch.GetTimestamp();
+    }
+
+    // a piece that started at 'from' (Stopwatch.GetTimestamp) ends now: the frame's slowest is kept. what: a constant (no garbage)
+    public static void Piece(string what, long from)
+    {
+        long d = Stopwatch.GetTimestamp() - from;
+        if (d <= _noteTicks) return;
+        _noteTicks = d;
+        _note = what;
     }
 
     // the part that ran since the last mark ends now
@@ -47,6 +61,8 @@ public static class Spikes
         if (total <= _worstTotal) return;
         _worstTotal = total;
         Array.Copy(_frame, _worst, Count);
+        _worstNote = _note;
+        _worstNoteTicks = _noteTicks;
     }
 
     // the window's slowest frame, its parts of 0.2 ms or more, slowest first - null when it took less than SpikeMs; a new window
@@ -68,10 +84,13 @@ public static class Spikes
                 used[best] = true;
                 _sb.Append($" {Names[best]} {Ms(_worst[best]):0.0}");
             }
+            if (_worstNote != null && Ms(_worstNoteTicks) >= 0.3) _sb.Append($" | slowest piece: {_worstNote} {Ms(_worstNoteTicks):0.0}");
             line = _sb.ToString();
         }
         _worstTotal = 0;
         _worstFrames = 0;
+        _worstNote = null;
+        _worstNoteTicks = 0;
         Array.Clear(_worst);
         return line;
     }

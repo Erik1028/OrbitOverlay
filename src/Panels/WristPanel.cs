@@ -201,7 +201,15 @@ public sealed partial class WristPanel : IPointerTarget, IDisposable
         _p.Begin(Surf.Bitmap, 0x00000000, TestScale);
         string face = C.Face ?? "full";
         var now = Now;                        // (the clock; a tool's fixed moment)
-        if (face == "custom") { DrawCustom(d); _p.End(); _ui.End(); return; }
+        if (face == "custom")
+        {
+            DrawCustom(d);
+            long e0 = System.Diagnostics.Stopwatch.GetTimestamp();
+            _p.End();                                   // (D2D draws the batch here: waits when the GPU is behind)
+            Spikes.Piece("watch: D2D flush", e0);
+            _ui.End();
+            return;
+        }
         if (Theme.Cyber) { DrawCyberFace(face, d); _p.End(); _ui.End(); return; }      // its own HUD for each preset (WristCyberFaces.cs)
         if (face == "time") { DrawTimeOnly(now); _p.End(); _ui.End(); return; }
 

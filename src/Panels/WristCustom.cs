@@ -497,7 +497,9 @@ public sealed partial class WristPanel
     {
         int count = WatchPages.Count(C), cur = CurPage;
         var list = Layout;
+        long s0 = System.Diagnostics.Stopwatch.GetTimestamp();
         SampleSources();
+        Spikes.Piece("watch: volume / mic / cpu read", s0);
         Bento.Reset();
         bool cards = C.Background == "cards";
         if (!cards && Theme.Cyber) CyberPage();         // Cyber: the olive frame (WristCyber.cs)
@@ -541,7 +543,9 @@ public sealed partial class WristPanel
         if (count > 1) PageDots(count, pos, cards);
         _grid = WatchPages.Grid(C, cur);
         FolderEditView(d, list);                            // the folder the editor works in, open over the page (WristFolder.cs)
+        long dd0 = System.Diagnostics.Stopwatch.GetTimestamp();
         DrawDetail(d, list);
+        Spikes.Piece("watch: opened widget", dd0);
         _layoutSeen = true;
         _seenPage = cur;
         _artFade = _notesSlide = _settled = false;          // a new cover / notification was taken by the cards drawn this frame
@@ -560,6 +564,7 @@ public sealed partial class WristPanel
             var w = list[i];
             var k = WatchWidgets.Find(w.Type);
             if (k == null) continue;
+            long w0 = System.Diagnostics.Stopwatch.GetTimestamp();
             int id = Wid(w);
             var target = WatchWidgets.Rect(w, false, grid);
             // spring to a new place (the editor moved / resized it); a new one pops in
@@ -617,6 +622,7 @@ public sealed partial class WristPanel
             }
             if (veil > 0.004f) _p.Fill(r, Theme.WithAlpha(0x10FFFFFF, veil), CardRadius);      // hover / press: a light veil
             if (Theme.Cyber) CyCardEnd(id, r);              // Cyber: the boot's lines, a scan sweep
+            Spikes.Piece(k.Id, w0);                         // (the slowest widget of a slow frame: Sys/Spikes.cs)
             if (styled) Bento.Reset();
             if (anim)
             {
