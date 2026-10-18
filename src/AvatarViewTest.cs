@@ -662,6 +662,22 @@ static partial class Tools
             var mine = cfg.Data.Avatars.Shown.GetValueOrDefault(AvatarViewTools.FoxId);
             Log.Info($"avatar editor: a pick added Hue Shift after the {before.Split(", ").Length} shown {after == before + ", Hue Shift"} (want True), kept for this " +
                      $"avatar only {mine?.Count == 13 && cfg.Data.Avatars.Shown.Count == 1} (want True)");
+            // a null list for it (a hand-edited config): a pick as the first one, nothing thrown; such a file loaded: the null dropped, the
+            // other avatar's picks kept, a null Shown an empty one
+            cfg.Data.Avatars.Shown[AvatarViewTools.FoxId] = null;
+            string nullPick;
+            try { view.PickForTest(ui, fox, fox.ByName["HueShift"]); nullPick = cfg.Data.Avatars.Shown[AvatarViewTools.FoxId]?.Count == 13 ? "picked" : "not picked"; }
+            catch (Exception e) { nullPick = e.GetType().Name; }
+            string cp = Path.Combine(dir, "avatar_null_config.json");
+            File.WriteAllText(cp, "{\"Avatars\": {\"Shown\": {\"" + AvatarViewTools.FoxId + "\": null, \"" + AvatarViewTools.CatId + "\": [\"Bell\"]}}}");
+            var loaded = new ConfigStore(cp).Data.Avatars;
+            File.WriteAllText(cp, "{\"Avatars\": {\"Shown\": null}}");
+            var loaded2 = new ConfigStore(cp).Data.Avatars;
+            File.Delete(cp);
+            bool norm = loaded?.Shown != null && !loaded.Shown.ContainsKey(AvatarViewTools.FoxId) && loaded.Shown.GetValueOrDefault(AvatarViewTools.CatId)?.Count == 1 &&
+                        loaded2?.Shown?.Count == 0;
+            Log.Info($"avatar editor: a null pick list (a hand-edited config) - a pick '{nullPick}' {nullPick == "picked"} (want True); such a file loaded - the null " +
+                     $"dropped, the other avatar's kept, a null Shown made empty {norm} (want True)");
         }
         finally
         {

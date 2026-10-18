@@ -419,6 +419,13 @@ public sealed class ConfigStore
                         foreach (var p in cfg.Wrist.Pages) p.Widgets ??= new();
                     }
                     cfg.GameRules?.RemoveAll(r => r == null || string.IsNullOrEmpty(r.App));
+                    // the avatar toggles' picks (1.15): a null list (a hand-edited file) is an avatar never picked - the editor's chip
+                    // click threw on it, and the entry stayed in the file for the next start
+                    if (cfg.Avatars != null)
+                    {
+                        cfg.Avatars.Shown ??= new();
+                        foreach (var k in cfg.Avatars.Shown.Where(kv => kv.Value == null).Select(kv => kv.Key).ToList()) cfg.Avatars.Shown.Remove(k);
+                    }
                     return cfg;
                 }
             }

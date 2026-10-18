@@ -36,7 +36,7 @@ public sealed partial class SettingsView
     {
         var cfg = C.Avatars ??= new AvatarsConfig();
         cfg.Shown ??= new Dictionary<string, List<string>>();
-        if (!cfg.Shown.TryGetValue(a.Id, out var list))
+        if (!cfg.Shown.TryGetValue(a.Id, out var list) || list == null)      // (null: as never picked - ConfigStore.Load drops those too)
         {
             list = new List<string>();
             AvatarFilter.Shown(a, null, _avPickTmp);
