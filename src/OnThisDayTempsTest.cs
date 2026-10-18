@@ -36,7 +36,7 @@ static class OnThisDayTempsTools
     // nothing read: the CPU without administrator, the GPU not readable
     public static TempReport None() => TempReport.Fake(float.NaN, float.NaN, float.NaN, float.NaN, 0, i => default);
 
-    static void Want(string line) => Log.Info(line);
+    static bool Want(string line, bool ok) => Tools.Want(line, ok);
 
     public static void DataChecks(string dir)
     {
@@ -64,12 +64,12 @@ static class OnThisDayTempsTools
             var f = PhotoMemories.Find(root, today);
             string got = string.Join(" ", f.Select(p => $"{p.Years}y{p.Taken:MMdd-HHmm}{(p.OtherDay ? "~" : "")}"));
             const string want = "1y1018-0130 1y1017-2015 2y1015-1900~ 4y1017-1800";
-            Want($"memory pick: exact day, past midnight, nearest earlier day, a year with none, the old folder: {got} (want {want}) {got == want}");
+            Want($"memory pick: exact day, past midnight, nearest earlier day, a year with none, the old folder: {got} (want {want})", got == want);
             var none = PhotoMemories.Find(root, new DateTime(2026, 4, 2));
-            Want($"memory pick: a day without photos in any year gives {none.Count} (want 0) {none.Count == 0}");
+            Want($"memory pick: a day without photos in any year gives {none.Count} (want 0)", none.Count == 0);
             var later = PhotoMemories.Find(root, new DateTime(2026, 10, 20));
             Want($"memory pick: 3 days later finds a year ago's nearest day {(later.Count > 0 ? $"{later[0].Years}y{later[0].Taken:MMdd}{(later[0].OtherDay ? "~" : "")}" : "none")} " +
-                 $"(want 1y1018~) {later.Count > 0 && later[0].Taken.Day == 18 && later[0].OtherDay}");
+                 "(want 1y1018~)", later.Count > 0 && later[0].Years == 1 && later[0].Taken.Month == 10 && later[0].Taken.Day == 18 && later[0].OtherDay);
             // the finder on its own thread: the first photo's thumbnail made, the others when wanted
             using var m = new PhotoMemories { FolderOverride = root, NowOverride = new DateTime(2026, 10, 17, 14, 0, 0) };
             m.Active = true;
@@ -81,9 +81,9 @@ static class OnThisDayTempsTools
             while (sw.Elapsed.TotalSeconds < 8 && (s = m.Get()).Recent[2].Thumb == null) System.Threading.Thread.Sleep(50);
             bool wanted = s.Recent[2].Thumb != null;
             m.Active = false;
-            Want($"memory finder: 4 photos, the first's thumbnail at once {first} (want True), another made when wanted {wanted} (want True)");
+            Want($"memory finder: 4 photos, the first's thumbnail at once {first}, another made when wanted {wanted} -", first && wanted);
         }
-        catch (Exception e) { Log.Error("memory checks: " + e); }
+        catch (Exception e) { Log.Error("memory checks: " + e); Want("memory checks: ran to the end", false); }
         finally { try { if (Directory.Exists(root)) Directory.Delete(root, true); } catch { } }
 
         // ---- the temperatures: the sources' numbers read from made-up buffers, "–" when not read ----
@@ -94,16 +94,21 @@ static class OnThisDayTempsTools
         Array.Clear(words);
         S(28, 51);
         var (gfx, hot2, fan2) = AdlGpu.Parse(words);
-        Want($"temps ADL: edge {edge} hotspot {hot} fan {fan} (want 39 42 0); no edge sensor: the GFX {gfx}, no hotspot / fan NaN {float.IsNaN(hot2) && float.IsNaN(fan2)} (want 51 True)");
+        Want($"temps ADL: edge {edge} hotspot {hot} fan {fan} (want 39 42 0); no edge sensor: the GFX {gfx} (want 51), no hotspot / fan NaN {float.IsNaN(hot2) && float.IsNaN(fan2)} -",
+             edge == 39 && hot == 42 && fan == 0 && gfx == 51 && float.IsNaN(hot2) && float.IsNaN(fan2));
         var kb = new byte[64];
         BitConverter.TryWriteBytes(kb.AsSpan(56), 390u);
         var (kt, kf) = KmtGpu.Parse(kb);
         var kb0 = new byte[64];
         var (kt0, _) = KmtGpu.Parse(kb0);
-        Want($"temps D3DKMT: 390 tenths is {kt} °C (want 39), fan 0 is unknown {float.IsNaN(kf)} (want True), no temperature NaN {float.IsNaN(kt0)} (want True)");
+        Want($"temps D3DKMT: 390 tenths is {kt} °C (want 39), fan 0 is unknown {float.IsNaN(kf)}, no temperature NaN {float.IsNaN(kt0)} -",
+             kt == 39 && float.IsNaN(kf) && float.IsNaN(kt0));
         uint raw = (uint)(45.625f / 0.125f) << 21, rawSel = ((uint)((61 + 49) / 0.125f) << 21) | 0x80000;
+        string tidy = TempSensors.Tidy("AMD Ryzen 7 5700X3D 8-Core Processor           ");
         Want($"temps Tctl: {PawnCpu.Decode(raw)} (want 45.625), with RANGE_SEL {PawnCpu.Decode(rawSel)} (want 61); 2700X offset {PawnCpu.Offset("AMD Ryzen 7 2700X")} " +
-             $"(want -10), 5700X3D {PawnCpu.Offset("AMD Ryzen 7 5700X3D")} (want 0); name '{TempSensors.Tidy("AMD Ryzen 7 5700X3D 8-Core Processor           ")}' (want 'AMD Ryzen 7 5700X3D')");
+             $"(want -10), 5700X3D {PawnCpu.Offset("AMD Ryzen 7 5700X3D")} (want 0); name '{tidy}' (want 'AMD Ryzen 7 5700X3D')",
+             PawnCpu.Decode(raw) == 45.625f && PawnCpu.Decode(rawSel) == 61 && PawnCpu.Offset("AMD Ryzen 7 2700X") == -10 &&
+             PawnCpu.Offset("AMD Ryzen 7 5700X3D") == 0 && tidy == "AMD Ryzen 7 5700X3D");
 
         // ---- the hot alert's timing ----
         var a = new Alerts();
@@ -120,7 +125,8 @@ static class OnThisDayTempsTools
         int cooled = Run(160.5, 162, 79, 50) + Run(162.5, 200, 50, 91);
         int broken = Run(200.5, 260, 50, 50) + Run(260.5, 280, 87, 50) + Run(280.5, 281, 87, 50, false) + Run(281.5, 305, 87, 50);
         Want($"temps alert: 29 s at 86 °C {early} card(s) (want 0); at 30 s {at30} (want 1); still hot {again} (want 0); 82 °C then hot again {hover} (want 0); " +
-             $"cooled to 79 °C, then the CPU at 91 for 30 s {cooled} (want 1); the headset off in the middle restarts the 30 s {broken} (want 0)");
+             $"cooled to 79 °C, then the CPU at 91 for 30 s {cooled} (want 1); the headset off in the middle restarts the 30 s {broken} (want 0)",
+             early == 0 && at30 == 1 && again == 0 && hover == 0 && cooled == 1 && broken == 0);
 
         // ---- the settings in the config: written only once set, read back ----
         var opts = new JsonSerializerOptions { WriteIndented = true };
@@ -128,8 +134,9 @@ static class OnThisDayTempsTools
         var set = new AlertsConfig { Hot = true, HotC = 90 };
         var back = JsonSerializer.Deserialize<AlertsConfig>(JsonSerializer.Serialize(set, opts), opts);
         string defJson = JsonSerializer.Serialize(def, opts);
-        Want($"temps alert settings: the defaults write no hot {!defJson.Contains("Hot")} (want True) and are the defaults {def.IsDefault} (want True); on at 90 °C " +
-             $"reads back {back.Hot && back.HotLimit == 90} (want True), is not the defaults {!set.IsDefault} (want True)");
+        Want($"temps alert settings: the defaults write no hot {!defJson.Contains("Hot")} and are the defaults {def.IsDefault}; on at 90 °C " +
+             $"reads back {back.Hot && back.HotLimit == 90}, is not the defaults {!set.IsDefault} -",
+             !defJson.Contains("Hot") && def.IsDefault && back.Hot && back.HotLimit == 90 && !set.IsDefault);
     }
 
     // per style: both widgets on a face and opened; the checks that they show what they should
@@ -207,13 +214,14 @@ static class OnThisDayTempsTools
             long a0 = GC.GetAllocatedBytesForCurrentThread();
             for (int i = 0; i < 20; i++) wrist.Draw(data);
             long perFrame = (GC.GetAllocatedBytesForCurrentThread() - a0) / 20;
-            Want($"onthisday/temps view{tag}: On this day shows its newest {memShown} (want True), opened on it {memOpen} (want True), the arrow steps to the one " +
-                 $"before {stepped} (want True), none: its empty state {memEmpty} (want True); temperatures GPU/CPU '{temps}' (want '66/61'), nothing read '{dash}' " +
-                 $"(want '–/–'); a frame at rest {perFrame} B (want 0)");
+            Want($"onthisday/temps view{tag}: On this day shows its newest {memShown}, opened on it {memOpen}, the arrow steps to the one before {stepped}, " +
+                 $"none: its empty state {memEmpty}; temperatures GPU/CPU '{temps}' (want '66/61'), nothing read '{dash}' (want '–/–') -",
+                 memShown && memOpen && stepped && memEmpty && temps == "66/61" && dash == "–/–");
+            Want($"onthisday/temps view{tag}: a frame at rest with only these widgets on the face {perFrame} B (want 0)", perFrame == 0);
             Preview.RemoveAll(p => p.tag == tag);
             Preview.Add((tag, face, mem, tp));
         }
-        catch (Exception e) { Log.Error("onthisday/temps view: " + e); }
+        catch (Exception e) { Log.Error("onthisday/temps view: " + e); Want($"onthisday/temps view{tag}: ran to the end", false); }
         finally
         {
             wrist.CloseForTest();
@@ -226,6 +234,7 @@ static class OnThisDayTempsTools
     // ORBIT_SNAP_ONLY=onthisday: the data checks, both widgets in every style, the preview sheet - in seconds
     public static int Only(WristPanel wrist, PanelData data, ConfigStore cfg, Gpu gpu, string dir)
     {
+        int failed0 = Tools.WantsFailed;
         var culture = System.Globalization.CultureInfo.CurrentCulture;
         System.Globalization.CultureInfo.CurrentCulture = Tools.SnapCulture;
         DataChecks(dir);
@@ -237,7 +246,7 @@ static class OnThisDayTempsTools
         }
         PreviewSheet(dir);
         System.Globalization.CultureInfo.CurrentCulture = culture;
-        return 0;
+        return Tools.WantsExit(failed0);
     }
 
     // every style's face, On this day opened and the temperatures opened side by side, one row a style
