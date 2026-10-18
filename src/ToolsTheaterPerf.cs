@@ -14,8 +14,9 @@ namespace Orbit;
 // to other colours twice a second, so the Ambilight's glow keeps easing as it does with a film), made-up music for the horizon, a made-up
 // media session for the bar. A short run first warms the JIT and the fonts (the app has those warm by the time theater starts). The theater is started and run 90 frames a simulated second, each frame as
 // the app's: Theater.Update, the bar's Update (the laser on the big screen: the bar stays up), the screen's placement, Cyber fx and
-// capture hand-over, a GPU flush - the GPU idle before each one, like FrameCost. The first 3 s (coming in: the glide, the city's lights,
-// the sweep) apart, then 20 s at rest; for each frame the CPU ms (and by section: PerfTrace), the bytes allocated, the SteamVR calls by
+// capture hand-over, a GPU flush - the GPU idle before each one, like FrameCost. The 45 frames before theater (the style's textures
+// made ready a piece a frame: TheaterWarm.cs), the first 3 s (coming in: the glide, the city's lights, the sweep) apart, then 20 s at
+// rest; for each frame the CPU ms (and by section: PerfTrace), the bytes allocated, the SteamVR calls by
 // kind (and the ones the setters spared), the texture bytes handed to SetTexture. Three times: Cyber with Motion Full, Cyber with Motion
 // Reduced, Modern (the cinema hall). Then the one-off costs (each texture drawn the first time), and the panels at rest in VR terms (their
 // Update with a fake overlay, paced at 90 Hz for a few seconds: how often each redraws and hands its texture over, the calls a frame).
