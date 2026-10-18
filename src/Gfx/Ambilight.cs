@@ -17,8 +17,9 @@ namespace Orbit;
 //    does not flash and nothing flickers.
 //  - The glow: a small texture (112 on its long side) round a hole of the screen's shape. Each texel takes the edge colours near it
 //    along the edge, blurred more the farther out it is, fading to nothing at its rim - no blocks, no seams, round corners. The blur is
-//    worked out once per shape (weights along the edge at 6 distances, 4 of them a texel), so a frame of easing is ~0.03 ms into the
-//    same pixel array and one UpdateSubresource; at rest nothing is done at all. Deep behind the (opaque) screen nothing is drawn.
+//    worked out once per shape (weights along the edge at 6 distances, 4 of them a texel), so a write is ~0.03 ms into the same pixel
+//    array and one UpdateSubresource - every frame only while the colours move fast, else 30 times a second (Step says when); at rest
+//    nothing is done at all. Deep behind the (opaque) screen nothing is drawn.
 //  - The easing is not a Look > Motion animation: it is what keeps a cut from flashing, so it stays with Motion off too.
 public sealed class Ambilight : IDisposable
 {
@@ -187,11 +188,23 @@ public sealed class Ambilight : IDisposable
         return true;
     }
 
-    // the colours a frame closer to the reading; true when the glow has to be written again (Compose)
+    // The glow is written (Compose: ~0.03 ms of work, an upload, and the overlay is handed the texture again - a SteamVR call) when its
+    // colours move - but not on every frame they move (Erik 10-18: "it must be optimized"): every frame only while a colour moves
+    // WriteStep or more in it (the first frames after a cut: steps the eye could follow), else every WriteEvery-th frame - the long
+    // tail of the easing moves a colour under 2 levels a frame, so a texel of the glow (at most 0.8 of a colour's level at the
+    // screen's edge, less farther out) under 2 levels; three frames of that under 5. And once more as they come to rest, so the glow
+    // ends exactly on them. A film (small changes every reading) has the glow written 30 times a second instead of 90, a hard cut
+    // ~40 times instead of ~70 (AmbilightTest: "cadence").
+    const float WriteStep = 2f / 255;
+    const int WriteEvery = 3;
+    int _held;                                       // frames since the glow was written while its colours moved slowly
+    bool _unwritten;                                 // a colour moved since the glow was last written
+
+    // the colours a frame closer to the reading; true when the glow is to be written now (Compose)
     public bool Step(float dt)
     {
         if (!_have) return false;
-        bool moved = _changed;
+        bool moved = _changed, fast = _changed;
         _changed = false;
         float k = 1 - MathF.Exp(-Math.Max(0, dt) / Tau);
         const float Done = 0.5f / 255;
@@ -202,11 +215,20 @@ public sealed class Ambilight : IDisposable
             if (e == t) continue;
             var d = t - e;
             if (MathF.Abs(d.X) < Done && MathF.Abs(d.Y) < Done && MathF.Abs(d.Z) < Done) e = t;     // close enough: the last step, then rest
-            else e += d * k;
+            else
+            {
+                var s = d * k;
+                e += s;
+                if (!fast && (MathF.Abs(s.X) >= WriteStep || MathF.Abs(s.Y) >= WriteStep || MathF.Abs(s.Z) >= WriteStep)) fast = true;
+            }
             _eased[i] = e;
             moved = true;
         }
-        return moved;
+        if (moved) _unwritten = true;
+        if (!_unwritten) return false;
+        // now: a fast move; the first still frame (the colours at rest: the glow on them exactly); the third frame of a slow move
+        if (fast || !moved || ++_held >= WriteEvery) { _held = 0; return true; }
+        return false;
     }
 
     // ---- the glow: its shape, its texture ----
@@ -379,6 +401,8 @@ public sealed class Ambilight : IDisposable
         }
         _g.Ctx.UpdateSubresource(_px, Glow.Tex, 0, (uint)TW * 4, 0, null);
         Composed++;
+        _unwritten = false;
+        _held = 0;
     }
 
     public uint[] Pixels => _px;
