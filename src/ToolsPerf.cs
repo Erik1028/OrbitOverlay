@@ -181,6 +181,7 @@ static partial class Tools
 
         PacerCost();
         CursorCost(gpu);
+        VolumeCost();
 
         File.WriteAllLines(Path.Combine(dir, "perf.tsv"), rows.Select(r => $"{r.style}\t{r.what}\t{r.ms:0.000}\t{r.bytes}\t{r.layouts:0.0}"));
         Motion.Still = still;
@@ -192,6 +193,27 @@ static partial class Tools
     static int _pacedWorstAt;
 
     [System.Runtime.InteropServices.DllImport("user32.dll")] static extern IntPtr LoadCursor(IntPtr instance, IntPtr name);
+
+    // the watch's volume (Sys/SystemStats.cs): read in the frame (the tools' way) and asked of its worker (the app's) - read only
+    static void VolumeCost()
+    {
+        double direct;
+        using (var v = new SystemVolume())
+        {
+            long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+            v.Sample(Clock.Now);
+            direct = System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds;
+        }
+        using var bg = new SystemVolume { Background = true };
+        long a0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        bg.Sample(Clock.Now);
+        double ask = System.Diagnostics.Stopwatch.GetElapsedTime(a0).TotalMilliseconds;
+        double w0 = Clock.Now;
+        while (bg.Level < 0 && Clock.Now - w0 < 3) Thread.Sleep(5);
+        double read = (Clock.Now - w0) * 1000;
+        Log.Info($"perf: volume read in the frame {direct:0.000} ms; asked of its worker {ask:0.000} ms, there {read:0} ms later (level {bg.Level:0.00})");
+        Want($"volume: asking its worker {ask:0.000} ms (want under 0.5), it read the device {bg.Level >= 0} (want True)", ask < 0.5 && bg.Level >= 0);
+    }
 
     // the laser's Windows cursor (Vr/SystemCursor.cs): a shape's first time (drawn) and again (kept) - the system's own cursors
     static void CursorCost(Gpu gpu)

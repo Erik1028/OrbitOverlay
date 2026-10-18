@@ -623,7 +623,6 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             UpdateGpuPriority(now);
             Perf(6, ref t);
             Spikes.Mark(Spikes.Rest);
-            Spikes.End();
             GpuProbeIssue();
             PerfFrame(now);
         }
@@ -658,11 +657,15 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         _data.NightMode = C.Appearance.NightMode;
         _data.LayoutName = C.ActiveLayout;
         _data.KeyboardVisible = C.Keyboard.Visible;
+        Spikes.Mark(Spikes.App);
         // the output device's apps follow the Windows volume while SteamVR runs (a device that ignores its own); the mixer's list
         AudioMixer.Mode = C.General.VolumeToApps is "on" or "off" ? C.General.VolumeToApps : "auto";
         _mixer.Tick(now, _vr.Connected);
+        Spikes.Mark(Spikes.Mixer);
         _win.Tick(now);
         _cfg.SaveIfDue();
+        Spikes.Mark(Spikes.Window);
+        Spikes.End();                       // (the frame's parts kept if it was the window's slowest: Sys/Spikes.cs)
     }
 
     // A hand whose laser points at / holds an Orbit panel keeps its buttons from the game (no stray VRChat clicks).

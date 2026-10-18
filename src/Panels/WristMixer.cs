@@ -28,6 +28,7 @@ public sealed partial class WristPanel
         _mixer = m;
         Volume.Fake = false;
         Volume.Engine = m;
+        Volume.Background = Mic.Background = true;     // their Core Audio calls on workers of their own, not in the watch's frame
     }
 
     // the tools: another made-up set

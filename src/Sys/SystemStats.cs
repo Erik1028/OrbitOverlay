@@ -125,6 +125,52 @@ public sealed class SystemVolume : IDisposable
             if (Level < 0) Level = 0.62f;
             return;
         }
+        if (Background) { Want(now); return; }
+        lock (_gate) SampleNow(now);
+    }
+
+    // The app's (Background): the Core Audio calls run on a worker of their own while the watch wants them (Sample = "I want it"), the
+    // watch only reads the fields - a call to the audio service takes milliseconds now and then, and the watch's first frame waited 7 ms
+    // for one on the main loop (Erik 10-18). The tools': at once, on their thread. A tap's change takes the same lock as the reads.
+    public bool Background;
+    readonly object _gate = new();
+    readonly System.Threading.AutoResetEvent _wake = new(false);
+    System.Threading.Thread _worker;
+    volatile bool _stop;
+    double _wantedUntil;
+
+    void Want(double now)
+    {
+        bool was = now < System.Threading.Volatile.Read(ref _wantedUntil);
+        System.Threading.Volatile.Write(ref _wantedUntil, now + 1.5);
+        if (_worker == null)
+        {
+            _worker = new System.Threading.Thread(Work) { IsBackground = true, Name = "OrbitOverlay volume", Priority = System.Threading.ThreadPriority.BelowNormal };
+            _worker.Start();
+        }
+        else if (!was) _wake.Set();
+    }
+
+    void Work()
+    {
+        while (!_stop)
+        {
+            double now = Clock.Now;
+            bool wanted = now < System.Threading.Volatile.Read(ref _wantedUntil);
+            if (wanted) lock (_gate) SampleNow(now);
+            _wake.WaitOne(wanted ? 260 : System.Threading.Timeout.Infinite);
+        }
+    }
+
+    void StopWorker()
+    {
+        _stop = true;
+        _wake.Set();
+        _worker?.Join(500);
+    }
+
+    void SampleNow(double now)
+    {
         if (now < _next) return;
         _next = now + 0.25;
         try
@@ -165,6 +211,12 @@ public sealed class SystemVolume : IDisposable
 
     public void Set(float level)
     {
+        lock (_gate) SetNow(level);
+        _wake.Set();                    // (read back soon)
+    }
+
+    void SetNow(float level)
+    {
         level = Math.Clamp(level, 0, 1);
         if (Fake) { Level = level; return; }
         if (PerApp)
@@ -187,6 +239,12 @@ public sealed class SystemVolume : IDisposable
     }
 
     public void ToggleMute()
+    {
+        lock (_gate) ToggleMuteNow();
+        _wake.Set();
+    }
+
+    void ToggleMuteNow()
     {
         if (Fake) { Muted = !Muted; return; }
         if (PerApp)
@@ -261,8 +319,12 @@ public sealed class SystemVolume : IDisposable
 
     public void Dispose()
     {
-        Release();
-        if (_en != null) { Marshal.ReleaseComObject(_en); _en = null; }
+        StopWorker();
+        lock (_gate)
+        {
+            Release();
+            if (_en != null) { Marshal.ReleaseComObject(_en); _en = null; }
+        }
     }
 }
 
@@ -331,7 +393,54 @@ public sealed class SystemMic : IDisposable
 
     public void Sample(double now)
     {
-        if (Fake || now < _next) return;
+        if (Fake) return;
+        if (Background) { Want(now); return; }
+        lock (_gate) SampleNow(now);
+    }
+
+    // The app's (Background): the Core Audio calls run on a worker of their own while the watch wants them (Sample = "I want it"), the
+    // watch only reads the fields - a call to the audio service takes milliseconds now and then, and the watch's first frame waited 7 ms
+    // for one on the main loop (Erik 10-18). The tools': at once, on their thread. A tap's change takes the same lock as the reads.
+    public bool Background;
+    readonly object _gate = new();
+    readonly System.Threading.AutoResetEvent _wake = new(false);
+    System.Threading.Thread _worker;
+    volatile bool _stop;
+    double _wantedUntil;
+
+    void Want(double now)
+    {
+        bool was = now < System.Threading.Volatile.Read(ref _wantedUntil);
+        System.Threading.Volatile.Write(ref _wantedUntil, now + 1.5);
+        if (_worker == null)
+        {
+            _worker = new System.Threading.Thread(Work) { IsBackground = true, Name = "OrbitOverlay microphone", Priority = System.Threading.ThreadPriority.BelowNormal };
+            _worker.Start();
+        }
+        else if (!was) _wake.Set();
+    }
+
+    void Work()
+    {
+        while (!_stop)
+        {
+            double now = Clock.Now;
+            bool wanted = now < System.Threading.Volatile.Read(ref _wantedUntil);
+            if (wanted) lock (_gate) SampleNow(now);
+            _wake.WaitOne(wanted ? 260 : System.Threading.Timeout.Infinite);
+        }
+    }
+
+    void StopWorker()
+    {
+        _stop = true;
+        _wake.Set();
+        _worker?.Join(500);
+    }
+
+    void SampleNow(double now)
+    {
+        if (now < _next) return;
         _next = now + 0.25;
         try
         {
@@ -362,6 +471,12 @@ public sealed class SystemMic : IDisposable
     }
 
     public void ToggleMute()
+    {
+        lock (_gate) ToggleMuteNow();
+        _wake.Set();
+    }
+
+    void ToggleMuteNow()
     {
         if (Fake) { Muted = !Muted; Present = true; Version++; return; }
         if (_vol == null) return;
@@ -419,7 +534,11 @@ public sealed class SystemMic : IDisposable
 
     public void Dispose()
     {
-        Release();
-        if (_en != null) { Marshal.ReleaseComObject(_en); _en = null; }
+        StopWorker();
+        lock (_gate)
+        {
+            Release();
+            if (_en != null) { Marshal.ReleaseComObject(_en); _en = null; }
+        }
     }
 }
