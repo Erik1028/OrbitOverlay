@@ -64,6 +64,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
     double _lastChord = -10;
     bool _restoreDesktops = true, _restoreKeyboard;
     Theater _theater;
+    GazeFocus _gazeFocus;            // Desktops > Focus the monitor you look at (Panels/GazeFocus.cs)
     ITheaterScreen _lastScreen;      // the monitor / window the laser was on last: theater mode plays it
     bool _theaterKb;                 // theater mode put the keyboard away (it comes back after)
     readonly List<ITheaterScreen> _screens = new(), _theaterChoices = new();
@@ -111,6 +112,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         // own face (a copy of config.json first). Only the config here - no window exists yet (1.10.0 crashed touching one).
         WatchPages.Migrate(_cfg);
         _layout = new DesktopLayout(_desktops, _cfg);
+        _gazeFocus = new GazeFocus(_desktops);
         _data.Gpu = _gpuStats;
         _data.Media = _media;
         _data.VramTotalGB = _gpu.DedicatedVram / (1024f * 1024 * 1024);
@@ -522,6 +524,11 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             // headset off: no capturing (the overlays keep their last picture)
             if (awake)
             {
+                // gaze focus (Panels/GazeFocus.cs): which monitor of a row is drawn full size this frame - held while a screen plays or is
+                // on its way in / out, and while a hand holds a mouse button (a drag across screens)
+                bool busy = _theater.On;
+                if (!busy) foreach (var d in _desktops) if (d.Theater != null) { busy = true; break; }
+                _gazeFocus.Update(_vr, now, dt, C.Focus, busy, _mouse.Held, _lasers[0].Hovered, _lasers[1].Hovered);
                 foreach (var d in _desktops) { d.SmartCapture = C.General.SmartCapture; d.Update(_vr, now, C.General.DesktopsVisible, C.General.CaptureFps); }
                 foreach (var w in _windowPanels) w.Update(_vr, now, C.General.DesktopsVisible, C.General.CaptureFps, C.General.SmartCapture);
                 if (now >= _nextWindowScan) { _nextWindowScan = now + 2; ScanWindows(); }

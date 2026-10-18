@@ -143,6 +143,7 @@ static partial class Tools
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "pulse") return PulseOnly(cfg, painter, gpu, dir);           // Cyber's horizon (HorizonPulseTest.cs)
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "autotheater") return AutoTheaterOnly(wrist, data, cfg, painter, gpu, dir);
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "mediabar") return MediaBarOnly(cfg, painter, gpu, dir);     // theater bar's media console (MediaBarTest.cs)
+        if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "focus") return FocusOnly(wrist, data, cfg, painter, gpu, dir);     // gaze focus (GazeFocusTest.cs)
         if (everything)
         {
             var sw0 = System.Diagnostics.Stopwatch.StartNew();

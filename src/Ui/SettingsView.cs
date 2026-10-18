@@ -312,7 +312,8 @@ public sealed partial class SettingsView
         var p = ui.P;
         var mons = _h.MonitorList;
         ui.Section(new RectangleF(232, 80, 400, 22), "Monitors");
-        var map = new RectangleF(232, 104, 752, 118);
+        // (10-18: the map 26 px lower than it was, the gaze focus switch and its slider under Arrangement; the row hint moved left)
+        var map = new RectangleF(232, 104, 752, 92);
         p.Fill(map, Theme.Panel, 12);
         if (mons.Count == 0) { p.Text("No monitors found", map, Theme.Dim, 15, FontWeight.Normal, TextAlignment.Center); return; }
         if (_selected == null || !mons.Any(m => m.Id == _selected)) _selected = mons.FirstOrDefault(m => !m.Virtual)?.Id ?? mons[0].Id;
@@ -344,15 +345,15 @@ public sealed partial class SettingsView
         var cfg = C.Desktops.FirstOrDefault(d => d.Id == mon.Id);
         if (cfg == null) return;
         int gs = _h.GroupSize(cfg);
-        p.Text($"{mon.Name}", new RectangleF(232, 232, 420, 30), Theme.Text, 19, FontWeight.SemiBold);
+        p.Text($"{mon.Name}", new RectangleF(232, 206, 420, 30), Theme.Text, 19, FontWeight.SemiBold);
         p.Text($"{mon.W}×{mon.H}  ·  {mon.Device.Replace(@"\\.\", "")}{(mon.Primary ? "  ·  " + Lang.T("primary") : "")}{(gs > 1 ? "  ·  " + Lang.F("joined row of {0}", gs) : "")}",
-            new RectangleF(232, 260, 460, 22), Theme.Dim, 13);
+            new RectangleF(232, 234, 460, 22), Theme.Dim, 13);
         bool en2 = cfg.Enabled;
-        if (ui.Toggle("d.en", new RectangleF(714, 234, 270, 46), "Show in VR", ref en2))
+        if (ui.Toggle("d.en", new RectangleF(714, 208, 270, 46), "Show in VR", ref en2))
             _h.SetDesktopEnabled(cfg, en2);
 
         float lx = 222, rx = 608, cw = 376;
-        float y = 292;
+        float y = 266;
         float v = cfg.Width;
         if (ui.Slider("d.w", new RectangleF(lx, y, cw, 58), "Size", ref v, 0.3f, 3f, f => Lang.F("{0:0.00} m wide", f), cfg.Enabled))
         {
@@ -383,23 +384,35 @@ public sealed partial class SettingsView
         if (ui.Button("d.fit", new RectangleF(rx + 188, y + 134, 178, 38), "Curve around me", null, false, live && (cfg.Place.Attach ?? "world") == "world", 14))
             _h.FitCurve(cfg);
 
-        p.Line(232, 498, 984, 498, Theme.Border, 1);
+        p.Line(232, 472, 984, 472, Theme.Border, 1);
         float fps = C.General.CaptureFps;
         bool smart = C.General.SmartCapture;
-        if (ui.Slider("g.fps", new RectangleF(lx, 506, cw, 58), smart ? "Capture rate (smart is on)" : "Capture rate", ref fps, 15, 90,
+        if (ui.Slider("g.fps", new RectangleF(lx, 480, cw, 58), smart ? "Capture rate (smart is on)" : "Capture rate", ref fps, 15, 90,
                 f => $"{Math.Round(f):0} fps", !smart))
             C.General.CaptureFps = (int)Math.Round(fps);
-        if (ui.Toggle("g.smart", new RectangleF(lx, 566, cw, 54), "Smart frame rate", ref smart,
+        if (ui.Toggle("g.smart", new RectangleF(lx, 540, cw, 54), "Smart frame rate", ref smart,
                 "where you look or point: headset rate · edge 15 · behind 4 fps"))
             C.General.SmartCapture = smart;
-        ui.Section(new RectangleF(rx + 10, 506, cw, 20), "Arrangement");
-        if (ui.Button("d.join", new RectangleF(rx + 10, 530, 236, 38), "Join into one curved screen", Theme.IcoLink, true, _h.VrConnected, 14))
-            _h.JoinAllDesktops();
-        if (ui.Button("d.sep", new RectangleF(rx + 256, 530, 110, 38), "Separate", null, false, true, 14))
-            _h.SeparateDesktops();
-        ui.Label(new RectangleF(rx + 10, 576, cw - 10, 50),
+        ui.Label(new RectangleF(lx + 10, 598, cw - 10, 34),
             "Drop a monitor next to another one and it snaps into the row. Hold B / Y while grabbing to pull one out.",
             Theme.Dim, 12, FontWeight.Normal, true);
+        ui.Section(new RectangleF(rx + 10, 480, cw, 20), "Arrangement");
+        if (ui.Button("d.join", new RectangleF(rx + 10, 502, 236, 36), "Join into one curved screen", Theme.IcoLink, true, _h.VrConnected, 14))
+            _h.JoinAllDesktops();
+        if (ui.Button("d.sep", new RectangleF(rx + 256, 502, 110, 36), "Separate", null, false, true, 14))
+            _h.SeparateDesktops();
+        DrawFocus(ui, rx, cw, 542);
+    }
+
+    // gaze focus (Panels/GazeFocus.cs, Erik 10-18): the monitor you look at full size, the others of its row smaller beside it
+    void DrawFocus(Ui ui, float rx, float cw, float y)
+    {
+        bool on = C.Focus?.Enabled ?? false;
+        if (ui.Toggle("d.focus", new RectangleF(rx, y, cw, 46), "Focus the monitor you look at", ref on, "look at one and the others shrink beside it"))
+            (C.Focus ??= new FocusConfig()).Enabled = on;
+        float v = C.Focus?.Others ?? GazeFocus.OthersDefault;
+        if (ui.Slider("d.others", new RectangleF(rx, y + 48, cw, 44), "Others", ref v, GazeFocus.OthersMin, GazeFocus.OthersMax, f => $"{f * 100:0}%", on))
+            (C.Focus ??= new FocusConfig()).Others = v;
     }
 
     // ---------------- Wrist ----------------
