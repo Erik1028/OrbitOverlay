@@ -118,6 +118,41 @@ public sealed partial class SettingsView
         _wnScroll = 0;
     }
 
+    // ---- drawn again only when something shows differently ----
+    // The VR panel and the desktop window drew the page twice a second whatever it showed, for the values that change by themselves
+    // (the link, an update's progress, the clock in the status line's preview): 0.8 ms and a 5.8 MB texture to SteamVR each time.
+    // Now they ask this on that beat: a hash of everything the open page shows that moves without a click - and draw only when it
+    // differs from the last frame's (Erik 10-18: "it must be optimized, get the maximum out of it"). A page with a live preview (the
+    // watch, the keyboard) or a list read from Windows (the windows to mirror) is never the same twice: those keep the old beat.
+    // What a click changes is the panel's own business (its dirty flag), what a style animates is AnimWake's.
+    int _liveTick;
+
+    public int LiveSig()
+    {
+        var h = new HashCode();
+        h.Add(Theme.Version); h.Add(Lang.Version); h.Add(Tab); h.Add(_h.Cfg.Changes); h.Add(_h.Cfg.Dirty);
+        h.Add(_h.VrConnected); h.Add(_h.VrStatus); h.Add(_h.InputStatus);
+        h.Add(WhatsNewShown?.Count ?? 0);                   // the host's card comes by itself (an update)
+        if (Theme.Cyber) { h.Add(CyberLiveLine()); h.Add(CyberVrTime()); }
+        if (ShowsWristPreview || ShowsKeyboardPreview || Tab == TabWindows) h.Add(++_liveTick);
+        switch (Tab)
+        {
+            case TabGeneral:
+                h.Add(_h.AutoStartStatus); h.Add(_h.IsElevated); h.Add(_h.NotificationStatus); h.Add(_h.GpuName);
+                foreach (var m in _h.MonitorList) h.Add(m.Name);
+                var (us, umsg, uprog, ulatest) = _h.Updates.Snapshot();
+                h.Add(us); h.Add(umsg); h.Add(uprog); h.Add(ulatest); h.Add(_h.Updates.Busy);
+                break;
+            case TabDesktops:
+                foreach (var m in _h.MonitorList) h.Add(m.Id);
+                break;
+            case TabVrchat:
+                h.Add(_h.StatusLinePreview); h.Add(_h.RoomStatus);
+                break;
+        }
+        return h.ToHashCode();
+    }
+
     public void Draw(Ui ui)
     {
         var p = ui.P;

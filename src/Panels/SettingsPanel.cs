@@ -22,7 +22,9 @@ public sealed class SettingsPanel : IPointerTarget, IDisposable
     VrSession _vr;
     bool _open, _dirty = true;
     float _vis;                 // 0..1 open animation
-    double _nextDraw;
+    double _nextCheck;          // when the page is next asked whether it shows anything new (SettingsView.LiveSig)
+    double _wake = double.PositiveInfinity;    // a style's animation wants its next frame then (AnimWake.cs)
+    int _liveSig;
     float _twoStartWidth;
 
     SettingsPanelConfig C => _cfg.Data.SettingsPanel;
@@ -94,7 +96,14 @@ public sealed class SettingsPanel : IPointerTarget, IDisposable
         Ov.SetAlpha(e);
         Ov.SetWidth(C.Width * (0.92f + 0.08f * e));
         bool fading = _vis < 1 && Theme.RetroSkin.AnimatesFade;        // a style's opening / closing shows on every frame of the fade
-        bool redraw = _dirty || now >= _nextDraw || _ui.Animating || fading;
+        bool redraw = _dirty || _ui.Animating || fading || now >= _wake;
+        // twice a second the page is asked whether anything it shows has changed by itself (SettingsView.LiveSig): drawn again and
+        // handed to SteamVR only then - it was drawn and handed over on every beat whatever it showed (5.8 MB a time)
+        if (!redraw && now >= _nextCheck)
+        {
+            _nextCheck = now + 0.5;
+            redraw = _view.LiveSig() != _liveSig;
+        }
         if (redraw)
         {
             _beforeDraw?.Invoke(_view);
@@ -103,10 +112,12 @@ public sealed class SettingsPanel : IPointerTarget, IDisposable
             _view.Closing = !_open;
             DrawFrame(_ptr);
             Ov.SetTexture(Surf.Tex);
+            _liveSig = _view.LiveSig();
             // a press / release frame always gets one more frame: what the click changed (picker closed,
             // new theme, other card selected) was drawn before the click was handled
             _dirty = _ui.Interacting || _ui.Changed || _ui.Pressed || _ui.Released;
-            _nextDraw = Math.Min(now + 0.5, AnimWake.Take());            // sooner when a style's animation asks (AnimWake.cs)
+            _wake = AnimWake.Take();                                    // a style's animation asks for its next frame (AnimWake.cs)
+            _nextCheck = now + 0.5;
         }
         Ov.Show();
     }

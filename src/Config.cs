@@ -437,11 +437,15 @@ public sealed class ConfigStore
 
     public bool Dirty => _dirty;      // a change not on disk yet (the 95 sheet's Apply button)
 
+    // how many times a change was marked (a grab marks one every frame): the settings draw again when it moved (SettingsView.LiveSig)
+    public int Changes { get; private set; }
+
     public void MarkDirty()
     {
         if (!_dirty) _dirtySince = Now;
         _lastChange = Now;
         _dirty = true;
+        Changes++;
     }
 
     // Saves once things have been quiet for a second (sliders fire every frame).
