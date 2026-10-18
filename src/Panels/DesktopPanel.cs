@@ -238,11 +238,13 @@ public sealed class DesktopPanel : ITheaterScreen, IDisposable
     {
         _hovering[(int)h] = true;
         if (!Cfg.Mouse || !OwnsMouse(h)) return;
+        if (_leftDown && Clock.Now >= _mvNext) { _mvNext = Clock.Now + 0.05; TrackMove(); }     // (a window moved by the drag?)
         if (Vector2.DistanceSquared(px, _lastPx) < 0.25f) return;
         _lastPx = px;
         var (x, y) = ScreenPoint(px);
         Native.SetCursorPos(x, y);
     }
+    double _mvNext;
 
     public void PointerLeave(Hand h)
     {
@@ -266,6 +268,7 @@ public sealed class DesktopPanel : ITheaterScreen, IDisposable
         if (b == PtrButton.Primary && down != _leftDown)
         {
             _leftDown = down;
+            _mvHwnd = IntPtr.Zero;
             Native.SendMouse(down ? Native.MOUSEEVENTF_LEFTDOWN : Native.MOUSEEVENTF_LEFTUP);
         }
         else if (b == PtrButton.Secondary && down != _rightDown)
@@ -314,6 +317,61 @@ public sealed class DesktopPanel : ITheaterScreen, IDisposable
 
     bool DrivesCursor(Hand h) => Cfg.Mouse && _mouse.Hand == h && _mouse.Panel == this;
     public float LaserCursorScale(Hand h) => DrivesCursor(h) ? (Theater?.Width ?? Focus?.Width ?? Cfg.Width) / Math.Max(1, Mon.W) : 0;
+    public bool WarpTarget => Cfg.Mouse;
+
+    // ---- the window a held left button moves on the desktop (a window pulled out: OrbitApp.PopOut.cs) ----
+    // Windows' own move loop says it: the foreground thread is "in move / size" and names the window. Seen while the button is down (a
+    // flag read a frame - no message to the app), its place and size kept from the first moment.
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    struct GUITHREADINFO
+    {
+        public int cbSize;
+        public uint flags;
+        public IntPtr hwndActive, hwndFocus, hwndCapture, hwndMenuOwner, hwndMoveSize, hwndCaret;
+        public Native.RECT rcCaret;
+    }
+    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool GetGUIThreadInfo(uint thread, ref GUITHREADINFO info);
+    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out Native.RECT r);
+    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool IsZoomed(IntPtr h);
+    const uint GUI_INMOVESIZE = 0x2;
+    IntPtr _mvHwnd;
+    Native.RECT _mvFrom;
+    bool _mvMax;
+
+    static IntPtr InMoveLoop()
+    {
+        IntPtr fg = Native.GetForegroundWindow();
+        if (fg == IntPtr.Zero) return IntPtr.Zero;
+        var gi = new GUITHREADINFO { cbSize = System.Runtime.InteropServices.Marshal.SizeOf<GUITHREADINFO>() };
+        uint tid = Native.GetWindowThreadProcessId(fg, out _);
+        return GetGUIThreadInfo(tid, ref gi) && (gi.flags & GUI_INMOVESIZE) != 0 ? gi.hwndMoveSize : IntPtr.Zero;
+    }
+
+    void TrackMove()
+    {
+        var h = InMoveLoop();
+        if (h == IntPtr.Zero || h == _mvHwnd) return;
+        _mvHwnd = h;
+        _mvMax = IsZoomed(h);
+        if (!GetWindowRect(h, out _mvFrom)) _mvHwnd = IntPtr.Zero;
+    }
+
+    // the window being moved (not sized) by this panel's held button now: where it was, maximized then
+    internal bool MovingWindow(out IntPtr hwnd, out Native.RECT from, out bool wasMax)
+    {
+        hwnd = _mvHwnd; from = _mvFrom; wasMax = _mvMax;
+        if (!_leftDown || hwnd == IntPtr.Zero || InMoveLoop() != hwnd) return false;
+        if (!wasMax && GetWindowRect(hwnd, out var now)
+            && (now.Right - now.Left != from.Right - from.Left || now.Bottom - now.Top != from.Bottom - from.Top)) return false;   // (sized)
+        return true;
+    }
+
+    // the drag ends here (the window comes out): the button let go in Windows
+    public void EndDrag()
+    {
+        ReleaseButtons();
+        _mvHwnd = IntPtr.Zero;
+    }
 
     public Matrix4x4 WorldTransform =>
         Theater is { } th ? th.World

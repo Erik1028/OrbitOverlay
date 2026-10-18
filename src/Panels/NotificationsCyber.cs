@@ -41,7 +41,7 @@ public sealed partial class NotificationPanel
             else
             {
                 _p.FillCut(icon, A(CyberHud.Card2), 0, 0, 12, 0);
-                _p.Icon(CyBell, icon, A(CyberHud.Cyan), 40);
+                _p.Icon(c.Glyph ?? CyBell, icon, A(CyberHud.Cyan), 40);
             }
             CyberHud.Brackets(_p, RectangleF.Inflate(icon, 5, 5), A(CyberHud.Cyan), 12, 0, 2);
             float tx = icon.Right + 26, tw = r.Right - tx - 26;

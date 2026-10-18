@@ -294,6 +294,7 @@ public sealed class WindowPanel : ITheaterScreen, IDisposable
 
     bool DrivesCursor(Hand h) => Cfg.Mouse && _mouse.Hand == h && _mouse.Panel == this;
     public float LaserCursorScale(Hand h) => DrivesCursor(h) ? (Theater?.Width ?? Cfg.Width) / Math.Max(1, TextureSize.X) : 0;
+    public bool WarpTarget => Cfg.Mouse && Hwnd != IntPtr.Zero;
 
     // ---- grab: move, stick = bend, two hands = size ----
     public bool Grabbable => true;

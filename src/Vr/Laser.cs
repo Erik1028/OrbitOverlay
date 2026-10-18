@@ -32,6 +32,9 @@ public interface IPointerTarget
     // > 0: this hand drives the Windows cursor here, draw it at this many metres per screen pixel
     float LaserCursorScale(Hand h) => 0;
 
+    // a monitor / window with the mouse on: the laser may jump onto it where your eyes are (Laser.EyeWarp)
+    bool WarpTarget => false;
+
     // A drag held on 'from' reaches this panel: true = it carries on here (the next monitor of the same Windows desktop),
     // false = 'from' keeps the beam on its edge (pointer capture)
     bool TakesDragFrom(IPointerTarget from, Hand h) => false;
@@ -73,6 +76,25 @@ public sealed class Laser : IDisposable
     Vector3 _freezeDir, _freezePoint;
     double _freezeUntil;
     const float FreezeAngle = 0.9f * MathF.PI / 180;      // move further than this to break out early
+
+    // ---- the eye warp (Erik 10-18, eye tracking: "the cursor jumps to where you look, the laser only fine-tunes") ----
+    // A press on a monitor while your eyes are on another spot of one - more than WarpAngle from the laser's point, as your eye sees
+    // them - does not click: the beam turns to where you look and the next press clicks. The turn is kept in the controller's own frame
+    // (the hand's moves stay one to one, the beam a straight line from it); it goes once the beam has been off every panel for a moment,
+    // on a panel it does not jump to (the watch, the keyboard), on a grab, or with the setting off.
+    public static bool EyeWarp;                      // General.EyeWarp with eye tracking on (OrbitApp, every frame)
+    public const float WarpAngle = 7 * MathF.PI / 180;
+    Vector3 _warpLocal;                              // the beam's direction in the controller's frame while warped
+    bool _warped;
+    double _offSince = -1;
+    public bool Warped => _warped;
+
+    // ---- a window pulled out of a monitor (OrbitApp.PopOut.cs, Erik 10-18) ----
+    // While the trigger drags a window on a monitor and the beam leaves it into the air (PopAngle past its edge), the app makes the window a
+    // panel of its own (null: it does not); this hand holds that panel until the trigger lets go
+    public static Func<IPointerTarget, Hand, Vector3, Vector3, float, IPointerTarget> PopOut;
+    public const float PopAngle = 9 * MathF.PI / 180;
+    bool _grabByTrigger;
 
     public bool Active => _hover != null || _grab != null || _primary != null;
     public IPointerTarget Hovered => _hover;
@@ -132,7 +154,8 @@ public sealed class Laser : IDisposable
             return;
         }
         _rawO = hs.Aim.Translation;
-        _rawD = Vector3.Normalize(MathUtil.Forward(hs.Aim));
+        if (_warped && !EyeWarp) ClearWarp();
+        _rawD = _warped ? Vector3.Normalize(Vector3.TransformNormal(_warpLocal, hs.Aim)) : Vector3.Normalize(MathUtil.Forward(hs.Aim));
         var (o, d) = _filter.Filter(_rawO, _rawD, dt, Smoothing);
 
         // Releases are handled before anything else: the grab / two-hand branches below return
@@ -169,10 +192,12 @@ public sealed class Laser : IDisposable
 
         if (_grab != null)
         {
-            if (!hs.Grab || !_grab.Interactive)
+            bool held = _grabByTrigger ? hs.Click : hs.Grab;            // (a window just pulled out: the trigger holds it, it is still fading in)
+            if (!held || (!_grab.Interactive && !_grabByTrigger))
             {
                 var g = _grab;
                 _grab = null;
+                _grabByTrigger = false;
                 _partner = null;
                 EndGrab(g);
                 if (haptics && _snapShown) vr.Haptic(_hand, 0.6f, 0.03f);
@@ -234,6 +259,16 @@ public sealed class Laser : IDisposable
         else if (_press != null && best != _press && _press.Interactive && _press.Overlay != null
             && _press.Overlay.ProjectLocal(vr, o, d, out float cDist, out var cUv, out var cPoint, out var cNormal))
         {
+            // a window dragged off the monitor into the air: out it comes as a panel of its own, in this hand until the trigger lets go
+            if (best == null && PopOut != null && hs.Click
+                && MathF.Acos(Math.Clamp(Vector3.Dot(d, Vector3.Normalize(cPoint - o)), -1f, 1f)) > PopAngle
+                && PopOut(_press, _hand, o, d, cDist) is { } popped)
+            {
+                _press = null;
+                _freezeUntil = 0;
+                TriggerGrab(vr, popped, hs.Aim, o, d, haptics);
+                return;
+            }
             best = _press; bestDist = cDist; bestUv = cUv; bestPoint = cPoint; bestNormal = cNormal;
         }
 
@@ -244,6 +279,9 @@ public sealed class Laser : IDisposable
             _hover = best;
             if (best != null && haptics) vr.Haptic(_hand, 0.12f);
         }
+        // the eye warp lets go: off every panel for a moment, or on one it does not jump to
+        _offSince = _hover != null ? -1 : _offSince < 0 ? _clock : _offSince;
+        if (_warped && (_hover != null ? !_hover.WarpTarget : _clock - _offSince > 0.6)) ClearWarp();
 
         if (_hover != null)
         {
@@ -256,7 +294,11 @@ public sealed class Laser : IDisposable
             _lastPx = px;
             _lastPoint = bestPoint;
             _hover.PointerMove(_hand, px);
-            if (hs.ClickPressed)
+            if (hs.ClickPressed && TryWarp(vr, targets, bestPoint, hs.Aim))
+            {
+                if (haptics) vr.Haptic(_hand, 0.3f, 0.012f);         // the beam turned to where you look: a light tick, no click
+            }
+            else if (hs.ClickPressed)
             {
                 // hold the cursor still for a moment so the click lands where it was aimed
                 _freezeTarget = _hover; _freezePx = px; _freezePoint = bestPoint; _freezeDir = d; _freezeUntil = _clock + 0.3;
@@ -288,6 +330,7 @@ public sealed class Laser : IDisposable
                 }
                 if (Other == null || Other._grab != _hover)
                 {
+                    ClearWarp();
                     _grab = _hover;
                     _hover.PointerLeave(_hand);        // a grabbed monitor gives the mouse back
                     _hover = null;
@@ -326,6 +369,66 @@ public sealed class Laser : IDisposable
     }
 
     Vector3 _lastPoint;
+
+    // the press on a monitor: your eyes on another spot of a monitor / window, far enough from the laser's point - the beam turns there
+    bool TryWarp(VrSession vr, IReadOnlyList<IPointerTarget> targets, Vector3 laserPoint, in Matrix4x4 aim)
+    {
+        if (!EyeWarp || !vr.EyesValid || _hover == null || !_hover.WarpTarget) return false;
+        float nearest = float.MaxValue;
+        Vector3 at = default;
+        for (int i = 0; i < targets.Count; i++)
+        {
+            var t = targets[i];
+            if (t == null || !t.WarpTarget || !t.Interactive || t.Overlay == null) continue;
+            if (t.Overlay.RaycastLocal(vr, vr.GazeOrigin, vr.Gaze, out float dist, out _, out var pt, out _) && dist < nearest && dist < 8f)
+            {
+                nearest = dist;
+                at = pt;
+            }
+        }
+        if (nearest == float.MaxValue || !WarpLocal(laserPoint, vr.GazeOrigin, at, aim, out var local)) return false;
+        _warpLocal = local;
+        _warped = true;
+        _filter.Reset();
+        return true;
+    }
+
+    // far enough apart as the eye sees them (WarpAngle): the direction from the controller to the spot looked at, in the controller's
+    // own frame (GazeFocusTools' warp checks)
+    internal static bool WarpLocal(Vector3 laserPoint, Vector3 eye, Vector3 lookPoint, in Matrix4x4 aim, out Vector3 local)
+    {
+        local = default;
+        Vector3 toLaser = laserPoint - eye, toLook = lookPoint - eye;
+        if (toLaser.LengthSquared() < 1e-6f || toLook.LengthSquared() < 1e-6f) return false;
+        float ang = MathF.Acos(Math.Clamp(Vector3.Dot(Vector3.Normalize(toLaser), Vector3.Normalize(toLook)), -1f, 1f));
+        if (ang < WarpAngle) return false;
+        var l = Vector3.TransformNormal(lookPoint - aim.Translation, MathUtil.Invert(aim));
+        if (l.LengthSquared() < 1e-6f) return false;
+        local = Vector3.Normalize(l);
+        return true;
+    }
+
+    void ClearWarp()
+    {
+        if (!_warped) return;
+        _warped = false;
+        _filter.Reset();
+    }
+
+    // the window just pulled out: this hand holds it (the trigger, not the grip) where the beam is
+    void TriggerGrab(VrSession vr, IPointerTarget t, in Matrix4x4 aim, Vector3 o, Vector3 d, bool haptics)
+    {
+        if (_hover != null) { _hover.PointerLeave(_hand); _hover = null; }
+        ClearWarp();
+        _grab = t;
+        _grabByTrigger = true;
+        _partner = null;
+        t.GrabBegin(detach: false);
+        _grabRel = t.WorldTransform * MathUtil.Invert(aim);
+        if (haptics) vr.Haptic(_hand, 0.6f, 0.03f);
+        ShowBeam(vr, o, d, Math.Max(0.05f, Vector3.Distance(o, t.WorldTransform.Translation)));
+        _cursor.Hide();
+    }
 
     static void EndGrab(IPointerTarget g)
     {
@@ -453,6 +556,8 @@ public sealed class Laser : IDisposable
         _hover = _press = _pressSecondary = _grab = null;
         _partner = _primary = null;
         _snapShown = false;
+        _grabByTrigger = false;
+        _warped = false;
         HideBeam();
     }
 

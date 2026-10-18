@@ -19,6 +19,7 @@ public sealed class Notification
     public string Title, Content, Source;
     public float Timeout = 3, Volume = 0.7f;
     public uint[] Icon;                         // premultiplied BGRA, IconSize x IconSize
+    public string Glyph;                        // without an Icon: this symbol instead of the bell (a friend: a heart)
     // display state (main thread)
     public double Shown = -1;
     public float Vis;
@@ -310,7 +311,7 @@ public sealed partial class NotificationPanel : IDisposable
             else
             {
                 _p.Fill(icon, A(Theme.Panel3), 20);
-                _p.Icon("", icon, A(Theme.Accent), 40);    // bell
+                _p.Icon(c.Glyph ?? "\uEA8F", icon, A(Theme.Accent), 40);    // bell (or its own)
             }
             float tx = icon.Right + 24, tw = r.Right - tx - 24;
             if (!string.IsNullOrEmpty(c.Source))

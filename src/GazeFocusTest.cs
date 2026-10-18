@@ -638,8 +638,53 @@ static class GazeFocusTools
             }
         }
         finally { Motion.Level = motion0; }
+        WarpChecks(gpu, dir, Want);
         Log.Info($"focus: {(problems == 0 ? "every check as wanted" : $"{problems} checks NOT as wanted")}");
         return problems;
+    }
+
+    // The eye warp's geometry (Vr/Laser.cs, Erik 10-18): the controller at the hip points at the middle monitor, the eyes at the right
+    // one - the warped beam lands where the eyes are, a look near the laser's point does not warp, and the warped beam turns with the
+    // hand one to one
+    static void WarpChecks(Gpu gpu, string dir, Action<string, bool> Want)
+    {
+        var r = new Rig(gpu, dir, 3, on: false);
+        r.Step();
+        bool Hit(DesktopPanel p, Vector3 o, Vector3 d, out Vector3 at)
+        {
+            var (w, width, curv) = Drawn(p);
+            return LocalRaycast.Intersect(w, width, curv, p.Mon.W, p.Mon.H, o, d, out _, out _, out at, out _);
+        }
+        static Matrix4x4 Aim(Vector3 at, Vector3 forward)
+        {
+            var z = -Vector3.Normalize(forward);
+            var x = Vector3.Normalize(Vector3.Cross(Vector3.UnitY, z));
+            return MathUtil.Basis(x, Vector3.Cross(z, x), z, at);
+        }
+        Vector3 hand = HeadPos + new Vector3(0.2f, -0.45f, -0.3f), eye = HeadPos;
+        var mid = Drawn(r["Middle"]).world.Translation;
+        var aim = Aim(hand, mid - hand);
+        bool onMid = Hit(r["Middle"], hand, MathUtil.Forward(aim), out var laserPt);
+        var lookDir = Vector3.Normalize(Drawn(r["Right"]).world.Translation - eye);
+        bool onRight = Hit(r["Right"], eye, lookDir, out var lookPt);
+        bool warps = Laser.WarpLocal(laserPt, eye, lookPt, aim, out var local);
+        var beam = Vector3.Normalize(Vector3.TransformNormal(local, aim));
+        bool lands = Hit(r["Right"], hand, beam, out var landed);
+        float miss = Vector3.Distance(landed, lookPt) * 1000;
+        // a look 4 deg from the laser's point: no warp (a click where you look and point)
+        var near = Vector3.Transform(Vector3.Normalize(laserPt - eye), Quaternion.CreateFromAxisAngle(Vector3.UnitY, 4 * MathF.PI / 180));
+        bool nearHit = Hit(r["Middle"], eye, near, out var nearPt);
+        bool nearWarps = Laser.WarpLocal(laserPt, eye, nearPt, aim, out _);
+        // the hand turns 5 deg: the warped beam turns 5 deg with it
+        var turn = Quaternion.CreateFromAxisAngle(Vector3.UnitY, 5 * MathF.PI / 180);
+        var aim2 = Aim(hand, Vector3.Transform(MathUtil.Forward(aim), turn));
+        var beam2 = Vector3.Normalize(Vector3.TransformNormal(local, aim2));
+        float off = Vector3.Distance(beam2, Vector3.Normalize(Vector3.Transform(beam, turn)));
+        Want($"warp: the laser on the middle {onMid} and the eyes on the right monitor {onRight} (want True, True): it warps {warps} (want True), " +
+             $"the beam lands {lands} {miss:0.00} mm from the look (want under 1); a look 4 deg off the laser's point warps {nearWarps} (want False, on " +
+             $"the middle {nearHit}); the hand turned 5 deg: the beam {off:0.00000} off a 5 deg turn (want under 0.001)",
+            onMid && onRight && warps && lands && miss < 1 && nearHit && !nearWarps && off < 0.001f);
+        foreach (var p in r.Panels) p.Dispose();
     }
 
     // the laser's grab, as Laser.cs does it: the hand's offset from the panel's WorldTransform right after GrabBegin, then the hand moves

@@ -610,7 +610,10 @@ public sealed partial class SettingsView
             Picking = true;
             _pickPage = 0;
         }
-        ui.Label(new RectangleF(lx, y + 58, lw, 110), list.Count == 0
+        bool pop = C.General.PopOut;      // a window dragged off a monitor into the air becomes one of these (OrbitApp.PopOut.cs)
+        if (ui.Toggle("win.pop", new RectangleF(lx, y + 50, lw, 54), "Pull windows off a monitor", ref pop, "drag one by its title bar out into the air"))
+            C.General.PopOut = pop;
+        ui.Label(new RectangleF(lx, y + 112, lw, 80), list.Count == 0
                 ? "Mirror one app window instead of a whole monitor: a browser, Discord, a video player... It follows the window when it moves or resizes on your PC."
                 : "Clicking a mirrored window brings it to the front on your PC, so the click lands in it. Grip moves it, the stick bends it, two hands resize it.",
             Theme.Dim, 13, FontWeight.Normal, true);
@@ -1130,6 +1133,8 @@ public sealed partial class SettingsView
         if (ui.Toggle("vc.block", new RectangleF(lx, 436, cw, 54), "Keep clicks from the game", ref b, "while a laser is on an OrbitOverlay panel"))
             g.BlockGameInput = b;
         DrawGesture(ui, lx, cw, 496);     // B / Y twice (SettingsView.Extras.cs)
+        b = g.EyeWarp;                    // a press where you don't look: the laser jumps to your look (Vr/Laser.cs, eye tracking)
+        if (ui.Toggle("vc.warp", new RectangleF(lx, 594, cw, 42), "Laser jumps to where you look", ref b, null, g.EyeTracking)) g.EyeWarp = b;
         DrawControlsHelp(ui, rx + 10, 392);
         // eye tracking (Sys/EyeGaze.cs), under the controls: the look from Virtual Desktop's - gaze focus, smart capture, the watch's
         // glance and the dim go by it; its state on the line under the two switches
@@ -1151,7 +1156,10 @@ public sealed partial class SettingsView
         if (ui.Toggle("vc.ns", new RectangleF(rx, 220, rw, 54), "... and starred people", ref b, "star them in the Room panel", rm.Enabled))
             rm.NotifyStarred = b;
         b = rm.NotifyEveryone;
-        if (ui.Toggle("vc.ne", new RectangleF(rx, 276, rw, 44), "... and everyone", ref b, null, rm.Enabled)) rm.NotifyEveryone = b;
+        if (ui.Toggle("vc.ne", new RectangleF(rx, 276, rw / 2 - 4, 44), "... and everyone", ref b, null, rm.Enabled)) rm.NotifyEveryone = b;
+        b = rm.BuzzFriends;
+        if (ui.Toggle("vc.buzz", new RectangleF(rx + rw / 2 + 4, 276, rw / 2 - 4, 44), "Buzz for friends", ref b, null, rm.Enabled && rm.NotifyFriends))
+            rm.BuzzFriends = b;
         if (ui.Button("vc.open", new RectangleF(rx + 10, 336, 220, 38), rm.Visible ? "Hide the Room panel" : "Show the Room panel", "\uE716", false,
                 _h.VrConnected && rm.Enabled, 14))
             _h.ToggleRoom();

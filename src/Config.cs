@@ -148,6 +148,7 @@ public sealed class RoomConfig
     public bool NotifyFriends { get; set; } = true;      // a card when a friend (VRCX) comes or goes
     public bool NotifyStarred { get; set; } = true;
     public bool NotifyEveryone { get; set; }
+    public bool BuzzFriends { get; set; } = true;        // a friend joining: the watch's hand buzzes twice, the card stands out
     public List<string> Starred { get; set; } = new();   // user ids (usr_...), or names where the log has no id
 }
 
@@ -225,6 +226,8 @@ public sealed class GeneralConfig
     public bool SmartCapture { get; set; } = true;    // full frame rate only for monitors you look / point at
     public bool EyeTracking { get; set; } = true;     // the look from Virtual Desktop's eye tracking when it is there (Sys/EyeGaze.cs)
     public bool DimUnlooked { get; set; }             // the monitors you are not looking at (eye tracking) a little dimmer
+    public bool EyeWarp { get; set; } = true;         // a press on a monitor while you look elsewhere on one: the laser jumps there (Vr/Laser.cs)
+    public bool PopOut { get; set; } = true;          // a window dragged off a monitor into the air becomes a panel of its own (OrbitApp.PopOut.cs)
     public bool PauseWhenOff { get; set; } = true;    // headset taken off: stop capturing and drawing
     public bool HeadsetPacing { get; set; } = true;   // the loop on its own clock at the headset's rate (off: once per game frame)
     public bool HighGpuPriority { get; set; } = true; // Orbit's small GPU jobs go ahead of the game's frames (admin)

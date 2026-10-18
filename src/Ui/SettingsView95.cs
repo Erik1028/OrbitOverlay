@@ -289,7 +289,9 @@ public sealed partial class SettingsView
             _selWin = null;
             return;
         }
-        Hint(ui, 28, 376, 326, "Mirror one app window instead of a whole monitor. Clicking it in VR brings it to the front on your PC.", 40);
+        Hint(ui, 28, 372, 326, "Mirror one app window instead of a whole monitor. Clicking it in VR brings it to the front on your PC.", 28);
+        bool pop = C.General.PopOut;
+        if (ui.Check95("w95.pop", 28, 406, "&Pull a window off a monitor to float it", ref pop)) C.General.PopOut = pop;
 
         if (Picking || list.Count == 0) { Picker95(ui, list.Count > 0); return; }
         if (cur == null) return;
@@ -638,12 +640,14 @@ public sealed partial class SettingsView
             string.IsNullOrEmpty(prev) ? 0xFF808080 : K95, false, TextAlignment.Leading, true, true);
 
         // eye tracking (Sys/EyeGaze.cs)
-        ui.Group95(new RectangleF(376, 230, 358, 84), "Eye tracking");        // (right, under Who is in the room)
+        ui.Group95(new RectangleF(376, 230, 358, 104), "Eye tracking");       // (right, under Who is in the room)
         bool eb = C.General.EyeTracking;
         if (ui.Check95("vc95.eyes", 388, 250, "Use &eye tracking (Virtual Desktop's)", ref eb)) C.General.EyeTracking = eb;
         Hint(ui, 407, 268, 316, _h.EyeStatus, 16);
         eb = C.General.DimUnlooked;
         if (ui.Check95("vc95.dim", 388, 288, "&Dim the monitors you don't look at", ref eb, C.General.EyeTracking)) C.General.DimUnlooked = eb;
+        eb = C.General.EyeWarp;
+        if (ui.Check95("vc95.warp", 388, 308, "Laser &jumps to where you look", ref eb, C.General.EyeTracking)) C.General.EyeWarp = eb;
         ui.Group95(new RectangleF(16, 270, 350, 64), "Controllers");
         b = g.BlockGameInput;
         ui.Check95("vc95.block", 28, 290, "&Keep clicks from the game", ref b);
@@ -664,6 +668,9 @@ public sealed partial class SettingsView
         b = rm.NotifyEveryone;
         ui.Check95("vc95.ne", 388, 154, "... and &everyone", ref b, rm.Enabled);
         rm.NotifyEveryone = b;
+        b = rm.BuzzFriends;
+        ui.Check95("vc95.buzz", 560, 154, "&Buzz for friends", ref b, rm.Enabled && rm.NotifyFriends);
+        rm.BuzzFriends = b;
         string roomL = rm.Visible ? "Hide Room &panel" : "Show Room &panel";
         if (ui.Button95("vc95.open", new RectangleF(388, 186, Btn95(ui, roomL, 140), 23), roomL, _h.VrConnected && rm.Enabled))
             _h.ToggleRoom();

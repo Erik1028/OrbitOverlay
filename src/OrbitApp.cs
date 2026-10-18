@@ -562,6 +562,9 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             string lh = C.General.LaserHand;
             _lasers[0].Smoothing = _lasers[1].Smoothing = C.General.LaserSmoothing;
             Laser.RaycastMode = C.General.Raycast is "steamvr" or "local" ? C.General.Raycast : "shadow";
+            Laser.EyeWarp = C.General.EyeWarp && C.General.EyeTracking;      // the laser jumps to your look (Vr/Laser.cs)
+            Laser.PopOut = _popOut ??= PopOutWindow;                         // a window pulled off a monitor (OrbitApp.PopOut.cs)
+            RestoreDueWindow(now);
             foreach (var la in _lasers)
             {
                 la.Thickness = Math.Clamp(C.Appearance.LaserThickness, 1f, 10f) / 1000f;
@@ -2006,6 +2009,11 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         }
         while (_room.Events.TryDequeue(out var ev))
             if (C.Room.Enabled) RoomEventCard(ev);
+        if (_buzzAgainAt > 0 && now >= _buzzAgainAt)
+        {
+            _buzzAgainAt = -1;
+            if (_vr.Connected) _vr.Haptic(WatchHand, 0.7f, 0.05f);
+        }
         _roomPanel.Update(_vr, now, dt, _roomSnap);
     }
 
@@ -2021,15 +2029,34 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             if (who.Length == 0) return;
             string names = string.Join(", ", Array.ConvertAll(who.Length > 4 ? who[..4] : who, p => p.Name)) + (who.Length > 4 ? $" +{who.Length - 4}" : "");
             RoomCard(who.Length == 1 ? Lang.F("{0} is here", who[0].Name) : Lang.F("{0} people you know are here", who.Length), names + (world.Length > 0 ? " · " + world : ""));
+            if (r.NotifyFriends && Array.Exists(who, x => x.Friend)) FriendBuzz(twice: false);
             return;
         }
         var p = ev.People[0];
         if (!(r.NotifyEveryone || Known(p))) return;
+        // a friend joining (Erik 10-18): the card with a heart, a little louder and longer, the watch's hand buzzes twice
+        bool friend = ev.Kind == RoomWatcher.Kind.Joined && p.Friend && r.NotifyFriends;
+        if (friend)
+        {
+            RoomCard(Lang.F("{0} joined", p.Name), Lang.T("Friend") + (world.Length > 0 ? " · " + world : ""), "\uEB52", 6, 0.7f);
+            FriendBuzz(twice: true);
+            return;
+        }
         RoomCard(ev.Kind == RoomWatcher.Kind.Joined ? Lang.F("{0} joined", p.Name) : string.Format(Lang.C("room", "{0} left"), p.Name), world);
     }
 
-    void RoomCard(string title, string content) =>
-        _notifyIn.Incoming.Enqueue(new Notification { Source = "Room", Title = title, Content = content, Timeout = 4, Volume = 0.5f });
+    void RoomCard(string title, string content, string glyph = "\uE716", float timeout = 4, float volume = 0.5f) =>
+        _notifyIn.Incoming.Enqueue(new Notification { Source = "Room", Title = title, Content = content, Timeout = timeout, Volume = volume, Glyph = glyph });
+
+    // a friend in the room: the watch's hand buzzes (twice for one who just joined: the second pulse a moment later, UpdateRoom)
+    double _buzzAgainAt = -1;
+
+    void FriendBuzz(bool twice)
+    {
+        if (!_vr.Connected || !C.General.Haptics || !C.Room.BuzzFriends) return;
+        _vr.Haptic(WatchHand, 0.7f, 0.05f);
+        if (twice) _buzzAgainAt = Clock.Now + 0.16;
+    }
 
     public string StatusLinePreview
     {
