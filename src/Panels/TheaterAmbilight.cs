@@ -4,7 +4,8 @@ using System.Numerics;
 namespace Orbit;
 
 // Theater mode's Ambilight (Erik 10-18): the big screen's edge colours as a soft glow on the dark wall round it (Gfx/Ambilight.cs samples
-// the picture and draws the glow). Its own overlay, sort order 3: over the wall (1) and Cyber's city band (2), under every screen (106+).
+// the picture and draws the glow). Its own overlay, SortGlow (Theater.cs): over the wall, a backdrop and all of Cyber's city, under every
+// screen (106+).
 // It sits just behind the screen - the same middle, bent round the same axis, a little farther - and reaches past it on every side by
 // the same angle seen from you, so it hugs the screen wherever it is; it comes and goes with the screen (its fade, theater's own in /
 // out), and Theater > Ambilight off fades it away. While it shows, the picture is sampled at most 10 times a second and only when the
@@ -73,7 +74,7 @@ public sealed partial class Theater
             try
             {
                 _ambOv = new VrOverlay("erik.orbit.theater.glow", "OrbitOverlay theater glow");
-                _ambOv.SetSortOrder(3);
+                _ambOv.SetSortOrder(SortGlow);
                 _ambOv.SetFlag(Valve.VR.VROverlayFlags.IsPremultiplied, true);
                 _ambDirty = true;
             }

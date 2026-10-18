@@ -541,7 +541,7 @@ static partial class Tools
         // ---- the views ----
         var tex = new PulseTex
         {
-            City = th.GridForTest(0).ReadPixels(gpu), Band = th.SkylineForTest().ReadPixels(gpu), Ring = ringPx, Spark = sparkPx, Dim = tcfg.Dim,
+            City = Theater.CityAsBackdrop(th.GridForTest(0).ReadPixels(gpu)), Band = th.SkylineForTest().ReadPixels(gpu), Ring = ringPx, Spark = sparkPx, Dim = tcfg.Dim,
         };
         // the sweep all the way round (behind you at both ends), and close up where the sparks leave the screen
         PulseStrip(tex, shots, -180, 180, -5, 8, 0.15f, Path.Combine(pd, "pulse_sweep_strip.png"));

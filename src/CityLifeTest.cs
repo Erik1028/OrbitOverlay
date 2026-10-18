@@ -60,7 +60,7 @@ static partial class Tools
         var tcfg = new TheaterConfig();
         using var th = new Theater(gpu, painter) { LifeSeed = 1018 };
         th.Start(scr, scr, vr, tcfg);
-        var wall = th.GridForTest(0).ReadPixels(gpu);
+        var wall = Theater.CityAsBackdrop(th.GridForTest(0).ReadPixels(gpu));
         void Frames(float seconds, float bandA = 1)
         {
             int n = (int)MathF.Round(seconds * 90);

@@ -88,6 +88,12 @@ public sealed partial class Theater : IDisposable
     public const float WallAspect = 2;     // its height for its width (2πr round): the top and bottom 81° from you
     const int WallW = 4, WallH = 256;
 
+    // The theater's layers, back to front - each its own sort order. SteamVR draws a lower sort order first and puts overlays of the SAME
+    // sort order in order by their distance from the headset, which for a big curved one is its middle's: two of those swap now and then as
+    // you lean (that was the night city's flickering buildings). Two that never show together may share a place in this order (the backdrop
+    // of another style and Cyber's floor are never on at once, but they have their own anyway). The screens are 106+ (DesktopPanel).
+    public const uint SortWall = 1, SortBackdrop = 2, SortFloor = 3, SortBand = 4, SortRing = 5, SortSparks = 6, SortCars = 7, SortGlow = 8;
+
     // 0 = the middle row .. 1 = the top / bottom edge: how dark (the angle up from you does not depend on the radius)
     public static float WallAlpha(float f)
     {
@@ -111,7 +117,7 @@ public sealed partial class Theater : IDisposable
             _g.Ctx.UpdateSubresource(px, _black.Tex, 0, WallW * 4, 0, null);
         }
         _dim = new VrOverlay("erik.orbit.theater.dim", "OrbitOverlay theater dim");
-        _dim.SetSortOrder(1);
+        _dim.SetSortOrder(SortWall);
         _dim.SetFlag(Valve.VR.VROverlayFlags.IsPremultiplied, true);
         _dim.SetTexture(_black.Tex);
         _cityOn = false;                    // (Cyber: the night city, TheaterCyber.cs)
@@ -129,6 +135,7 @@ public sealed partial class Theater : IDisposable
         _band?.Dispose();
         _band = null;
         DestroyCityLife();                  // (the flying cars' overlays, TheaterCityLife.cs)
+        DestroyFloor();                     // (Cyber's floor grid, TheaterFloor.cs)
         DestroyBackdrop();
         DestroyAmbilight();
         DestroyHorizon();
@@ -324,6 +331,7 @@ public sealed partial class Theater : IDisposable
                 _dim.Show();
             }
         }
+        UpdateFloor();                          // Cyber: the floor grid in front, with the wall (TheaterFloor.cs)
         PerfTrace.Add(PerfTrace.Wall, pt); pt = PerfTrace.Now();
         UpdateCityLife(dt);                     // Cyber's night city alive: its lamps, its flying cars (TheaterCityLife.cs)
         PerfTrace.Add(PerfTrace.CityLife, pt); pt = PerfTrace.Now();
@@ -381,6 +389,7 @@ public sealed partial class Theater : IDisposable
         _dim?.Dispose();
         _black?.Dispose();
         DisposeCyber();
+        DisposeFloor();
         DisposeBackdrop();
         DisposeAmbilight();
         DisposeHorizon();

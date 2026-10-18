@@ -67,7 +67,7 @@ public sealed partial class Theater
     void CreateBackdrop()
     {
         _back = new VrOverlay("erik.orbit.theater.backdrop", "OrbitOverlay theater backdrop");
-        _back.SetSortOrder(2);                                          // over the dim, under every screen and panel
+        _back.SetSortOrder(SortBackdrop);                               // over the dim, under the glow and every screen and panel
         _back.SetFlag(Valve.VR.VROverlayFlags.IsPremultiplied, true);
         _back.SetCurvature(1f);
         _backSet = Backdrop.None;
@@ -111,6 +111,7 @@ public sealed partial class Theater
     // the textures for this style: the city's let go (only Cyber has them), the picture drawn if it is not there yet
     void BackdropTextures(Backdrop want)
     {
+        FloorFree();                        // (Cyber's floor grid too: TheaterFloor.cs)
         if (_city != null || _sky != null)
         {
             _band?.Hide();
