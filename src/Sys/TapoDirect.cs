@@ -14,7 +14,8 @@ namespace Orbit;
 // The Tapo bulb without Lumos (Erik 10-17: "Hexpad drives it without Lumos"): Tapo's local protocol - KLAP, as python-kasa speaks it
 // to the L630 - straight to the bulb. The bulb checks the TP-Link account by one key, SHA256(SHA1(e-mail) + SHA1(password)), and that
 // key is all OrbitOverlay keeps: made once from Hexpad's or Lumos's own settings (TapoAccount.Import, read only - the e-mail and the
-// password are dropped at once) and kept DPAPI-protected for this Windows user in Config.Lights.Key. It cannot sign in to TP-Link.
+// password hashed straight from the file's bytes, never made strings, the bytes cleared after) and kept DPAPI-protected for this Windows
+// user in Config.Lights.Key. It cannot sign in to TP-Link.
 // It answers in Lumos's words (the same paths and JSON), so LumosLink's commands, coalescing and reading stay as they are.
 public sealed class TapoDirect : IDisposable
 {
@@ -254,9 +255,19 @@ public static class TapoAccount
 {
     static readonly byte[] Entropy = "OrbitOverlay.TapoKey.v1"u8.ToArray();
 
-    // SHA256(SHA1(e-mail) + SHA1(password)): what the bulb checks (KLAP v2)
-    public static byte[] KeyFor(string user, string password) =>
-        SHA256.HashData([.. SHA1.HashData(Encoding.UTF8.GetBytes(user)), .. SHA1.HashData(Encoding.UTF8.GetBytes(password))]);
+    // SHA256(SHA1(e-mail) + SHA1(password)): what the bulb checks (KLAP v2). (From strings: the tools' made-up accounts only - a real
+    // one is never made a string, KeyFrom.)
+    public static byte[] KeyFor(string user, string password) => KeyFor(Encoding.UTF8.GetBytes(user), Encoding.UTF8.GetBytes(password));
+
+    public static byte[] KeyFor(ReadOnlySpan<byte> user, ReadOnlySpan<byte> password)
+    {
+        Span<byte> both = stackalloc byte[40];
+        SHA1.HashData(user, both[..20]);
+        SHA1.HashData(password, both[20..]);
+        var key = SHA256.HashData(both);
+        CryptographicOperations.ZeroMemory(both);          // (the password's SHA1 is as good as the password to the bulb)
+        return key;
+    }
 
     // from Hexpad's settings, else Lumos's: the protected key and where it came from (null: no account found). Nothing is logged.
     public static string Import(out string from)
@@ -270,24 +281,74 @@ public static class TapoAccount
         };
         foreach (var (who, path, section, userKey) in places)
         {
-            try
-            {
-                if (!File.Exists(path)) continue;
-                using var doc = JsonDocument.Parse(File.ReadAllBytes(path));
-                var r = doc.RootElement;
-                if (section != null && !r.TryGetProperty(section, out r)) continue;
-                if (r.ValueKind != JsonValueKind.Object) continue;
-                if (!r.TryGetProperty(userKey, out var u) || u.ValueKind != JsonValueKind.String || string.IsNullOrEmpty(u.GetString())) continue;
-                if (!r.TryGetProperty("password", out var p) || p.ValueKind != JsonValueKind.String || string.IsNullOrEmpty(p.GetString())) continue;
-                var key = KeyFor(u.GetString(), p.GetString());
-                from = who;
-                return Protect(key);
-            }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException) { }
+            var key = KeyFrom(path, section, userKey);
+            if (key == null) continue;
+            from = who;
+            try { return Protect(key); }
+            finally { CryptographicOperations.ZeroMemory(key); }
         }
         from = null;
         return null;
     }
+
+    // the key from one app's settings file - the account at its top, or in its 'section': userKey and "password" (null: none there). The
+    // e-mail and the password are hashed straight from the bytes read and never made strings (a .NET string cannot be wiped: it would
+    // stay readable in the process until the GC happens to reuse its memory); every buffer that held them is cleared after. Read the way
+    // Weather reads Hexpad's file: shared (the app may be writing it right then) and a UTF-8 BOM skipped (Hexpad's has carried one).
+    internal static byte[] KeyFrom(string path, string section, string userKey)
+    {
+        byte[] file = null, user = null, pass = null;
+        int userLen = 0, passLen = 0;
+        try
+        {
+            if (!File.Exists(path)) return null;
+            int len;
+            // (no FileStream buffer of its own: the bytes are only ever in 'file')
+            using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 0))
+            {
+                if (fs.Length > 1 << 20) return null;               // (a settings file is a few KB)
+                file = new byte[fs.Length];
+                len = fs.ReadAtLeast(file, file.Length, throwOnEndOfStream: false);
+            }
+            var json = file.AsSpan(0, len);
+            if (json.StartsWith("\uFEFF"u8)) json = json[3..];          // (a UTF-8 BOM)
+            var rd = new Utf8JsonReader(json);
+            if (!rd.Read() || rd.TokenType != JsonTokenType.StartObject) return null;
+            if (section != null && !Into(ref rd, section)) return null;
+            // the account's object, property by property (a value that is an object or a list skipped whole)
+            while (rd.Read() && rd.TokenType == JsonTokenType.PropertyName)
+            {
+                bool isUser = rd.ValueTextEquals(userKey), isPass = !isUser && rd.ValueTextEquals("password"u8);
+                rd.Read();
+                if ((isUser || isPass) && rd.TokenType == JsonTokenType.String)
+                {
+                    var v = new byte[rd.ValueSpan.Length];          // unescaped into a buffer of ours (never longer than as written)
+                    int n = rd.CopyString(v);
+                    if (isUser) { Clear(user); (user, userLen) = (v, n); }
+                    else { Clear(pass); (pass, passLen) = (v, n); }
+                }
+                else rd.Skip();
+            }
+            return userLen == 0 || passLen == 0 ? null : KeyFor(user.AsSpan(0, userLen), pass.AsSpan(0, passLen));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException) { return null; }
+        finally { Clear(file); Clear(user); Clear(pass); }
+    }
+
+    // from the top object's start onto the value of its property 'name', when that is an object
+    static bool Into(ref Utf8JsonReader rd, string name)
+    {
+        while (rd.Read() && rd.TokenType == JsonTokenType.PropertyName)
+        {
+            bool it = rd.ValueTextEquals(name);
+            rd.Read();
+            if (it) return rd.TokenType == JsonTokenType.StartObject;
+            rd.Skip();
+        }
+        return false;
+    }
+
+    static void Clear(byte[] b) { if (b != null) CryptographicOperations.ZeroMemory(b); }
 
     public static string Protect(byte[] key) => Convert.ToBase64String(ProtectedData.Protect(key, Entropy, DataProtectionScope.CurrentUser));
 

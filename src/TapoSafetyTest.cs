@@ -19,7 +19,9 @@ namespace Orbit;
 //  - never take more than 64 KB of an answer (a flood of 16 MB with no length said: what it allocated, what went out before it let go);
 //  - an odd answer (a number too big or not whole, a list or a string for the answer) read as far as it goes, else "could not be read" -
 //    never .NET's own words on the watch;
-//  - LumosLink lets the bulb's link a new key replaced go (on its own thread, no call in flight), and its last one at the end.
+//  - LumosLink lets the bulb's link a new key replaced go (on its own thread, no call in flight), and its last one at the end;
+//  - the key from an app's settings file (TapoAccount.KeyFrom, on made-up files of the tool's own - never Hexpad's or Lumos's): the
+//    same key as from the account's words, with a UTF-8 BOM, with escapes, with the file held open by its writer; none where none is.
 static class TapoSafetyTools
 {
     // the bulb's side of KLAP (the account's key made up): handshake1, handshake2, then the requests, each answered by Answer - and when
@@ -165,8 +167,9 @@ static class TapoSafetyTools
     const string DeviceInfo = "{\"error_code\":0,\"result\":{\"device_on\":true,\"brightness\":60,\"hue\":30,\"saturation\":40,\"color_temp\":2700," +
                               "\"color_temp_range\":[2500,6500],\"nickname\":\"TWFkZS11cCBidWxi\"}}";
 
-    public static void Run()
+    public static void Run(string dir)
     {
+        AccountFiles(Path.Combine(dir, "tapo_test"));
         var key = TapoAccount.KeyFor("made-up@example.com", "made-up password");
         using var bulb = new FakeBulb(key) { Answer = m => m == "get_device_info" ? DeviceInfo : "{\"error_code\":0}" };
         using var away = new FakeBulb(key) { Answer = m => DeviceInfo };      // where a redirect would send it
@@ -215,8 +218,8 @@ static class TapoSafetyTools
         string huge = Odd("{\"error_code\":0,\"result\":{\"device_on\":true,\"brightness\":1e12,\"hue\":1e12}}");
         string code = Odd("{\"error_code\":1e12}"), list = Odd("[1,2,3]"), text = Odd("\"made up\"");
         bulb.Answer = m => m == "get_device_info" ? DeviceInfo : "{\"error_code\":0}";
-        Log.Info($"lights direct: odd answers - a brightness of 50.5 '{half}', of 1e12 '{huge}' (want read read), an error code of 1e12 '{code}', a list '{list}', " +
-                 $"a string '{text}' (want {Unreadable} each): {half == "read" && huge == "read" && code == Unreadable && list == Unreadable && text == Unreadable} (want True)");
+        Log.Info($"lights direct: odd answers - a brightness of 50.5 '{half}', of 1e12 '{huge}' (want read, read), an error code of 1e12 '{code}', a list '{list}', " +
+                 $"a string '{text}' (want '{Unreadable}' each) - {half == "read" && huge == "read" && code == Unreadable && list == Unreadable && text == Unreadable} (want True)");
 
         // the link through a kept key (DPAPI, in memory only): a new key replaces the bulb's link - the old one let go, the light still read;
         // the link closed: its last one let go too
@@ -243,5 +246,39 @@ static class TapoSafetyTools
         }
         Log.Info($"lights direct: through a kept key the link read the made-up bulb {first} (want True); a new key - the old link let go, the light still read " +
                  $"{swapped} (want True), the new one kept {kept} (want True); the link closed - its last one let go {d2.Disposed} (want True)");
+    }
+
+    // the key from made-up settings files shaped like Hexpad's (its "tapo" section) and Lumos's (at the top)
+    static void AccountFiles(string td)
+    {
+        if (Directory.Exists(td)) Directory.Delete(td, true);
+        Directory.CreateDirectory(td);
+        string F(string name, string json, bool bom = false)
+        {
+            string p = Path.Combine(td, name);
+            File.WriteAllBytes(p, [.. (bom ? "﻿"u8 : ""u8), .. Encoding.UTF8.GetBytes(json)]);
+            return p;
+        }
+        bool Same(byte[] a, byte[] b) => a != null && b != null && a.AsSpan().SequenceEqual(b);
+        var want = TapoAccount.KeyFor("made-up@example.com", "made-up password");
+        string hexpad = "{\"weather\": \"Made-up Town\", \"tapo\": {\"host\": \"10.0.0.99\", \"email\": \"made-up@example.com\", \"password\": \"made-up password\"}, " +
+                        "\"keys\": [{\"password\": \"not this one\"}]}";
+        string plain = F("hexpad.json", hexpad), bom = F("hexpad_bom.json", hexpad, true);
+        bool hex = Same(TapoAccount.KeyFrom(plain, "tapo", "email"), want), hexBom = Same(TapoAccount.KeyFrom(bom, "tapo", "email"), want);
+        // Lumos's shape, the password with escapes in it; a nested "password" is not the account's
+        string lumos = F("lumos.json", "{\"username\": \"made-up@example.com\", \"devices\": {\"password\": \"not this one\"}, \"password\": \"m\\u00e1de-up \\\"pass\\\" \\\\ word\"}");
+        bool esc = Same(TapoAccount.KeyFrom(lumos, null, "username"), TapoAccount.KeyFor("made-up@example.com", "máde-up \"pass\" \\ word"));
+        // held open by its writer (the app saving it right then)
+        bool held;
+        using (new FileStream(bom, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite)) held = Same(TapoAccount.KeyFrom(bom, "tapo", "email"), want);
+        // none: no password, an empty one, the section not an object, not JSON, no file
+        bool none = TapoAccount.KeyFrom(F("a.json", "{\"tapo\": {\"email\": \"made-up@example.com\"}}"), "tapo", "email") == null &&
+                    TapoAccount.KeyFrom(F("b.json", "{\"tapo\": {\"email\": \"made-up@example.com\", \"password\": \"\"}}"), "tapo", "email") == null &&
+                    TapoAccount.KeyFrom(F("c.json", "{\"tapo\": \"made-up\"}"), "tapo", "email") == null &&
+                    TapoAccount.KeyFrom(F("d.json", "made-up, not JSON"), "tapo", "email") == null &&
+                    TapoAccount.KeyFrom(Path.Combine(td, "none.json"), "tapo", "email") == null;
+        Directory.Delete(td, true);
+        Log.Info($"lights account: the key from a settings file - Hexpad's shape {hex} (want True), with a UTF-8 BOM {hexBom} (want True), Lumos's shape with " +
+                 $"escapes {esc} (want True), held open by its writer {held} (want True); none where there is none {none} (want True)");
     }
 }
