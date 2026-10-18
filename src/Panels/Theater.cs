@@ -128,6 +128,7 @@ public sealed partial class Theater : IDisposable
         _dim = null;
         _band?.Dispose();
         _band = null;
+        DestroyCityLife();                  // (the flying cars' overlays, TheaterCityLife.cs)
         DestroyBackdrop();
         DestroyAmbilight();
     }
@@ -319,6 +320,7 @@ public sealed partial class Theater : IDisposable
                 _dim.Show();
             }
         }
+        UpdateCityLife(dt);                     // Cyber's night city alive: its lamps, its flying cars (TheaterCityLife.cs)
         UpdateAmbilight(dt);                    // the glow round the screen (TheaterAmbilight.cs)
         // once it is in: how the screen is doing (if it does not show up, the log says why)
         if (On && _screen != null && _t >= 1 && !_checked)
