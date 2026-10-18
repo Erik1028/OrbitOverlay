@@ -19,7 +19,9 @@ namespace Orbit;
 public sealed class TapoDirect
 {
     readonly byte[] _auth;
-    readonly HttpClient _http = new(new SocketsHttpHandler { UseProxy = false, UseCookies = false, ConnectTimeout = TimeSpan.FromSeconds(3) })
+    // only ever the bulb's own address: a redirect is not followed (whatever answers there must not send the handshake on to another
+    // host - it is a "Bulb error 3xx" instead)
+    readonly HttpClient _http = new(new SocketsHttpHandler { UseProxy = false, UseCookies = false, AllowAutoRedirect = false, ConnectTimeout = TimeSpan.FromSeconds(3) })
         { Timeout = TimeSpan.FromSeconds(8) };
     readonly string _uuid = Convert.ToBase64String(MD5.HashData(Guid.NewGuid().ToByteArray()));
     Session _s;

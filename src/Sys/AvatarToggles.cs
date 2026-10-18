@@ -628,8 +628,10 @@ public sealed class AvatarLink : IDisposable
 
     string Get(int port, bool v6, string path, int ms = 2000)
     {
-        // no proxy (a system proxy must not see a call to this PC), a short wait: it is on this PC or not there at all
-        _http ??= new HttpClient(new SocketsHttpHandler { UseProxy = false, ConnectTimeout = TimeSpan.FromMilliseconds(500) }) { Timeout = TimeSpan.FromSeconds(2) };
+        // no proxy (a system proxy must not see a call to this PC), no redirect (only VRChat's own port is asked), a short wait: it is on
+        // this PC or not there at all
+        _http ??= new HttpClient(new SocketsHttpHandler { UseProxy = false, AllowAutoRedirect = false, ConnectTimeout = TimeSpan.FromMilliseconds(500) })
+            { Timeout = TimeSpan.FromSeconds(2) };
         try
         {
             using var req = new HttpRequestMessage(HttpMethod.Get, $"http://{(v6 ? "[::1]" : "127.0.0.1")}:{port.ToString(CultureInfo.InvariantCulture)}{path}");

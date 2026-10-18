@@ -1,0 +1,173 @@
+using System;
+using System.Buffers.Binary;
+using System.Collections.Generic;
+using System.IO;
+using System.Net;
+using System.Net.Sockets;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using System.Threading;
+
+namespace Orbit;
+
+// ORBIT_SNAP_ONLY=lights, the bulb straight (Sys/TapoDirect.cs) against a made-up Tapo bulb of the tool's own: a plain HTTP listener on
+// 127.0.0.1 (a port Windows picks, nothing on the network) that speaks the bulb's side of KLAP with a made-up account - never the real
+// bulb, never a real account. What it must do and must not:
+//  - read the made-up bulb as Lumos would answer for it; a wrong key: "Wrong Tapo account";
+//  - never follow a redirect off the bulb's address (a second listener of the tool's own counts what reaches it).
+static class TapoSafetyTools
+{
+    // the bulb's side of KLAP (the account's key made up): handshake1, handshake2, then the requests, each answered by Answer - and when
+    // Redirect is set, handshake1 answered with a 307 to there instead
+    sealed class FakeBulb : IDisposable
+    {
+        readonly TcpListener _l = new(IPAddress.Loopback, 0);
+        readonly Thread _t;
+        volatile bool _stop;
+        readonly byte[] _auth;
+        byte[] _local, _remote;
+        public volatile int Hits;                 // requests that reached it
+        public volatile string Redirect;          // handshake1 answered with a 307 to this URL (null: as a bulb)
+        public Func<string, string> Answer;       // the method asked -> the bulb's answer before it is encrypted
+
+        public FakeBulb(byte[] auth)
+        {
+            _auth = auth;
+            _l.Start();
+            _t = new Thread(Serve) { IsBackground = true, Name = "made-up bulb" };
+            _t.Start();
+        }
+
+        public string Host => "127.0.0.1:" + ((IPEndPoint)_l.LocalEndpoint).Port.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        public string Url => "http://" + Host;
+
+        void Serve()
+        {
+            while (!_stop)
+            {
+                try
+                {
+                    using var c = _l.AcceptTcpClient();
+                    c.ReceiveTimeout = c.SendTimeout = 3000;
+                    using var s = c.GetStream();
+                    var (path, body) = ReadRequest(s);
+                    if (path == null) continue;
+                    Hits++;
+                    Reply(s, path, body);
+                }
+                catch (Exception) when (!_stop) { }
+                catch (Exception) { return; }
+            }
+        }
+
+        // a request: its path and body (HTTP/1.1 as HttpClient sends it: Content-Length, no 100-continue)
+        static (string path, byte[] body) ReadRequest(NetworkStream s)
+        {
+            var head = new List<byte>();
+            while (head.Count < 8192)
+            {
+                int b = s.ReadByte();
+                if (b < 0) return (null, null);
+                head.Add((byte)b);
+                int n = head.Count;
+                if (n >= 4 && head[n - 4] == '\r' && head[n - 3] == '\n' && head[n - 2] == '\r' && head[n - 1] == '\n') break;
+            }
+            var lines = Encoding.ASCII.GetString(head.ToArray()).Split("\r\n");
+            var first = lines[0].Split(' ');
+            int len = 0;
+            foreach (var l in lines)
+                if (l.StartsWith("Content-Length:", StringComparison.OrdinalIgnoreCase)) int.TryParse(l[15..].Trim(), out len);
+            var body = new byte[len];
+            s.ReadExactly(body);
+            return (first.Length > 1 ? first[1] : "", body);
+        }
+
+        static void Send(NetworkStream s, string status, string headers, byte[] body)
+        {
+            var h = Encoding.ASCII.GetBytes($"HTTP/1.1 {status}\r\n{headers}Content-Length: {body.Length}\r\nConnection: close\r\n\r\n");
+            s.Write(h);
+            s.Write(body);
+        }
+
+        void Reply(NetworkStream s, string path, byte[] body)
+        {
+            if (path == "/app/handshake1")
+            {
+                if (Redirect != null) { Send(s, "307 Temporary Redirect", "Location: " + Redirect + "\r\n", Array.Empty<byte>()); return; }
+                _local = body;
+                _remote = RandomNumberGenerator.GetBytes(16);
+                Send(s, "200 OK", "Set-Cookie: TP_SESSIONID=MADEUP01;TIMEOUT=86400\r\n", Join(_remote, Sha(_local, _remote, _auth)));
+                return;
+            }
+            if (path == "/app/handshake2")
+            {
+                bool ok = _local != null && CryptographicOperations.FixedTimeEquals(body, Sha(_remote, _local, _auth));
+                Send(s, ok ? "200 OK" : "403 Forbidden", "", Array.Empty<byte>());
+                return;
+            }
+            int q = path.IndexOf("seq=", StringComparison.Ordinal);
+            if (!path.StartsWith("/app/request", StringComparison.Ordinal) || q < 0 || _local == null) { Send(s, "404 Not Found", "", Array.Empty<byte>()); return; }
+            int seq = int.Parse(path[(q + 4)..], System.Globalization.CultureInfo.InvariantCulture);
+            var both = Join(_local, _remote, _auth);
+            byte[] key = Sha("lsk"u8.ToArray(), both)[..16], iv = Sha("iv"u8.ToArray(), both)[..12], sig = Sha("ldk"u8.ToArray(), both)[..28];
+            var full = new byte[16];
+            iv.CopyTo(full, 0);
+            BinaryPrimitives.WriteInt32BigEndian(full.AsSpan(12), seq);
+            using var aes = Aes.Create();
+            aes.Key = key;
+            using var req = JsonDocument.Parse(aes.DecryptCbc(body.AsSpan(32), full, PaddingMode.PKCS7));
+            string method = req.RootElement.GetProperty("method").GetString();
+            var ct = aes.EncryptCbc(Encoding.UTF8.GetBytes(Answer?.Invoke(method) ?? "{\"error_code\":0}"), full, PaddingMode.PKCS7);
+            var sq = new byte[4];
+            BinaryPrimitives.WriteInt32BigEndian(sq, seq);
+            Send(s, "200 OK", "", Join(Sha(sig, sq, ct), ct));
+        }
+
+        static byte[] Join(params byte[][] parts)
+        {
+            var r = new List<byte>();
+            foreach (var p in parts) r.AddRange(p);
+            return r.ToArray();
+        }
+
+        static byte[] Sha(params byte[][] parts) => SHA256.HashData(Join(parts));
+
+        public void Dispose()
+        {
+            _stop = true;
+            _l.Stop();
+            _t.Join(1000);
+        }
+    }
+
+    // the made-up bulb's get_device_info: on, 60 %, a warm white, named
+    const string DeviceInfo = "{\"error_code\":0,\"result\":{\"device_on\":true,\"brightness\":60,\"hue\":30,\"saturation\":40,\"color_temp\":2700," +
+                              "\"color_temp_range\":[2500,6500],\"nickname\":\"TWFkZS11cCBidWxi\"}}";
+
+    public static void Run()
+    {
+        var key = TapoAccount.KeyFor("made-up@example.com", "made-up password");
+        using var bulb = new FakeBulb(key) { Answer = m => m == "get_device_info" ? DeviceInfo : "{\"error_code\":0}" };
+        using var away = new FakeBulb(key) { Answer = m => DeviceInfo };      // where a redirect would send it
+        LampState State(TapoDirect d) { var (c, b) = d.Handle("GET", "/api/state?host=" + Uri.EscapeDataString(bulb.Host), null); return LumosLink.Parse(c, b); }
+
+        // the made-up bulb read as Lumos answers for it; switched on through set_device_info; a wrong key
+        var direct = new TapoDirect(key);
+        var s = State(direct);
+        bool read = s.Ready && s.On && s.Brightness == 60 && s.HasColor && s.HasTemp && s.Temp == 2700 && s.TempMin == 2500 && s.TempMax == 6500 && s.Name == "Made-up bulb";
+        var (pc, pb) = direct.Handle("POST", "/api/power", "{\"host\":" + JsonSerializer.Serialize(bulb.Host) + ",\"on\":true}");
+        var w = State(new TapoDirect(TapoAccount.KeyFor("nobody@example.com", "wrong")));
+        Log.Info($"lights direct: a made-up bulb read through KLAP {read} (want True), a command answered with its state {pc == 200 && LumosLink.Parse(pc, pb).Ready} " +
+                 $"(want True), a wrong key says '{w.Message}' {w.Message == "Wrong Tapo account"} (want True)");
+
+        // a redirect off the bulb's address: not followed - nothing reaches the other host, the bulb's error said as such
+        bulb.Redirect = away.Url + "/app/handshake1";
+        int awayHits = away.Hits;
+        var r = State(new TapoDirect(key));
+        bulb.Redirect = null;
+        bool stayed = away.Hits == awayHits;
+        Log.Info($"lights direct: a 307 from the bulb's address - the other host asked {away.Hits - awayHits} time(s), not followed {stayed} (want True), " +
+                 $"the watch told '{r.Message}' {r.Status == LinkStatus.Error && r.Message == "Bulb error 307"} (want True)");
+    }
+}
