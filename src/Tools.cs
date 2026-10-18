@@ -139,6 +139,7 @@ static partial class Tools
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "avatar") return AvatarOnly(wrist, data, cfg, painter, gpu, dir);
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "backdrops") return BackdropsOnly(cfg, painter, gpu, dir);    // theater's backdrops (ToolsBackdrops.cs)
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "ambilight") return AmbilightOnly(cfg, painter, gpu, dir);     // theater's glow (AmbilightTest.cs)
+        if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "pulse") return PulseOnly(cfg, painter, gpu, dir);           // Cyber's horizon (HorizonPulseTest.cs)
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "autotheater") return AutoTheaterOnly(wrist, data, cfg, painter, gpu, dir);
         if (everything)
         {
