@@ -1,3 +1,4 @@
+using System;
 using System.Threading;
 
 namespace Orbit;
@@ -19,4 +20,15 @@ static partial class Tools
 
     // a tag's exit code: 1 when one of the checks counted since 'from' (WantsFailed when the tag started) failed
     public static int WantsExit(int from) => WantsFailed > from ? 1 : 0;
+
+    // a check of what a frame allocates measures the app's garbage only: --lang's look-up of the words drawn without a translation
+    // (Lang.Miss, ToolsLang.cs) makes some on every one, the app has no such hook - off while it measures (using var _ = AppAllocs())
+    public static LangMissOff AppAllocs() => new(Lang.Miss);
+
+    public readonly struct LangMissOff : IDisposable
+    {
+        readonly Action<string> _keep;
+        public LangMissOff(Action<string> keep) { _keep = keep; Lang.Miss = null; }
+        public void Dispose() => Lang.Miss = _keep;
+    }
 }

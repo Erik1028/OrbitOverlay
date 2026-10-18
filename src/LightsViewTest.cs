@@ -289,6 +289,7 @@ static class LightsViewTools
             wcfg.Widgets = Face64().Where(w => w.Type is "light" or "rgb").ToList();
             long Bytes()
             {
+                using var appOnly = Tools.AppAllocs();
                 wrist.Settle();
                 for (int i = 0; i < 4; i++) wrist.Draw(data);
                 long a0 = GC.GetAllocatedBytesForCurrentThread();

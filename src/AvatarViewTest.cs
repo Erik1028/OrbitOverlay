@@ -441,6 +441,7 @@ static class AvatarViewTools
             wcfg.Widgets = Face64().Where(x => x.Type == "avatar").ToList();
             long Bytes()
             {
+                using var appOnly = Tools.AppAllocs();
                 wrist.Settle();
                 for (int i = 0; i < 4; i++) wrist.Draw(data);
                 long a0 = GC.GetAllocatedBytesForCurrentThread();

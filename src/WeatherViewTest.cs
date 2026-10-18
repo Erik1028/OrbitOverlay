@@ -312,6 +312,7 @@ static class WeatherViewTools
         wcfg.Widgets = new List<WatchWidget> { W(0, 0, 2, 2), W(2, 0, 4, 1), W(2, 1, 2, 1), W(4, 1, 1, 1) };
         long Bytes()
         {
+            using var appOnly = Tools.AppAllocs();
             wrist.Settle();
             for (int i = 0; i < 4; i++) wrist.Draw(data);
             long a0 = GC.GetAllocatedBytesForCurrentThread();

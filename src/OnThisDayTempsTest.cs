@@ -209,6 +209,7 @@ static class OnThisDayTempsTools
             data.Memories = Memories();
             data.Temps = Temps();
             wcfg.Widgets = Face().FindAll(x => x.Type is "memory" or "temps");
+            using var appOnly = Tools.AppAllocs();
             wrist.Settle();
             for (int i = 0; i < 6; i++) wrist.Draw(data);
             long a0 = GC.GetAllocatedBytesForCurrentThread();

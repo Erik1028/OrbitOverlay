@@ -433,6 +433,7 @@ static partial class Tools
     // (a listener of its own each time: one left listening would slow the next case's measurement down)
     static void AllocTypes(string what, Action draw, Action start)
     {
+        using var appOnly = AppAllocs();
         using var l = new AllocListener();
         Thread.Sleep(300);
         l.On = true;
