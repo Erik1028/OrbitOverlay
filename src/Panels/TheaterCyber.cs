@@ -16,6 +16,8 @@ namespace Orbit;
 // from there plus Behind, so it only changes when the screen is moved (it followed the head before: the whole city was re-laid every
 // frame). The skyline band is a little nearer than the wall: at one distance SteamVR swapped the two now and then - the buildings
 // flickered.
+// While it shows with Motion Full the city lives a little - windows, signs, antenna lights, a few stars, flying cars (TheaterCityLife.cs):
+// DrawSkyline records every lamp it draws for that, and the static city is exactly the one drawn here.
 public sealed partial class Theater
 {
     Surface _city, _sky;                 // the wall (WallAspect tall, fading like the black one) and the skyline band
@@ -96,7 +98,8 @@ public sealed partial class Theater
         if (_band == null) return true;
         float ba = a * lights;
         if (ba <= 0.004f) { _band.Hide(); return true; }
-        _band.SetAlpha(Math.Min(1, ba * 1.3f));      // the lights a little brighter than the dimming itself
+        _bandA = Math.Min(1, ba * 1.3f);              // (city life's cars fade with it)
+        _band.SetAlpha(_bandA);                       // the lights a little brighter than the dimming itself
         _band.Show();
         return true;
     }
@@ -170,11 +173,14 @@ public sealed partial class Theater
     }
 
     // ---- the band: the skyline all the way round, standing on the horizon (the band's middle row) ----
-    void DrawSkyline()
+    // bare: into that texture without its lamps and haze (city life's base: the band under them, TheaterCityLife.cs)
+    void DrawSkyline(Surface bare = null)
     {
-        int w = _sky.W, h = _sky.H, mid = h / 2;
+        var s = bare ?? _sky;
+        int w = s.W, h = s.H, mid = h / 2;
         float px = mid;                                  // rows per unit of BandRow
-        _p.Begin(_sky.Bitmap, 0x00000000);
+        _p.Begin(s.Bitmap, 0x00000000);
+        LampsBegin(bare != null);                        // every lamp recorded as it is drawn
         var rnd = new Random(1017);
         uint[] lit = { 0xFFF5E14B, 0xFFF5E14B, 0xFF48E5F0, 0xFFFF4FA3, 0xFFFFE9C9 };
         // a striped retro sun low on the horizon, a third of the way round (not behind the screen: the band's middle is in front)
@@ -221,14 +227,15 @@ public sealed partial class Theater
             uint body = Theme.Mix(0xFF0B0A14, 0xFF16112A, (float)rnd.NextDouble() * 0.5f);
             _p.Fill(new RectangleF(x, top, bw, bh), body);
             _p.Fill(new RectangleF(x, top, bw, 2), 0xFF241C38);                     // a lit rim on its roof
+            LampHouse(x, top, bw, mid);
             if (bh > 40 && rnd.Next(3) == 0)                                          // an antenna with a red light
             {
                 int ax = x + bw / 2 - 1, ah = rnd.Next(6, 18);
                 _p.Fill(new RectangleF(ax, top - ah, 2, ah), 0xFF2A2140);
-                _p.Fill(new RectangleF(ax - 2, top - ah - 2, 6, 5), Pm(0xFFFF3B4F, 0.25f));
-                _p.Fill(new RectangleF(ax - 1, top - ah - 1, 4, 3), 0xFFFF3B4F);
+                LampAntenna(ax, top - ah);
             }
-            // windows: a grid of 3 x 4 cells, a few lit, each with a faint halo (no hard 2 px dots: they twinkled)
+            // windows: a grid of 3 x 4 cells, a few lit, each with a faint halo (no hard 2 px dots: they twinkled); the dark ones are
+            // recorded too, in a colour of their own (city life lights some of them)
             float lp = 0.12f + 0.22f * (float)rnd.NextDouble();
             for (int wy = top + 5; wy < mid - 6; wy += 9)
                 for (int wx = x + 3; wx < x + bw - 5; wx += 6)
@@ -236,22 +243,21 @@ public sealed partial class Theater
                     {
                         uint c = lit[rnd.Next(lit.Length)];
                         float al = 0.45f + 0.4f * (float)rnd.NextDouble();
-                        _p.Fill(new RectangleF(wx - 1, wy - 1, 5, 6), Pm(c, al * 0.22f));
-                        _p.Fill(new RectangleF(wx, wy, 3, 4), Pm(c, al));
+                        LampWindow(wx, wy, c, al, true);
                     }
+                    else LampWindow(wx, wy, lit[(int)(CyberFx.Hash(wx, wy) * lit.Length)], 0.45f + 0.4f * CyberFx.Hash(wy, wx), false);
             // now and then a neon sign down its side, with a glow
             if (bh > 30 && rnd.Next(8) == 0)
             {
                 uint n = rnd.Next(2) == 0 ? 0xFF2BD4E4 : 0xFFFF2A6D;
                 int sx = x + (rnd.Next(2) == 0 ? 2 : bw - 5), sl = Math.Min(bh - 10, rnd.Next(16, 44)), sy = top + rnd.Next(4, Math.Max(5, bh - sl - 4));
-                _p.Fill(new RectangleF(sx - 3, sy - 3, 9, sl + 6), Pm(n, 0.12f));
-                _p.Fill(new RectangleF(sx - 1, sy - 1, 5, sl + 2), Pm(n, 0.22f));
-                _p.Fill(new RectangleF(sx, sy, 3, sl), Pm(n, 0.95f));
+                LampSign(sx, sy, sl, n);
             }
             x += bw + (rnd.Next(5) == 0 ? rnd.Next(2, 10) : 0);                      // a gap now and then
         }
-        // the street lights' haze along the foot of the skyline
-        for (int k = 0; k < 5; k++) _p.Fill(new RectangleF(0, mid - 2 - k * 2, w, 2), Pm(0xFFFF2A6D, 0.10f - 0.018f * k));
+        // the street lights' haze along the foot of the skyline (over everything)
+        for (int k = 0; k < 5; k++) LampHaze(mid - 2 - k * 2, w, 0xFFFF2A6D, 0.10f - 0.018f * k);
+        LampsEnd(w, h, sunX, sunR);
         _p.End();
     }
 
@@ -272,6 +278,7 @@ public sealed partial class Theater
 
     void DisposeCyber()
     {
+        DisposeCityLife();
         _band?.Dispose(); _band = null;
         _city?.Dispose(); _city = null;
         _sky?.Dispose(); _sky = null;
