@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.CompilerServices;
 using System.Collections.Generic;
 using System.Numerics;
 using Vortice.Direct3D11;
@@ -158,6 +159,7 @@ public sealed partial class Theater
     }
 
     // the band is drawn: the new stars, then each lamp's patch, what covers it, what lies over it, its place in the read-back pixels
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     void LampsEnd(int bw, int bh, float sunX, float sunR)
     {
         if (!_recOn) return;
@@ -331,6 +333,7 @@ public sealed partial class Theater
     }
 
     // the lamps' patches out of the copy: the band without them on top, as drawn under it
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     static unsafe void LampsRead(Lamp[] lamps, uint[] bse, uint[] drawn, int y0, int rows, IntPtr data, long pitch)
     {
         foreach (var L in lamps)
@@ -621,6 +624,7 @@ public sealed partial class Theater
     const int CarCount = 3;                  // two cars and a drone
     const uint CarSort = 3;                  // over the band (2) by sort order, the Ambilight's own (they never meet), under every screen
     const float CarDeg = 2.6f, DroneDeg = 0.8f;   // their textures' width seen from you (near; far ones 65 % of it)
+    const float CarAlphaSteps = 128;         // the overlays' alpha is set in steps of 1/128 (Cars)
     const int CarTexW = 52, CarTexH = 18, DroneTexW = 16;
     readonly Car[] _car = new Car[CarCount];
     readonly VrOverlay[] _carOv = new VrOverlay[CarCount];
@@ -692,7 +696,10 @@ public sealed partial class Theater
             if (_carSet[i] != tex) { ov.SetTexture(tex.Tex); _carSet[i] = tex; }     // (once a trip at most)
             ov.SetWidth(wdt);
             ov.SetAbsolute(m);
-            ov.SetAlpha(Math.Min(1, a));
+            // its alpha in 1/128 steps: the fades (3 s each way) and the drone's breathing moved it by less than that most frames, and
+            // VrOverlay sent every move - a SteamVR call a frame for a change under a level of its brightest texel (Erik 10-18: "it must
+            // be optimized"). Mid-trip it is constant anyway. (Its place is sent every frame: it moves, and 45 Hz would be judder.)
+            ov.SetAlpha(MathF.Round(Math.Min(1, a) * CarAlphaSteps) / CarAlphaSteps);
             ov.Show();
         }
     }

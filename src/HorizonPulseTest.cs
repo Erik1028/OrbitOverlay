@@ -340,7 +340,7 @@ static partial class Tools
             return n;
         }
         float city = MathF.Min(1, Math.Clamp(tcfg.Dim, 0, 0.95f) * 1.3f);
-        static float Q(float v) => MathF.Round(v * 1024) / 1024;
+        static float Q(float v) => MathF.Round(v * 256) / 256;        // (the ring's alpha is set in 1/256 steps)
 
         // theater off, in Cyber: nothing, the meter never read
         Theme.Apply(new AppearanceConfig { Style = CyberHud.Id });

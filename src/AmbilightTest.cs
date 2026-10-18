@@ -161,9 +161,15 @@ static partial class Tools
         bool mono = true, noFlash = true;
         float lumMax = MathF.Max(Lum(start), Lum(goal)) + 0.01f, last = 0;
         uint[] glowCut = null;
+        // the glow's writes along the way (the cadence: every frame while the colours move fast, every third frame in the tail of the
+        // easing, once more at rest): the eased green and the green the glow was last written with, frame by frame
+        var easedG = new List<float>();
+        var writtenG = new List<float>();
+        int writes = 0, movingFrames = 0;
+        float written = start.Y, lag = 0, lastE = start.Y;
         for (int f = 1; f <= 90; f++)
         {
-            if (amb.Step(1 / 90f)) amb.Compose();
+            if (amb.Step(1 / 90f)) { amb.Compose(); writes++; written = amb.Eased(Ambilight.Left(8)).Y; }
             var e = amb.Eased(Ambilight.Left(8));
             float p = (e.Y - start.Y) / (goal.Y - start.Y);
             prog.Add(p);
@@ -171,10 +177,20 @@ static partial class Tools
             noFlash &= Lum(e) <= lumMax;
             last = p;
             if (f == 14) glowCut = (uint[])amb.Pixels.Clone();
+            if (e.Y != lastE) movingFrames++;
+            lastE = e.Y;
+            easedG.Add(e.Y);
+            writtenG.Add(written);
+            lag = MathF.Max(lag, MathF.Abs(e.Y - written) * 255);
         }
         Want($"easing: a cut to green after 1 frame {prog[0]:0.00} (no jump), 0.15 s {prog[13]:0.00}, 0.42 s {prog[37]:0.00}, 1 s {prog[89]:0.00}",
             prog[0] < 0.12f && prog[13] > 0.5f && prog[13] < 0.85f && prog[37] > 0.93f && prog[89] == 1);
         Want($"easing: steady (never back, never past the new colour) {mono}, no brighter than either colour on the way", mono && noFlash);
+        Want($"cadence: the hard cut's glow written {writes} times while its colours moved on {movingFrames} frames (every frame would be {movingFrames}: " +
+             $"want under 0.7 of it) - every frame while a colour moves 2 levels or more a frame, then every third; the glow at most {lag:0.0} levels " +
+             $"behind the eased colour (want 4 or less), and on it at rest ({(writtenG[^1] == easedG[^1] ? "yes" : "no")})",
+            writes < 0.7f * movingFrames && writes >= 20 && lag <= 4.01f && writtenG[^1] == easedG[^1]);
+        CadenceGraph(Path.Combine(dir, "ambilight_cadence.png"), easedG, writtenG, start.Y, goal.Y);
         int composedRest = amb.Composed;
         bool still = false;
         for (int f = 0; f < 30; f++) still |= amb.Step(1 / 90f);
@@ -538,6 +554,43 @@ static partial class Tools
         }
         bmp.UnlockBits(bd);
         return bmp;
+    }
+
+    // the glow's write cadence after a hard cut: the eased edge colour (green, 0..1) frame by frame as a line, and the green the glow was
+    // last written with as a stair over it - the two run together while the colour moves fast, the stair's steps are a third of a
+    // frame's... three frames' moves in the tail, and it ends on the line
+    static void CadenceGraph(string path, List<float> eased, List<float> written, float from, float to)
+    {
+        const int PxF = 10, L = 46, Top = 34, GH = 240, Bottom = 40;
+        int n = eased.Count, w = L + n * PxF + 20, h = Top + GH + Bottom;
+        float lo = MathF.Min(from, to), hi = MathF.Max(from, to), span = MathF.Max(1e-3f, hi - lo);
+        using var bmp = new Bitmap(w, h, PixelFormat.Format32bppRgb);
+        using var g = Graphics.FromImage(bmp);
+        g.Clear(Color.FromArgb(255, 20, 18, 28));
+        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        using var font = new Font("Segoe UI", 11, GraphicsUnit.Pixel);
+        float Y(float v) => Top + GH - (v - lo) / span * GH;
+        float X(int i) => L + i * PxF;
+        using (var grid = new Pen(Color.FromArgb(255, 44, 40, 58)))
+            for (int f = 0; f <= n; f += 9) { g.DrawLine(grid, X(f), Top, X(f), Top + GH); g.DrawString($"{f / 90f:0.0}s", font, Brushes.Gray, X(f) - 10, Top + GH + 4); }
+        g.DrawString($"{to:0.00}", font, Brushes.Gray, 4, Y(to) - 7);
+        g.DrawString($"{from:0.00}", font, Brushes.Gray, 4, Y(from) - 7);
+        var pts = new PointF[n];
+        for (int i = 0; i < n; i++) pts[i] = new PointF(X(i), Y(eased[i]));
+        using (var pen = new Pen(Color.FromArgb(255, 90, 200, 120), 2)) g.DrawLines(pen, pts);
+        using (var pen = new Pen(Color.FromArgb(255, 255, 200, 80), 1.5f))
+            for (int i = 1; i < n; i++)
+            {
+                g.DrawLine(pen, X(i - 1), Y(written[i - 1]), X(i), Y(written[i - 1]));
+                if (written[i] != written[i - 1]) g.DrawLine(pen, X(i), Y(written[i - 1]), X(i), Y(written[i]));
+            }
+        int writes = 0;
+        for (int i = 1; i < n; i++) if (written[i] != written[i - 1]) writes++;
+        g.DrawString($"the Ambilight after a hard cut (red to green): the eased edge colour's green every frame (line) and the green the glow was written with (stair) - " +
+                     $"{writes + 1} writes in {n} frames", font, Brushes.Gainsboro, 6, 8);
+        g.DrawString("every frame while it moves 2 levels or more a frame, every third frame in the tail, once more at rest; the stair is never 4 levels off the line",
+                     font, Brushes.Gray, 6, h - 18);
+        bmp.Save(path, ImageFormat.Png);
     }
 
     static void Sheet(List<(string label, string path)> shots, string path)
