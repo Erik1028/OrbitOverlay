@@ -16,7 +16,9 @@ namespace Orbit;
 // bulb, never a real account. What it must do and must not:
 //  - read the made-up bulb as Lumos would answer for it; a wrong key: "Wrong Tapo account";
 //  - never follow a redirect off the bulb's address (a second listener of the tool's own counts what reaches it);
-//  - never take more than 64 KB of an answer (a flood of 16 MB with no length said: what it allocated, what went out before it let go).
+//  - never take more than 64 KB of an answer (a flood of 16 MB with no length said: what it allocated, what went out before it let go);
+//  - an odd answer (a number too big or not whole, a list or a string for the answer) read as far as it goes, else "could not be read" -
+//    never .NET's own words on the watch.
 static class TapoSafetyTools
 {
     // the bulb's side of KLAP (the account's key made up): handshake1, handshake2, then the requests, each answered by Answer - and when
@@ -199,5 +201,20 @@ static class TapoSafetyTools
         long sent = Interlocked.Read(ref bulb.Sent);
         Log.Info($"lights direct: a 16 MB answer - {took / 1024} KB allocated taking it, {sent / 1024} KB of it sent before it was let go - capped " +
                  $"{took < 4 << 20 && sent < 16 << 20} (want True), in {ms:0} ms; the watch told '{f.Message}' {f.Message == "The bulb's answer could not be read"} (want True)");
+
+        // odd answers: read as far as they go, or "could not be read" - never .NET's words
+        string Odd(string answer)
+        {
+            bulb.Answer = m => m == "get_device_info" ? answer : "{\"error_code\":0}";
+            try { var o = State(new TapoDirect(key)); return o.Ready ? "read" : o.Message; }
+            catch (Exception e) { return e.GetType().Name + ": " + e.Message; }
+        }
+        const string Unreadable = "The bulb's answer could not be read";
+        string half = Odd("{\"error_code\":0,\"result\":{\"device_on\":true,\"brightness\":50.5,\"color_temp_range\":[2500.5,6500]}}");
+        string huge = Odd("{\"error_code\":0,\"result\":{\"device_on\":true,\"brightness\":1e12,\"hue\":1e12}}");
+        string code = Odd("{\"error_code\":1e12}"), list = Odd("[1,2,3]"), text = Odd("\"made up\"");
+        bulb.Answer = m => m == "get_device_info" ? DeviceInfo : "{\"error_code\":0}";
+        Log.Info($"lights direct: odd answers - a brightness of 50.5 '{half}', of 1e12 '{huge}' (want read read), an error code of 1e12 '{code}', a list '{list}', " +
+                 $"a string '{text}' (want {Unreadable} each): {half == "read" && huge == "read" && code == Unreadable && list == Unreadable && text == Unreadable} (want True)");
     }
 }

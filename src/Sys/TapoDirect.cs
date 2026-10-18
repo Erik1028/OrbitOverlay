@@ -74,10 +74,13 @@ public sealed class TapoDirect
         }
         catch (AuthException) { _s = null; return (401, Error("Wrong Tapo account")); }
         catch (BulbException e) { _s = null; return (500, Error(e.Message)); }
-        catch (Exception e) when (e is CryptographicException or JsonException || e is HttpRequestException { HttpRequestError: HttpRequestError.ConfigurationLimitExceeded })
+        // (JsonElement's own: a value of another type or size than the bulb's - they must not show .NET's words on the watch; the last one:
+        // an answer over MaxAnswer)
+        catch (Exception e) when (e is CryptographicException or JsonException or FormatException or InvalidOperationException or KeyNotFoundException ||
+                                  e is HttpRequestException { HttpRequestError: HttpRequestError.ConfigurationLimitExceeded })
         {
-            _s = null;          // (the second: an answer over MaxAnswer)
-            return (500, Error("The bulb's answer could not be read"));
+            _s = null;
+            return (500, Error(Unreadable));
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException or TimeoutException or SocketException or IOException)
         {
@@ -87,6 +90,7 @@ public sealed class TapoDirect
     }
 
     static string Error(string m) => JsonSerializer.Serialize(new Dictionary<string, string> { ["error"] = m });
+    const string Unreadable = "The bulb's answer could not be read";
 
     // ---- the protocol ----
 
@@ -113,7 +117,9 @@ public sealed class TapoDirect
             if (status != 200) throw new BulbException("Bulb error " + status);
             using var doc = JsonDocument.Parse(Decrypt(s, seq, Body(res)));
             var root = doc.RootElement;
-            int code = root.TryGetProperty("error_code", out var ec) && ec.ValueKind == JsonValueKind.Number ? ec.GetInt32() : 0;
+            if (root.ValueKind != JsonValueKind.Object) throw new BulbException(Unreadable);
+            int code = 0;
+            if (root.TryGetProperty("error_code", out var ec) && ec.ValueKind == JsonValueKind.Number && !ec.TryGetInt32(out code)) throw new BulbException(Unreadable);
             if (code != 0)
             {
                 if (attempt == 0 && code is 9999 or 1100 or -1005) { _s = null; continue; }     // session timed out / its keys: again
@@ -214,7 +220,8 @@ public sealed class TapoDirect
     // the bulb's get_device_info as Lumos's /api/state answer (LumosLink.Parse)
     public static string AsLumos(JsonElement i)
     {
-        int? Int(string k) => i.ValueKind == JsonValueKind.Object && i.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt32() : null;
+        // (a number that is no int - 50.5, 1e12 - is as good as none)
+        int? Int(string k) => i.ValueKind == JsonValueKind.Object && i.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out int n) ? n : null;
         bool Has(string k) => i.ValueKind == JsonValueKind.Object && i.TryGetProperty(k, out _);
         var o = new Dictionary<string, object>
         {
@@ -227,10 +234,10 @@ public sealed class TapoDirect
         if (Has("hue")) o["hsv"] = new Dictionary<string, int> { ["h"] = Int("hue") ?? 0, ["s"] = Int("saturation") ?? 0, ["v"] = Int("brightness") ?? 0 };
         if (Has("color_temp")) o["color_temp"] = Int("color_temp") ?? 0;
         if (i.ValueKind == JsonValueKind.Object && i.TryGetProperty("color_temp_range", out var r) && r.ValueKind == JsonValueKind.Array && r.GetArrayLength() == 2 &&
-            r[0].ValueKind == JsonValueKind.Number && r[1].ValueKind == JsonValueKind.Number)
+            r[0].ValueKind == JsonValueKind.Number && r[1].ValueKind == JsonValueKind.Number && r[0].TryGetInt32(out int lo) && r[1].TryGetInt32(out int hi))
         {
-            o["ct_min"] = r[0].GetInt32();
-            o["ct_max"] = r[1].GetInt32();
+            o["ct_min"] = lo;
+            o["ct_max"] = hi;
         }
         if (i.ValueKind == JsonValueKind.Object && i.TryGetProperty("nickname", out var nick) && nick.ValueKind == JsonValueKind.String)
             try { o["alias"] = Encoding.UTF8.GetString(Convert.FromBase64String(nick.GetString() ?? "")); } catch (FormatException) { }
