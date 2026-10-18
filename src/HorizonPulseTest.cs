@@ -466,6 +466,18 @@ static partial class Tools
         Want($"off and on again: the sparks run again ({again}); a quick off / on: no second sweep ({!second}), the ring dips to {dip:0.000} (want > 0: not gone)",
              again && !second && dip > 0);
 
+        // stopped again before the city's lights came on (a second tap straight after the first): it goes out dark - no sweep, no
+        // sparks, no ring flashing up on the way out
+        th.Stop(vr, tcfg);
+        Frames(1);
+        th.Start(scr, scr, vr, tcfg);
+        Frames(0.1f);
+        bool armedYet = th.HorizonSweeping && th.HorizonSweepTime < 0;
+        th.Stop(vr, tcfg);
+        bool flash = false;
+        for (int i = 0; i < 90; i++) { Frames(PulseDt); flash |= th.HorizonNow.Ring || th.HorizonNow.Sparks || th.HorizonSweepTime >= 0; }
+        Want($"stopped before the lights came on (still waiting for them: {armedYet}): out dark - no sweep, no sparks, no ring ({!flash})", armedYet && !flash);
+
         // Motion reduced: no sweep, a still brightness whatever plays, the meter never read
         th.Stop(vr, tcfg);
         Frames(1);

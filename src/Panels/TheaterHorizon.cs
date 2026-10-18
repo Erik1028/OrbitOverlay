@@ -66,7 +66,9 @@ public sealed partial class Theater
             _pulse.Reset();
         }
         if (!full) { _hzArmed = false; _hzSweep = -1; }                // (Motion turned down meanwhile: done at once)
-        if (_hzArmed && lights > 0)
+        // only on the way in: stopped again before the lights came on, it stays dark as it goes (the sparks must not set off then -
+        // going out 'lights' is 1 at once)
+        if (_hzArmed && lights > 0 && On)
         {
             _hzArmed = false;
             _hzSweep = 0;
