@@ -20,7 +20,8 @@ namespace Orbit;
 // kind (and the ones the setters spared), the texture bytes handed to SetTexture. Three times: Cyber with Motion Full, Cyber with Motion
 // Reduced, Modern (the cinema hall). Then the one-off costs (each texture drawn the first time), and the panels at rest in VR terms (their
 // Update with a fake overlay, paced at 90 Hz for a few seconds: how often each redraws and hands its texture over, the calls a frame).
-// Lines in the log ("theaterperf: ...") and <dir>/theaterperf.tsv (scenario, what, average, worst) for the baseline table.
+// Lines in the log ("theaterperf: ...") and <dir>/theaterperf.tsv (scenario, what, average, worst) for the baseline table; and a budget
+// for the stretches at rest and the panels, today's numbers with room to spare ("... False (want True)" and exit code 1 when one is over).
 // ORBIT_THEATERPERF_SECONDS: the stretch at rest (20); ORBIT_THEATERPERF_PANELS: the panels' stretch (6; 0: left out).
 static partial class Tools
 {
@@ -168,6 +169,7 @@ static partial class Tools
     {
         var culture = System.Globalization.CultureInfo.CurrentCulture;
         System.Globalization.CultureInfo.CurrentCulture = SnapCulture;
+        int failed0 = WantsFailed;
         var look0 = cfg.Data.Appearance;
         bool live0 = CyberFx.Live, still0 = Motion.Still;
         var fxPainter0 = CyberScreenFx.Painter;
@@ -197,7 +199,7 @@ static partial class Tools
             TheaterPerfOnce(cfg, painter, gpu, rows);
             if (panels > 0) PanelsAtRestVr(cfg, painter, gpu, panels, rows);
         }
-        catch (Exception e) { Log.Error("theaterperf: " + e); }
+        catch (Exception e) { Log.Error("theaterperf: " + e); Want("theaterperf: ran to the end", false); }
         finally
         {
             VrOverlay.Fake = false;
@@ -214,7 +216,7 @@ static partial class Tools
         }
         File.WriteAllLines(Path.Combine(dir, "theaterperf.tsv"), rows);
         Log.Info("theaterperf: done - " + Path.Combine(dir, "theaterperf.tsv"));
-        return 0;
+        return WantsExit(failed0);
     }
 
     static void TheaterPerfRun(string name, ConfigStore cfg, Painter painter, Gpu gpu, double seconds, List<string> rows, bool warm = false)
@@ -327,6 +329,8 @@ static partial class Tools
         rows.Add($"{name} at rest\tband sends/s\t{(th.LifeSends - sends0) / seconds:0.00}\t");
         rows.Add($"{name} at rest\tambilight samples/s\t{((th.AmbilightForTest?.Sampled ?? 0) - samples0) / seconds:0.0}\t");
         rows.Add($"{name} at rest\tambilight glow writes/s\t{((th.AmbilightForTest?.Composed ?? 0) - composed0) / seconds:0.0}\t");
+        RestBudget(name, rest, seconds, (scr.Handovers - hand0) / seconds, (rest.TexBytes - screenBytes) / seconds / 1e6, (th.LifeSends - sends0) / seconds,
+            ((th.AmbilightForTest?.Sampled ?? 0) - samples0) / seconds, GC.CollectionCount(0) - gc0);
         // going out (1 s), for the record
         th.Stop(vr, tcfg);
         PerfTrace.Reset();
@@ -335,6 +339,29 @@ static partial class Tools
         for (int i = 0; i < 90; i++) Frame(outro);
         Report(name, "going out (1 s)", outro, thTicks, thMax, rows);
         pic.Dispose(); picA.Dispose(); picB.Dispose();
+    }
+
+    // theater at rest, the budget: what this build does (the comments) with room to spare - the counts a little over what they are by
+    // design, a frame's calls and the textures about twice. Over it is a regression: Theater.Update or the screen allocating at all, the
+    // bar a string a frame, a texture or a call sent every frame that went a few times a second or was spared. (Simulated time: the
+    // same numbers on any PC, a busy one too.)
+    static void RestBudget(string name, PerfRun rest, double seconds, double handovers, double texMBs, double bandSends, double samples, int gcs)
+    {
+        var (callsAvg, callsWorst, texMax, bandMax) = name switch
+        {
+            "Cyber Full" => (6.0, 12, 60.0, 6.0),        // 4.3 calls a frame (worst 9); the band 5 times a second (42 MB/s) and the glow ~3 MB/s
+            "Cyber Reduced" => (2.5, 6, 6.0, 0.0),       // 1.4 (worst 3); no band sent, the glow and the still ring ~3.4 MB/s
+            _ => (2.5, 4, 4.0, 0.0),                     // Modern Full: 1.4 (worst 2); the glow ~2.2 MB/s
+        };
+        double f = Math.Max(1, rest.Frames), setTex = rest.Sent[VrOverlay.Calls.Texture] / seconds;
+        string sc = $"theaterperf: {name} at rest, the budget:";
+        Want($"{sc} bytes allocated by Theater.Update {rest.TheaterBytes} (want 0), the screen {rest.ScreenBytes} (want 0), the bar {rest.BarBytes / f:0.0} a frame " +
+             $"(want 16 or less); GCs {gcs} (want 0)", rest.TheaterBytes == 0 && rest.ScreenBytes == 0 && rest.BarBytes / f <= 16 && gcs == 0);
+        Want($"{sc} SteamVR calls {rest.SentTotal / f:0.00} a frame (want {callsAvg:0.0} or less), the worst frame {rest.MaxCalls} (want {callsWorst} or less), " +
+             $"SetTexture {setTex:0.0} a second (want 150 or less: the capture 60, the glow ~66, the band 5)", rest.SentTotal / f <= callsAvg && rest.MaxCalls <= callsWorst && setTex <= 150);
+        Want($"{sc} textures handed over without the screen {texMBs:0.00} MB/s (want {texMax:0} or less), the screen's capture {handovers:0.0} a second (want 55-61), " +
+             $"the band sent {bandSends:0.00} a second (want {(bandMax > 0 ? $"{bandMax:0} or less" : "0")}), the Ambilight sampled {samples:0.0} a second (want 11 or less)",
+             texMBs <= texMax && handovers >= 55 && handovers <= 61 && bandSends <= bandMax && samples <= 11);
     }
 
     // the lines and the rows of a stretch
@@ -557,5 +584,12 @@ static partial class Tools
         rows.Add($"panel {name}\ttexture MB/s\t{run.TexBytes / sec / 1e6:0.00}\t");
         rows.Add($"panel {name}\tSteamVR calls a frame\t{run.SentTotal / f:0.00}\t{run.MaxCalls}");
         rows.Add($"panel {name}\tSteamVR calls spared a frame\t{run.SparedTotal / f:0.00}\t");
+        // the budget at rest: the watch redraws twice a second (its 0.5 s rule), the dock once (its clock), the others not at all - a
+        // minute's turn or a slow PC (the frames run on the real clock here) is allowed for, a redraw or a call every frame is not
+        double redraws = run.Sent[VrOverlay.Calls.Texture] / sec;
+        var (bytesMax, redrawMax) = name.Contains("watch") ? (48.0, 3.0) : name.Contains("dock") ? (24.0, 1.5) : (8.0, 0.5);
+        Want($"theaterperf panel: {name} at rest, the budget: {run.SumBytes / f:0.0} B a frame (want {bytesMax:0} or less), redrawn {redraws:0.00} times a second " +
+             $"(want {redrawMax:0.0} or less), SteamVR calls {run.SentTotal / f:0.00} a frame (want 0.1 or less), the worst frame {run.MaxCalls} (want 2 or less)",
+             run.Frames > 0 && run.SumBytes / f <= bytesMax && redraws <= redrawMax && run.SentTotal / f <= 0.1 && run.MaxCalls <= 2);
     }
 }
