@@ -672,7 +672,9 @@ public sealed class PhotoWatcher : IPhotoSource, IDisposable
         _wake.Set();
         _thread?.Join(2000);
         StopWatching();
-        _wake.Dispose();
+        // (_wake is left to the GC, as AvatarLink's and LumosLink's are: a step still running past the Join - a big photo being decoded -
+        // would come back to a disposed handle in its WaitOne and throw on a thread with no handler: the process gone mid-exit, and the
+        // folder watcher's events Set it from their own threads)
     }
 }
 
