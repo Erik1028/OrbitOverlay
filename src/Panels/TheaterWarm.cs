@@ -24,6 +24,7 @@ public sealed partial class Theater
         if (_sky == null) { _sky = new Surface(_g, BandW, BandH); DrawSkyline(); return; }
         if (_hzRingTex == null || _hzSparkTex == null) { EnsureHorizonTex(); return; }
         if (_carTex == null || _droneTex == null) { CarTextures(); return; }
-        if (_lifeState != 2 && _lifeState != 4 && CyberFx.Full) LifeBase();     // (a frame each: the bare band and its copy, the map, the read-out)
+        if (!CyberFx.Full) { LifeDrop(); return; }                         // (Motion turned down half way through the read-back: let go)
+        if (_lifeState != 2 && _lifeState != 4) LifeBase();                 // (a frame each: the bare band and its copy, the map, the read-out)
     }
 }

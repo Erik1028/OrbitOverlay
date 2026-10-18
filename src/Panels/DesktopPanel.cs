@@ -308,6 +308,13 @@ public sealed class DesktopPanel : ITheaterScreen, IDisposable
         return Placement.TryWorld(Cfg.Place, _vr, out world);
     }
 
+    // the saved place alone (not the focus's drawn one, which follows a Recenter only later in the frame): where the big screen lines up
+    public bool SavedHome(out Matrix4x4 world)
+    {
+        world = default;
+        return _vr != null && Cfg.Place.M != null && Placement.TryWorld(Cfg.Place, _vr, out world);
+    }
+
     DesktopLayout.Snap? _snap;
     float[] _twoStartWidths;
     System.Collections.Generic.List<DesktopPanel> _twoRow;

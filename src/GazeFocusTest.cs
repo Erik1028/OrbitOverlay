@@ -504,10 +504,16 @@ static class GazeFocusTools
             var shift = Matrix4x4.CreateRotationY(0.2f) * Matrix4x4.CreateTranslation(0.1f, 0.05f, -0.2f);
             int rb0 = r.Focus.Rebuilds;
             foreach (var p in r.Panels) p.Cfg.Place.M = MathUtil.ToArray(MathUtil.FromArray(p.Cfg.Place.M) * shift);
+            // theater's big screen placed at once, as OrbitApp.Recenter does it (before the focus's update of the frame): on the line through
+            // the middle monitor's saved place as moved, not through where the focus drew it the frame before
+            var headNow = r.Vr.Hmd.Translation;
+            var bigAt = Theater.Where(r["Middle"], r.Vr, 2.5f).Translation;
+            float bigOff = Vector3.Distance(bigAt, headNow + Vector3.Normalize(Saved(r["Middle"]).world.Translation - headNow) * 2.5f);
+            bool lined = bigOff < 0.01f;
             r.Run(0.05);
             bool followed = RowOk(r, Others, out string whyM) && r.Focus.Rebuilds == rb0;
             Want($"focus follows: Others 70 % {slid} (want True): {whyS}; the saved row moved (Recenter) - the drawn row with it, no row rebuilt {followed} " +
-                 $"(want True): {whyM}", slid && followed);
+                 $"(want True): {whyM}; theater's big screen on the line through the moved row {bigOff * 100:0.00} cm off it {lined} (want True)", slid && followed && lined);
 
             // ---- cost: the update alone, at rest and switching; nothing allocated; the views still at rest ----
             {

@@ -55,7 +55,7 @@ public sealed partial class Theater
         float a = Math.Clamp(dim, 0, 0.95f) * Ease(_t);            // the wall's alpha (Update's)
         if (a <= 0.004f || !Theme.Cyber || _p == null) { HorizonOff(); return; }
         bool full = CyberFx.Full, coming = On && full && _t < 1;
-        float lights = coming ? Smooth01((_t - 0.45f) / 0.45f) : 1;  // the city's lights coming on (CyberWall's)
+        float lights = _cityLit;                                       // the city's lights coming on (CityLit: the band's very ones)
         float city = Math.Min(1, a * 1.3f) * lights;                   // the band's alpha: the ring is one of the city's lights
         if (!_hzShown)
         {
@@ -66,8 +66,8 @@ public sealed partial class Theater
             _pulse.Reset();
         }
         if (!full) { _hzArmed = false; _hzSweep = -1; }                // (Motion turned down meanwhile: done at once)
-        // only on the way in: stopped again before the lights came on, it stays dark as it goes (the sparks must not set off then -
-        // going out 'lights' is 1 at once)
+        // only on the way in: stopped again before the lights came on, it stays dark as it goes (the sparks must not set off then; the
+        // lights stay dark going out too)
         if (_hzArmed && lights > 0 && On)
         {
             _hzArmed = false;
