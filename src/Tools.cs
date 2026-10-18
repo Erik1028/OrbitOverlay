@@ -304,6 +304,8 @@ static partial class Tools
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "perf") return PerfOnly(view, panelView, ui, surf, ptr, painter, gpu, cfg, kb, data, dir, mons, dev);
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "extras") return ExtrasRun(wrist, kb, view, panelView, ui, surf, ptr, painter, gpu, cfg, data, host, dir);
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "overlaps") { OverlapRun(wrist, kb, view, ui, surf, ptr, painter, cfg, data, gpu, dir); return 0; }
+        // the font pass alone (Look > Font: every installed font's texts against their boxes - 5 1/2 min with 10 fonts), whatever ORBIT_SNAP_FONTS says
+        if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "fonts") return FontsRun(wrist, kb, view, ui, surf, ptr, painter, gpu, cfg, data, host, dir, Gallery, true) > 0 ? 1 : 0;
         if (only != null)
         {
             RetroShots(only);
@@ -1267,11 +1269,12 @@ static partial class Tools
     // Then per font, in fonts/<font>: the settings pages, the watch faces and opened views, the keyboard, the notifications and What's
     // new, the ink of every text against its box (sticking out a pixel or more where the default font does not is a problem); its
     // digits one width (tabular: a ticking clock must not jiggle); and the layout checks again, modern and styles (their qa pictures
-    // kept only when one fails). About 2.5 minutes; ORBIT_SNAP_FONTS=0 leaves all of it out.
-    static void FontsRun(WristPanel wrist, KeyboardPanel kb, SettingsView view, Ui ui, Surface surf, PointerState ptr, Painter painter,
-        Gpu gpu, ConfigStore cfg, PanelData data, FakeHost host, string dir, Func<int, List<WatchWidget>> gallery)
+    // kept only when one fails). About 5 1/2 minutes with 10 fonts; ORBIT_SNAP_FONTS=0 leaves all of it out of the full run, ORBIT_SNAP_ONLY=fonts runs
+    // it alone. The problems found (0: none).
+    static int FontsRun(WristPanel wrist, KeyboardPanel kb, SettingsView view, Ui ui, Surface surf, PointerState ptr, Painter painter,
+        Gpu gpu, ConfigStore cfg, PanelData data, FakeHost host, string dir, Func<int, List<WatchWidget>> gallery, bool asked = false)
     {
-        if (Environment.GetEnvironmentVariable("ORBIT_SNAP_FONTS") == "0") return;
+        if (!asked && Environment.GetEnvironmentVariable("ORBIT_SNAP_FONTS") == "0") return 0;
         var wcfg = cfg.Data.Wrist;
         string face0 = wcfg.Face;
         var keep = cfg.Data.Appearance;
@@ -1396,16 +1399,23 @@ static partial class Tools
                 Spy($"wrist_custom{g}", () => wrist.Draw(data));
                 wrist.Surf.SavePng(gpu, Path.Combine(fdir, $"wrist_custom{g}.png"));
             }
-            foreach (var (type, g) in new[] { ("media", 0), ("battery", 0), ("time", 0), ("calendar", 2), ("timer", 2), ("stopwatch", 2), ("fps", 0), ("cpu", 2), ("volume", 2) })
+            // every kind's opened view (as the layout check opens them: one widget of its usual size; the 1.15 ones on the made-up data
+            // the snapshot gives them - photos, weather, friends, recap, light, RGB, memories, temperatures, avatar), the notifications
+            // with a long made-up list
+            var notes0 = data.Notes;
+            data.Notes = NotesViewTools.Fake(NotesViewTools.Long);
+            foreach (var kind in WatchWidgets.Kinds.Where(k => !k.Button))
             {
-                wcfg.Widgets = gallery(g);
+                var (w, h) = kind.Sizes[kind.Default];
+                wcfg.Widgets = new List<WatchWidget> { new() { Type = kind.Id, X = 0, Y = 0, W = w, H = h } };
                 wrist.Settle();
-                if (!wrist.OpenForTest(type)) continue;
+                if (!wrist.OpenForTest(kind.Id)) continue;          // (the microphone and the button group have no opened view)
                 wrist.Draw(data);
-                Spy($"wrist_open_{type}", () => wrist.Draw(data));
-                wrist.Surf.SavePng(gpu, Path.Combine(fdir, $"wrist_open_{type}.png"));
+                Spy($"wrist_open_{kind.Id}", () => wrist.Draw(data));
+                wrist.Surf.SavePng(gpu, Path.Combine(fdir, $"wrist_open_{kind.Id}.png"));
                 wrist.CloseForTest();
             }
+            data.Notes = notes0;
             wcfg.Face = face0;
             wcfg.Widgets = null;
             // the keyboard (and its chatbox line), the notifications
@@ -1465,6 +1475,7 @@ static partial class Tools
         wcfg.Face = face0;
         wcfg.Widgets = null;
         view.Tab = 0;
+        return total;
     }
 
     [System.Runtime.InteropServices.DllImport("user32.dll")]
