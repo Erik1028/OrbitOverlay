@@ -1222,12 +1222,15 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         if (!_theater.On && now >= _barAnchorAt) { _barAnchor = TheaterAnchor(); _barAnchorAt = now + 1; }
         foreach (var la in _lasers)
         {
-            if (la.Hovered == null) continue;
-            if (la.Hovered == _theaterBar) { onBar = true; continue; }
-            if (la.Hovered is not ITheaterScreen s) continue;
+            // the eye cursor's laser: the hand's own ray decides (the eyes looking low on a monitor never open the bar - Erik 10-19)
+            var hov = la.EyeCursorOn ? la.HandScreen : la.Hovered;
+            var hpx = la.EyeCursorOn ? la.HandPx : la.HoverPx;
+            if (hov == null) continue;
+            if (hov == _theaterBar) { onBar = true; continue; }
+            if (hov is not ITheaterScreen s) continue;
             if (!_theater.On && s != _barAnchor) continue;
             var ts = s.TextureSize;
-            bool low = ts.Y > 0 && la.HoverPx.Y / ts.Y > 0.72f;
+            bool low = ts.Y > 0 && hpx.Y / ts.Y > 0.72f;
             if (pointed == null || low) { pointed = s; lower = low; }
         }
         _theaterBar.Update(_vr, now, dt, _theater, _theaterChoices, pointed, lower, onBar);
