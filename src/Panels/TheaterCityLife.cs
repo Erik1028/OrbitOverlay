@@ -615,6 +615,7 @@ public sealed partial class Theater
     }
 
     const int CarCount = 3;                  // two cars and a drone
+    const uint CarSort = 3;                  // over the band (2) by sort order, the Ambilight's own (they never meet), under every screen
     const float CarDeg = 2.6f, DroneDeg = 0.8f;   // their textures' width seen from you (near; far ones 65 % of it)
     const int CarTexW = 52, CarTexH = 18, DroneTexW = 16;
     readonly Car[] _car = new Car[CarCount];
@@ -709,7 +710,7 @@ public sealed partial class Theater
             {
                 var ov = new VrOverlay($"erik.orbit.theater.car{i}", $"OrbitOverlay theater car {i}");
                 _carOv[i] = ov;
-                ov.SetSortOrder(3);
+                ov.SetSortOrder(CarSort);
                 ov.SetFlag(Valve.VR.VROverlayFlags.IsPremultiplied, true);
                 _carSet[i] = null;
             }
