@@ -329,6 +329,25 @@ static class AvatarViewTools
         // the configs were only read
         bool same = File.ReadAllBytes(foxFile).SequenceEqual(Bytes(Json(FoxId, "Made-up Fox", FoxParams)));
         Log.Info($"avatar link: the configs read, never written {same} (want True)");
+        // a config over the size cap (8 KB here, 8 MB in VR) and a broken one in the folder, the big one worn: neither read again every poll
+        // (the log's avatar answers meanwhile); the broken one written anew: read again
+        l.MaxConfig = 8192;
+        string bigId = "avtr_00000000-0000-4000-8000-00000000b16b", brokenFile = Path.Combine(avatars, "avtr_00000000-0000-4000-8000-0000000b0b0b.json");
+        File.WriteAllBytes(Path.Combine(avatars, bigId + ".json"), Bytes(Json(bigId, "Made-up Big " + new string('x', 8000), FoxParams)));
+        File.WriteAllText(brokenFile, "{\"id\": \"avtr_00000000-0000-4000-8000-0000000b0b0b\", \"name\": ");
+        worn = bigId;
+        l.ReadNow();
+        int reads0 = l.ConfigReads;
+        for (int i = 0; i < 4; i++) l.ReadNow();
+        int again = l.ConfigReads - reads0;
+        bool answers = l.State.Ready && l.State.Avatar?.Name == "Made-up Fox";
+        File.WriteAllBytes(brokenFile, Bytes(Json("avtr_00000000-0000-4000-8000-0000000b0b0b", "Made-up Mended", CatParams)));
+        File.SetLastWriteTimeUtc(brokenFile, DateTime.UtcNow.AddMinutes(1));
+        l.ReadNow();
+        bool reread = l.ConfigReads == reads0 + 1;
+        l.MaxConfig = 8 << 20;
+        Log.Info($"avatar link: a config over the size cap and a broken one - read again in 4 polls {again} time(s), none {again == 0} (want True), the log's avatar " +
+                 $"shown meanwhile {answers} (want True); the broken one written anew read again {reread} (want True)");
         // a tree of VRChat's with the paths nested (a / in a name), bools as true / false
         var (tid, tv) = AvatarLink.ParseTree(Tree(FoxId, FoxParams, n => FoxValues().TryGetValue(n, out float v) ? v : 0));
         // a bool told by its type tag alone, a path with an escaped space
