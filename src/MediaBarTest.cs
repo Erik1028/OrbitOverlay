@@ -156,6 +156,15 @@ static partial class Tools
             State("notime", "no timeline (a live stream)", playing with { Timeline = false, Pos = 0, Dur = 0, Title = "Lofi hip hop radio - beats to relax/study to", Artist = "Lofi Girl" });
             State("short", "a short title without an artist", playing with { Title = "Intro", Artist = null });
             State("emoji", "letters of other scripts and an emoji", playing with { Title = "Ünnepi Hangverseny — Ё ♪ 🎬 Live", Artist = "Zeneakadémia" });
+            // (how wide it gets on a desk like Erik's: three monitors and a window - a picture only)
+            fake = playing;
+            var wideChoices = new List<ITheaterScreen> { new TheaterTest.FakeScreen { Name = "AOC 24G4X" }, b, new TheaterTest.FakeScreen { Name = "Xiaomi Monitor" },
+                new TheaterTest.FakeScreen { Name = "YouTube - Mozilla Firefox" } };
+            Frame(5);
+            bar.DrawFor(wideChoices, b, view).SavePng(gpu, Path.Combine(md, "mediabar_wide.png"));
+            Log.Info($"mediabar: mediabar_wide.png - three monitors and a window: {bar.WidthForTest} px wide, {bar.WidthForTest / 84f:0.0} times as wide as tall " +
+                     $"({bar.WidthForTest / 84f * TheaterBar.HeightAt(2.5f):0.00} m at 2.5 m; the screen 2.8 m)");
+            Frame(5);
 
             // ---- the commands, recorded ----
             fake = playing;

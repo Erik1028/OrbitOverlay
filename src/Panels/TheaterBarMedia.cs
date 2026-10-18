@@ -301,7 +301,8 @@ public sealed partial class TheaterBar
             string t = TimeText((int)shown, (int)Math.Round(_m.Dur));
             float tw = CyberHud.MonoWidth(_p, t, CodeSize);
             if (x1 - tw >= sx + sw + 10)
-                CyberHud.MonoAt(_p, t, x1 - tw - 2, by, tw + 4, pend ? CyberHud.Cyan : CyberHud.Grey, CodeSize, FontWeight.SemiBold, TextAlignment.Trailing);
+                CyberHud.MonoAt(_p, t, x1 - tw - 2, by, tw + 4, !_mHas ? CyberHud.Faint : pend ? CyberHud.Cyan : CyberHud.Grey, CodeSize, FontWeight.SemiBold,
+                    TextAlignment.Trailing);
         }
         DrawTitleLine(ox + LineX, oy + LineY);
         // where it is in the track
