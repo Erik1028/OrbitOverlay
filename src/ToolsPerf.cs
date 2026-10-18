@@ -319,13 +319,19 @@ static partial class Tools
     }
 
     // the VR settings panel's corners cut after drawing (Painter.CutCorners) against the clip layer they replaced, every tab: the
-    // pixels that differ and by how much (a channel, 0-255)
+    // pixels that differ and by how much (a channel, 0-255). CutCorners keeps the layer's coverage of a corner as an 8-bit alpha and
+    // multiplies by it later, where the layer multiplies by its own coverage at once: two roundings for one, a pixel on the curve can be
+    // a level off (the "one 8-bit step" of its comment). So a level is allowed - only in the four corner squares; a pixel anywhere
+    // else differing at all, or one more than a level off, is a real difference.
     static void PanelCornersCheck(SettingsView panelView, Ui ui, Surface surf, PointerState ptr, Painter painter, Gpu gpu, ConfigStore cfg)
     {
         string style0 = cfg.Data.Appearance.Style;
         cfg.Data.Appearance.Style = null;
         Theme.Apply(cfg.Data.Appearance);
-        int keep = panelView.Tab, diff = 0, max = 0;
+        int keep = panelView.Tab, diff = 0, max = 0, over = 0, outside = 0;
+        // the corner squares as CutCorners takes them (its own sums: the radius 22 at the panel's 1.5 scale, 2 px more)
+        int cs = (int)MathF.Ceiling(22 * 1.5f) + 2, cx1 = (int)MathF.Ceiling(SettingsView.W * 1.5f) - cs, cy1 = (int)MathF.Ceiling(SettingsView.H * 1.5f) - cs;
+        bool InCorner(int x, int y) => (x < cs || (x >= cx1 && x < cx1 + cs)) && (y < cs || (y >= cy1 && y < cy1 + cs));
         ptr.Leave();
         var all = new RectangleF(0, 0, SettingsView.W, SettingsView.H);
         uint[] Shot(bool layer)
@@ -358,15 +364,19 @@ static partial class Tools
             {
                 if (a[i] == b[i]) continue;
                 diff++;
-                for (int sh = 0; sh < 32; sh += 8) max = Math.Max(max, Math.Abs((int)((a[i] >> sh) & 0xFF) - (int)((b[i] >> sh) & 0xFF)));
+                int most = 0;
+                for (int sh = 0; sh < 32; sh += 8) most = Math.Max(most, Math.Abs((int)((a[i] >> sh) & 0xFF) - (int)((b[i] >> sh) & 0xFF)));
+                max = Math.Max(max, most);
+                if (most > 1) over++;
+                if (!InCorner(i % surf.W, i / surf.W)) outside++;
             }
         }
         panelView.Tab = keep;
         ui.ResetAnimations();
         cfg.Data.Appearance.Style = style0;
         Theme.Apply(cfg.Data.Appearance);
-        Log.Info($"perf: the VR settings panel's corners cut against the clip layer, {SettingsView.TabCount} tabs: {diff} pixels differ (want 0), " +
-                 $"by up to {max} of 255");
+        Want($"perf: the VR settings panel's corners cut against the clip layer, {SettingsView.TabCount} tabs: {diff} pixels differ by up to {max} of 255 " +
+             $"(want 1 or less: the 8-bit corner picture's rounding) - {over} more than a level off (want 0), {outside} outside the corners (want 0)", over == 0 && outside == 0);
     }
 
     // like FrameCost, but each round starts something (start) and then draws n frames on a 90 Hz grid - an animation measured over
