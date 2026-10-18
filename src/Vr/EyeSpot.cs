@@ -12,7 +12,9 @@ namespace Orbit;
 //    elsewhere; while held (the trigger or the grip: a click, a drag) and while the eyes are off the screens it stays as well.
 public struct EyeSpot
 {
-    public const float Jump = 4 * MathF.PI / 180, Dead = 0.7f * MathF.PI / 180, Tune = 0.6f * MathF.PI / 180, FollowHz = 4, Glide = 0.07f;
+    // (Erik 10-19 "more sensitive": the dead zone 0.7 -> 0.35 deg, the follow 4 -> 9 Hz, a look elsewhere from 4 -> 2.5 deg, the glide 70 ->
+    // 45 ms; the hand's fine-tune from 0.6 -> 1.2 deg - the hand's own tremble had frozen the spot)
+    public const float Jump = 2.5f * MathF.PI / 180, Dead = 0.35f * MathF.PI / 180, Tune = 1.2f * MathF.PI / 180, FollowHz = 9, Glide = 0.045f;
 
     public Vector3 Anchor, GlideFrom, HandRef;
     public double GlideAt;

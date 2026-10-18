@@ -171,7 +171,7 @@ public sealed class Laser : IDisposable
         if (EyeFollow) FollowEyes(vr, targets, handDir, hs.Click || hs.Grab, dt);
         else if (_eyeOn) EyeOff();
         _rawD = _eyeOn ? EyeBeam(handDir) : _warped ? Vector3.Normalize(Vector3.TransformNormal(_warpLocal, hs.Aim)) : handDir;
-        var (o, d) = _filter.Filter(_rawO, _rawD, dt, Smoothing);
+        var (o, d) = _filter.Filter(_rawO, _rawD, dt, _eyeOn ? Math.Min(Smoothing, 1) : Smoothing);     // (the eye cursor is smoothed already)
 
         // Releases are handled before anything else: the grab / two-hand branches below return
         // early, and a lost release would leave a mouse button or a key held down in Windows.

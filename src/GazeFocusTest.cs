@@ -644,7 +644,7 @@ static class GazeFocusTools
         return problems;
     }
 
-    // The eye cursor's smoothing (Vr/EyeSpot.cs, Erik 10-19), on the made-up row at 90 fps: the eyes on the middle monitor trembling 0.35 deg
+    // The eye cursor's smoothing (Vr/EyeSpot.cs, Erik 10-19), on the made-up row at 90 fps: the eyes on the middle monitor trembling 0.3 deg
     // - the spot stays; the look moving 2.5 deg in a second (reading) - followed to within the dead zone; a look at the right monitor -
     // part way at 0.035 s, there by 0.08 s; the hand turned 2 deg - tuned: a small look away moves nothing, the beam turned 2 deg with
     // the hand; the trigger held - a look at the left monitor moves nothing
@@ -684,7 +684,7 @@ static class GazeFocusTools
         for (int i = 0; i < 90; i++)
         {
             var axis = Vector3.Normalize(new Vector3((float)rng.NextDouble() - 0.5f, (float)rng.NextDouble() - 0.5f, (float)rng.NextDouble() - 0.5f));
-            Frame(Vector3.Transform(midDir, Quaternion.CreateFromAxisAngle(axis, (float)rng.NextDouble() * 0.35f * MathF.PI / 180)), hand);
+            Frame(Vector3.Transform(midDir, Quaternion.CreateFromAxisAngle(axis, (float)rng.NextDouble() * 0.3f * MathF.PI / 180)), hand);
             tremble = MathF.Max(tremble, Vector3.Distance(es.Spot(clock), mid) * 1000);
         }
         // 2. reading: 2.5 deg to the right in a second, then 0.5 s still
@@ -714,10 +714,10 @@ static class GazeFocusTools
         for (int i = 0; i < 20; i++) Frame(leftDir, hand2, held: true);
         float heldMove = Vector3.Distance(es.Spot(clock), spot) * 1000;
         Want($"eye cursor: trembling eyes move the spot {tremble:0.00} mm (want under 0.5); reading 2.5 deg: {behind:0.00} deg behind the look " +
-             $"(want under {EyeSpot.Dead * 180 / MathF.PI + 0.15f:0.00}); a look at the right monitor: {partWay * 100:0}% there after 0.033 s (want 30-95), " +
+             $"(want under {EyeSpot.Dead * 180 / MathF.PI + 0.15f:0.00}); a look at the right monitor: {partWay * 100:0}% there after 0.033 s (want 30-99), " +
              $"{there:0.00} mm off after 0.089 s (want under 1); the hand turned 2 deg: tuned {es.Tuned} (want True), a small look away moves it " +
              $"{tunedMove:0.00} mm (want under 0.5), the beam turned {beamTurn:0.00} deg with the hand's {handTurn:0.00} (want within 0.15); held: a look at the left monitor moves it {heldMove:0.00} mm (want under 0.5)",
-            tremble < 0.5f && behind < EyeSpot.Dead * 180 / MathF.PI + 0.15f && partWay > 0.3f && partWay < 0.95f && there < 1 && es.Tuned
+            tremble < 0.5f && behind < EyeSpot.Dead * 180 / MathF.PI + 0.15f && partWay > 0.3f && partWay < 0.99f && there < 1 && es.Tuned
             && tunedMove < 0.5f && MathF.Abs(beamTurn - handTurn) < 0.15f && heldMove < 0.5f);
         foreach (var p in r.Panels) p.Dispose();
     }

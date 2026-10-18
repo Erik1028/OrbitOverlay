@@ -20,7 +20,7 @@ public sealed class EyeGaze : IDisposable
     public const double Hold = 0.25;                // seconds a blink keeps the last look
     // the look smoothed like the laser (a One Euro filter on its direction): resting eyes tremble and the tracker is noisy - filtered at
     // ~1.5 Hz; a saccade (hundreds of degrees a second) opens it up so the look jumps with the eyes, not after them
-    public const float MinCutoff = 1.5f, Beta = 0.06f;  // Hz, Hz per degree a second
+    public const float MinCutoff = 2.5f, Beta = 0.1f;   // Hz, Hz per degree a second (Erik 10-19 "more sensitive": was 1.5 / 0.06)
     public const float MinConfidence = 0.3f;
 
     [StructLayout(LayoutKind.Sequential)]
