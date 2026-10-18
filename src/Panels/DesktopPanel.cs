@@ -283,7 +283,7 @@ public sealed class DesktopPanel : ITheaterScreen, IDisposable
 
     // ---- gaze focus (Panels/GazeFocus.cs): the row's draw override while it is on; like Theater, nothing here is saved ----
     public FocusView Focus { get; set; }
-    public bool Grabbing { get; private set; }        // between GrabBegin and GrabEnd
+    public bool Grabbing { get; private set; }        // between GrabBegin and GrabEnd of a grab that edits the saved layout (not the theater screen's)
 
     // ---- theater mode (Panels/Theater.cs): the big screen is an override, nothing here is saved ----
     public TheaterView Theater { get; set; }
@@ -319,7 +319,7 @@ public sealed class DesktopPanel : ITheaterScreen, IDisposable
     {
         _snap = null;
         _grabView = Theater;
-        Grabbing = true;
+        Grabbing = Theater == null;        // the big screen's grab moves the TheaterView, not the layout: the rows stay as they are
         if (Theater != null) return;
         if (detach && Cfg.Group != null) Layout?.Detach(this);
     }

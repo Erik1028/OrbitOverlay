@@ -14,24 +14,28 @@ public sealed class FocusView
 
 // Gaze focus (Erik 10-18: "with three monitors the overlay is uncomfortably wide: while I look at the middle monitor the side ones
 // should be small, and as I look at one of them the others shrink and that one is in focus"). In a row of two or more monitors
-// (DesktopLayout's groups) the one you look at is drawn at its saved place and width; the others at a part of their width (Desktops >
-// Others), each hugging the focused one along the row's arc with the row's own gaps, their centres on the row's line - so the row as a
-// whole is narrower. A per-frame draw override exactly like theater mode's: nothing here is saved, a grab works on the saved layout
-// (the row goes back to its saved sizes while a monitor is held, following the hand, and the focus comes back after), Recenter /
-// Reflow move the saved row and the override follows. Theater on: the focus is held where it is (no switching) and goes on after.
+// (DesktopLayout's groups) the one you look at is drawn at its saved width; the others at a part of their width (Desktops > Others),
+// each hugging the focused one along the row's arc with the row's own gaps, their centres on the row's line - so the row as a whole
+// is narrower. A per-frame draw override exactly like theater mode's: nothing here is saved. While a hand holds a monitor every row
+// goes back to its saved sizes, following the hand (the grab, the snap into a row and the join all work on the saved layout, so that
+// is what you see while you arrange things), and the focus comes back after. Recenter / Reflow move the saved row and the override
+// follows. Theater on: the focus is held where it is (no switching) and goes on after. A monitor that leaves its row (Separate,
+// B / Y pulling it out, a profile switch) eases to its saved place by itself: nothing jumps.
 //
 // Which one: the head's forward ray against the panels as they are drawn (the laser's hit math, LocalRaycast - tilted rows and lying
 // back work), with hysteresis so it never flaps: the look must land clearly inside a neighbour (past 15 % of its drawn width from
 // the edge it shares with the focused one) and stay there 0.3 s; a laser on a monitor focuses it after 0.15 s (you are about to
 // click there). Looking at nothing (the watch, the keyboard, the room) keeps the focus - typing never changes it. At start the
-// focus is the primary monitor (else the middle of the row).
+// focus is the primary monitor (else the middle of the row): the row's home.
 //
-// Motion: the row's drawn state is one chain - the anchor's (the focused monitor's) drawn pose and every member's drawn width, the
-// rest placed edge to edge from it along the row's arc (DesktopLayout.Neighbor) - so the row is seamless on every frame of a
-// change. A switch eases the new anchor's pose from where it was drawn to its saved place and every width to its target over 0.35 s
-// (Motion reduced: a short linear move, off: at once); the shared edge of the old and the new focused monitor stays put, the new one
-// grows outwards from it. A switch mid-way starts from what is drawn then: nothing jumps. The anchor's start pose is kept relative
-// to its saved pose, so a saved layout that moves meanwhile (a grab, Recenter) carries the animation along.
+// Where: the row's drawn state is one chain - the anchor's (the focused monitor's) drawn pose and every member's drawn width, the
+// rest placed edge to edge from it along the row's arc (DesktopLayout.Neighbor) - so the row is seamless on every frame of a change.
+// The home monitor, focused, sits at its saved place: the row never drifts from the saved layout, and looking back at the middle
+// brings the row back to where it was. Any other monitor grows where it is drawn, about its own centre, so what you look at stays
+// under your gaze (the chain hangs from it there, the rest tuck in beside it). A switch eases the anchor's pose and every width over
+// 0.35 s (Motion reduced: a short linear move, off: at once), and a switch mid-way starts from what is drawn then: nothing jumps.
+// The anchor's poses are kept relative to its saved pose, so a saved layout that moves meanwhile (a grab, Recenter) carries the
+// drawn row along.
 //
 // Cost: at rest a few compares per monitor (has the saved layout changed? has a row changed?) and one ray test per row member; the
 // views change only while something moves, so the overlays get no new transform (VrOverlay skips equal values anyway). Nothing is
@@ -62,12 +66,16 @@ public sealed class GazeFocus
         public string Group;
         public readonly List<Member> Members = new();
         public int Focused, Anchor;                   // the chain hangs from the anchor: the focused one, the held one during a grab
+        public int Default;                           // the row's home: the primary (else the middle) monitor - focused, it sits at its saved place
         public float Radius;
-        public bool Plain;                            // the target is the saved layout itself (a grab, or the feature turned off)
+        public bool Plain;                            // the target is the saved layout itself (a grab, the feature turned off, a monitor leaving)
         public bool Grab;
-        // the anchor's drawn pose eases from (FromQ, FromT) - relative to its saved pose - to its saved pose; T = 0 .. 1
-        public Quaternion FromQ = Quaternion.Identity;
-        public Vector3 FromT;
+        public bool Leaving;                          // one monitor that left its row: eases to its saved place by itself, then it is let go
+        // the anchor's drawn pose eases from (FromQ, FromT) to (ToQ, ToT), both relative to its saved pose, T = 0 .. 1: the home
+        // monitor, a grab, the feature off go to the saved pose itself; another focused monitor holds the pose it had (Hold)
+        public Quaternion FromQ = Quaternion.Identity, ToQ = Quaternion.Identity;
+        public Vector3 FromT, ToT;
+        public bool Hold;
         public float T = 1;
         public bool Settled;                          // drawn = the target: nothing to compute
         public int Looked = -1, Pointed = -1;         // the neighbour the look is clearly inside / a laser is on, since when
@@ -76,7 +84,7 @@ public sealed class GazeFocus
 
     readonly List<DesktopPanel> _panels;
     readonly List<Row> _rows = new();
-    int _memberCount;
+    int _memberCount;                                 // members of the live rows (not the leaving ones)
     public int Rebuilds { get; private set; }         // the tests: rows made again (want: only when a monitor joins / leaves)
     public int Switches { get; private set; }
 
@@ -88,7 +96,7 @@ public sealed class GazeFocus
     public DesktopPanel FocusedOf(DesktopPanel p)
     {
         var m = Find(p);
-        return m == null ? null : m.Row.Members[m.Row.Focused].Panel;
+        return m == null || m.Row.Leaving ? null : m.Row.Members[m.Row.Focused].Panel;
     }
 
     // Once a frame, after the lasers and before the monitors draw. cfg null or off: the rows ease back to their saved layout and let go.
@@ -101,24 +109,29 @@ public sealed class GazeFocus
         float others = Math.Clamp(cfg?.Others ?? OthersDefault, OthersMin, OthersMax);
         bool othersChanged = others != _others;
         _others = others;
-        if (Stale()) Rebuild(on);
+        if (on && Stale()) Rebuild();                                          // off: the rows only ease back to the saved layout and let go
+        // a hand holds a monitor (any of them, not the theater screen): every row at its saved sizes meanwhile - the snap into a row
+        // and the join go by the saved layout, so that is what you see while you arrange things
+        bool grab = false;
+        foreach (var p in _panels) if (p.Grabbing) { grab = true; break; }
         for (int i = _rows.Count - 1; i >= 0; i--)
         {
             var row = _rows[i];
-            Step(row, vr, now, dt, on, othersChanged, theater || hold, laserA as DesktopPanel, laserB as DesktopPanel);
-            if (!on && row.T >= 1)                                               // back at its saved layout: let go of the row
+            if (row.Leaving && !IsPlaced(row.Members[0].Panel)) { Release(row); _rows.RemoveAt(i); continue; }     // put on a hand meanwhile
+            Step(row, vr, now, dt, on, grab, othersChanged, theater || hold, laserA as DesktopPanel, laserB as DesktopPanel);
+            if ((!on || row.Leaving) && row.T >= 1)                              // back at its saved layout: let go of the row
             {
                 Release(row);
                 _rows.RemoveAt(i);
-                _memberCount -= row.Members.Count;
+                if (!row.Leaving) _memberCount -= row.Members.Count;
             }
         }
     }
 
     // ---- the rows ----
 
-    static bool IsMember(DesktopPanel p) =>
-        p.Cfg.Enabled && p.Cfg.Group != null && Placement.IsWorld(p.Cfg.Place) && p.Cfg.Place.M != null;
+    static bool IsPlaced(DesktopPanel p) => Placement.IsWorld(p.Cfg.Place) && p.Cfg.Place.M != null;
+    static bool IsMember(DesktopPanel p) => p.Cfg.Enabled && p.Cfg.Group != null && IsPlaced(p);
 
     int Siblings(DesktopPanel p)
     {
@@ -135,61 +148,80 @@ public sealed class GazeFocus
         return null;
     }
 
-    // has a monitor joined or left a row, or a row its order? (a lone grouped monitor is no row)
+    // has a monitor joined or left a row, or a row its order? (a lone grouped monitor is no row; one on its way out is no member)
     bool Stale()
     {
         int inRows = 0;
         foreach (var p in _panels)
         {
             var m = Find(p);
+            bool live = m != null && !m.Row.Leaving;
             bool want = IsMember(p) && Siblings(p) >= 2;
-            if (!want) { if (m != null) return true; continue; }
+            if (!want) { if (live) return true; continue; }
             inRows++;
-            if (m == null || m.Row.Group != p.Cfg.Group || m.Index != p.Cfg.GroupIndex) return true;
+            if (!live || m.Row.Group != p.Cfg.Group || m.Index != p.Cfg.GroupIndex) return true;
         }
         return inRows != _memberCount;
     }
 
     // The rows as they are now. A row that was there keeps what it drew (the views go on from there, the focus stays on the same
-    // monitor); a monitor new to a row starts where it is saved. Rare: a monitor joining / leaving a row, a panel rebuild.
-    void Rebuild(bool on)
+    // monitor); a monitor new to a row starts where it is saved; one that left a row eases to its saved place by itself (a Leaving row
+    // of one) and is let go there. Rare: a monitor joining / leaving a row, a panel rebuild.
+    void Rebuild()
     {
         Rebuilds++;
         var fresh = new List<Row>();
-        if (on)
-            foreach (var p in _panels)
-            {
-                if (!IsMember(p) || Siblings(p) < 2) continue;
-                Row row = null;
-                foreach (var r in fresh) if (r.Group == p.Cfg.Group) { row = r; break; }
-                if (row == null) fresh.Add(row = new Row { Group = p.Cfg.Group, Focused = -1 });      // -1: not kept from before
-                var old = Find(p);
-                var m = old != null && old.Row.Group == row.Group ? old : new Member { Panel = p };
-                m.Row = row;
-                m.Index = p.Cfg.GroupIndex;
-                int at = row.Members.Count;
-                while (at > 0 && row.Members[at - 1].Index > m.Index) at--;
-                row.Members.Insert(at, m);
-            }
+        foreach (var p in _panels)
+        {
+            if (!IsMember(p) || Siblings(p) < 2) continue;
+            Row row = null;
+            foreach (var r in fresh) if (r.Group == p.Cfg.Group) { row = r; break; }
+            if (row == null) fresh.Add(row = new Row { Group = p.Cfg.Group, Focused = -1 });      // -1: not kept from before
+            var old = Find(p);
+            // one of this row before, or on its way out of a row: it goes on from where it is drawn
+            var m = old != null && (old.Row.Group == row.Group || old.Row.Leaving) ? old : new Member { Panel = p };
+            m.Row = row;
+            m.Index = p.Cfg.GroupIndex;
+            int at = row.Members.Count;
+            while (at > 0 && row.Members[at - 1].Index > m.Index) at--;
+            row.Members.Insert(at, m);
+        }
         foreach (var r in _rows)
         {
-            Row again = null;
-            foreach (var f in fresh) if (f.Group == r.Group) { again = f; break; }
-            if (again == null) { Release(r); continue; }
+            if (r.Leaving)
+            {
+                if (r.Members[0].Row == r) fresh.Add(r);                       // still on its way (not back in a row)
+                continue;
+            }
             // the same row again: the focus stays on its monitor if that is still in it, the animation goes on from what is drawn
-            var focused = r.Members[r.Focused].Panel;
-            again.Focused = -1;
-            for (int i = 0; i < again.Members.Count; i++) if (again.Members[i].Panel == focused) again.Focused = i;
-            foreach (var m in r.Members) if (m.Row != again) m.Panel.Focus = null;      // it left this row
+            Row again = null;
+            foreach (var f in fresh) if (!f.Leaving && f.Group == r.Group) { again = f; break; }
+            if (again != null)
+            {
+                var focused = r.Members[r.Focused].Panel;
+                again.Focused = -1;
+                for (int i = 0; i < again.Members.Count; i++) if (again.Members[i].Panel == focused) again.Focused = i;
+            }
+            // the ones not in a row any more: each eases from where it is drawn to its saved place, alone (Separate, B / Y pulling
+            // one out, a profile switch - no jump); one not in the world any more, or a panel gone (monitors changed), is let go at once
+            foreach (var m in r.Members)
+            {
+                if (m.Row != r) continue;
+                if (!IsPlaced(m.Panel) || !_panels.Contains(m.Panel)) { if (m.Panel.Focus == m.View) m.Panel.Focus = null; continue; }
+                var alone = new Row { Group = r.Group, Leaving = true, Plain = true };
+                m.Row = alone;
+                alone.Members.Add(m);
+                fresh.Add(alone);
+            }
         }
         _rows.Clear();
         _memberCount = 0;
         foreach (var row in fresh)
         {
             _rows.Add(row);
-            _memberCount += row.Members.Count;
-            bool kept = row.Focused >= 0;
-            if (!kept) row.Focused = DefaultFocus(row);
+            if (!row.Leaving) _memberCount += row.Members.Count;
+            row.Default = DefaultFocus(row);
+            if (row.Focused < 0) row.Focused = row.Default;
             row.Anchor = row.Focused;
             row.Looked = row.Pointed = -1;
             foreach (var m in row.Members)
@@ -260,13 +292,18 @@ public sealed class GazeFocus
         }
     }
 
-    // a new animation from what is drawn now: the anchor's drawn pose relative to its saved one, every width as drawn
+    // a new animation from what is drawn now: the anchor's drawn pose relative to its saved one, every width as drawn. The home monitor
+    // (and a grab, the feature off, one leaving) goes to its saved pose - the row never drifts; another focused monitor holds the pose it
+    // has, so what you look at stays under your gaze while it grows
     void Retarget(Row row)
     {
         var a = row.Members[row.Anchor];
         var rel = a.View.World * MathUtil.Invert(a.Saved);
         row.FromQ = Quaternion.Normalize(Quaternion.CreateFromRotationMatrix(rel));
         row.FromT = rel.Translation;
+        row.Hold = !row.Plain && row.Focused != row.Default;
+        row.ToQ = row.Hold ? row.FromQ : Quaternion.Identity;
+        row.ToT = row.Hold ? row.FromT : Vector3.Zero;
         foreach (var m in row.Members) m.FromWidth = m.Drawn;
         row.T = Motion.Any ? 0 : 1;                           // Look > Motion off: at once
         row.Settled = false;
@@ -276,30 +313,29 @@ public sealed class GazeFocus
 
     // ---- a frame of one row ----
 
-    void Step(Row row, VrSession vr, double now, float dt, bool on, bool othersChanged, bool held, DesktopPanel laserA, DesktopPanel laserB)
+    void Step(Row row, VrSession vr, double now, float dt, bool on, bool grab, bool othersChanged, bool held, DesktopPanel laserA, DesktopPanel laserB)
     {
-        // a monitor of the row held by a hand: the row goes back to its saved sizes (the grab edits the saved layout, Reflow and all);
-        // let go: the focus comes back
-        bool grab = false;
-        foreach (var m in row.Members) if (m.Panel.Grabbing) { grab = true; break; }
-        bool plain = grab || !on;
-        if (grab != row.Grab || plain != row.Plain)
+        bool moved = Refresh(row);                            // first: a retarget below is relative to the saved pose as it is now
+        if (!row.Leaving)
         {
-            row.Grab = grab;
-            row.Plain = plain;
-            int anchor = row.Focused;
-            if (grab) for (int i = 0; i < row.Members.Count; i++) if (row.Members[i].Panel.Grabbing) anchor = i;
-            row.Anchor = anchor;
-            row.Looked = row.Pointed = -1;
-            Targets(row);
-            Retarget(row);
+            // a hand holds a monitor: the row goes back to its saved sizes (the grab edits the saved layout, Reflow and all), hanging
+            // from the held one if it is of this row; let go: the focus comes back
+            bool plain = grab || !on;
+            if (grab != row.Grab || plain != row.Plain)
+            {
+                row.Grab = grab;
+                row.Plain = plain;
+                row.Anchor = row.Focused;
+                if (grab) for (int i = 0; i < row.Members.Count; i++) if (row.Members[i].Panel.Grabbing) row.Anchor = i;
+                row.Looked = row.Pointed = -1;
+                Targets(row);
+                Retarget(row);
+            }
+            // ---- which one (not while a monitor is held, a button is held, or in theater) ----
+            if (!grab && on && !held) Look(row, vr, now, laserA, laserB);
+            else row.Looked = row.Pointed = -1;
         }
-        bool moved = Refresh(row);
         if (moved || othersChanged) { Targets(row); row.Settled = false; }     // the saved layout moved / the slider: the override follows
-
-        // ---- which one (not while a monitor is held, a button is held, or in theater) ----
-        if (!grab && on && !held) Look(row, vr, now, laserA, laserB);
-        else row.Looked = row.Pointed = -1;
 
         // ---- the drawn chain ----
         if (row.T < 1)
@@ -371,10 +407,10 @@ public sealed class GazeFocus
     {
         var a = row.Members[row.Anchor];
         var A = a.Saved;
-        if (e < 1)
+        if (e < 1 || row.Hold)
         {
-            var q = Quaternion.Slerp(row.FromQ, Quaternion.Identity, e);
-            var t = Vector3.Lerp(row.FromT, Vector3.Zero, e);
+            var q = e >= 1 ? row.ToQ : Quaternion.Slerp(row.FromQ, row.ToQ, e);
+            var t = e >= 1 ? row.ToT : Vector3.Lerp(row.FromT, row.ToT, e);
             A = Matrix4x4.CreateFromQuaternion(q) * Matrix4x4.CreateTranslation(t) * a.Saved;
         }
         foreach (var m in row.Members) m.Drawn = Lerp(m.FromWidth, m.ToWidth, e);

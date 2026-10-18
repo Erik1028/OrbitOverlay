@@ -17,18 +17,21 @@ static class GazeFocusTools
     const float Fps = 90, Dt = 1 / Fps;
     static readonly Vector3 HeadPos = new(0, 1.6f, 0);
 
-    // three 2560 x 1440 monitors side by side on the desk, the middle one primary (two: the middle and the right)
+    // three 2560 x 1440 monitors side by side on the desk, the middle one primary (two: the middle and the right; four: a lone one beside
+    // the row of three)
     public static List<MonitorInfo> FakeMonitors(int count)
     {
         var l = new List<MonitorInfo>();
         if (count > 2) l.Add(new MonitorInfo { Id = "fake-left", Name = "Left", Device = @"\\.\DISPLAY2", X = -2560, Y = 0, W = 2560, H = 1440 });
         l.Add(new MonitorInfo { Id = "fake-middle", Name = "Middle", Device = @"\\.\DISPLAY1", X = 0, Y = 0, W = 2560, H = 1440, Primary = true });
         l.Add(new MonitorInfo { Id = "fake-right", Name = "Right", Device = @"\\.\DISPLAY3", X = 2560, Y = 0, W = 2560, H = 1440 });
+        if (count > 3) l.Add(new MonitorInfo { Id = "fake-lone", Name = "Lone", Device = @"\\.\DISPLAY4", X = 5120, Y = 0, W = 2560, H = 1440 });
         return l;
     }
 
-    // yaw in degrees, + = to the right (System.Numerics turns -Z towards -X for a positive angle about Y)
-    static Matrix4x4 Head(float yawDeg) => Matrix4x4.CreateRotationY(-yawDeg * MathF.PI / 180) * Matrix4x4.CreateTranslation(HeadPos);
+    // yaw in degrees, + = to the right (System.Numerics turns -Z towards -X for a positive angle about Y); pitch + = up
+    static Matrix4x4 Head(float yawDeg, float pitchDeg = 0) =>
+        Matrix4x4.CreateRotationX(pitchDeg * MathF.PI / 180) * Matrix4x4.CreateRotationY(-yawDeg * MathF.PI / 180) * Matrix4x4.CreateTranslation(HeadPos);
 
     // The app's side, made up: the monitors joined into one curved row 1.2 m round the head (JoinAll, as a first run does), the focus,
     // a clock stepping at 90 fps, and what is drawn tracked frame to frame (the largest move / growth of any monitor between two frames)
@@ -42,7 +45,8 @@ static class GazeFocusTools
         public double T;
         public bool Theater, Hold;
         public DesktopPanel Laser;
-        public float Yaw;
+        public float Yaw, Pitch;                      // where the head looks; the row line is 12 cm under the eyes (JoinAll), so a small monitor
+                                                      // of a narrow one wants a look a little down, as in VR you look AT it
         public float MaxMove, MaxGrow, MaxMoveGrab;
         public bool Relative;                         // track the drawn centre's offset from the saved one (a grab moves the saved row itself)
         public long Ticks; public int Frames;         // the focus update alone
@@ -66,6 +70,7 @@ static class GazeFocusTools
             Vr.Device[0] = Head(0);
             Vr.DeviceValid[0] = true;
             Layout.JoinAll(MathUtil.YawFrame(Vr.Hmd), 1.2f, -0.12f);
+            if (count > 3) Layout.Detach(this["Lone"]);      // the fourth one: on its own, right of the row
             Focus = new GazeFocus(Panels);
             _pos = new Vector3[Panels.Count];
             _w = new float[Panels.Count];
@@ -77,7 +82,7 @@ static class GazeFocusTools
 
         public void Step()
         {
-            Vr.Device[0] = Head(Yaw);
+            Vr.Device[0] = Head(Yaw, Pitch);
             long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
             Focus.Update(Vr, T, Dt, Cfg, Theater, Hold, Laser, null);
             Ticks += System.Diagnostics.Stopwatch.GetTimestamp() - t0;
@@ -131,28 +136,50 @@ static class GazeFocusTools
         return (Vector3.Dot(d, MathUtil.Right(ideal)), Vector3.Dot(d, MathUtil.Up(ideal)));
     }
 
-    // the row at rest in the focus layout: the focused one at its saved place and width, the others at 'others' of theirs, seamless, level
+    // the row at rest in the focus layout: the focused one at its saved width - the primary (the row's home) at its saved place, another
+    // one where it grew - the others at 'others' of theirs, seamless, level. A monitor out of the row is not looked at.
     static bool RowOk(Rig r, float others, out string why)
     {
         var f = r.Focused;
         why = "";
         if (f == null) { why = "no focus"; return false; }
         float off = Vector3.Distance(Drawn(f).world.Translation, Saved(f).world.Translation);
-        bool ok = off < 0.02f && MathF.Abs(Drawn(f).width - f.Cfg.Width) < 1e-4f;
-        why += $"focus {f.Mon.Name} {off * 100:0.0} cm off its saved centre";
+        bool ok = (!f.Mon.Primary || off < 0.02f) && MathF.Abs(Drawn(f).width - f.Cfg.Width) < 1e-4f;
+        why += $"focus {f.Mon.Name} {off * 100:0.0} cm off its saved centre{(f.Mon.Primary ? "" : " (a side one grows where it is)")}";
+        DesktopPanel prev = null;
+        int i = 0;
         foreach (var p in r.Panels)
         {
-            if (p == f) continue;
-            float want = p.Cfg.Width * others;
-            if (MathF.Abs(Drawn(p).width - want) > 1e-3f) { ok = false; why += $", {p.Mon.Name} {Drawn(p).width:0.000} m wide (want {want:0.000})"; }
-        }
-        for (int i = 1; i < r.Panels.Count; i++)
-        {
-            var (gap, vert) = Seam(r.Panels[i - 1], r.Panels[i]);
-            why += $", seam {i} gap {gap * 100:0.0} cm up {vert * 100:0.0} cm";
-            if (MathF.Abs(gap) > 0.01f || MathF.Abs(vert) > 0.01f) ok = false;
+            if (p.Cfg.Group == null) continue;
+            if (p != f)
+            {
+                float want = p.Cfg.Width * others;
+                if (MathF.Abs(Drawn(p).width - want) > 1e-3f) { ok = false; why += $", {p.Mon.Name} {Drawn(p).width:0.000} m wide (want {want:0.000})"; }
+            }
+            if (prev != null)
+            {
+                var (gap, vert) = Seam(prev, p);
+                why += $", seam {++i} gap {gap * 100:0.0} cm up {vert * 100:0.0} cm";
+                if (MathF.Abs(gap) > 0.01f || MathF.Abs(vert) > 0.01f) ok = false;
+            }
+            prev = p;
         }
         return ok;
+    }
+
+    // every row member's drawn centre, to compare two moments of the row
+    static Vector3[] Centres(Rig r)
+    {
+        var l = new List<Vector3>();
+        foreach (var p in r.Panels) if (p.Cfg.Group != null) l.Add(Drawn(p).world.Translation);
+        return l.ToArray();
+    }
+
+    static float Farthest(Vector3[] a, Vector3[] b)
+    {
+        float d = 0;
+        for (int i = 0; i < a.Length; i++) d = MathF.Max(d, Vector3.Distance(a[i], b[i]));
+        return d;
     }
 
     // which monitor the head's ray meets as drawn, and where across it (0 = its left edge)
@@ -213,22 +240,24 @@ static class GazeFocusTools
                  $"middle {looked == r["Middle"]} (want True), 30 deg right the small right one {lookedR == r["Right"]} (want True) at {uR:0.00} of its width; " +
                  $"the row {rowW:0.00} m of {savedW:0.00} m saved; one row made {r.Focus.Rebuilds} (want 1)", mid && rest && looked == r["Middle"] && lookedR == r["Right"] && r.Focus.Rebuilds == 1);
 
-            // ---- the dwell: a glance does not switch, 0.4 s does; the shared edge stays put while the new one grows ----
+            // ---- the dwell: a glance does not switch, 0.4 s does; the new one grows where it is (its centre stays under the look) ----
             r.Yaw = 30; r.Run(0.15);
             bool glance = r.FocusName == "Middle";
             r.Yaw = 0; r.Run(0.5);
             r.ResetTrack();
-            var seam0 = Seam(r, "Middle", "Right");
+            var cRight0 = Drawn(r["Right"]).world.Translation;                      // the small right one, where you look
             r.Yaw = 30; r.Run(0.4);
             bool switched = r.FocusName == "Right";
-            float seamMid = Vector3.Distance(Seam(r, "Middle", "Right"), seam0);
+            float stayMid = Vector3.Distance(Drawn(r["Right"]).world.Translation, cRight0);
             r.Run(0.4);
             bool rightRest = RowOk(r, Others, out string whyR);
-            float seam1 = Vector3.Distance(Seam(r, "Middle", "Right"), seam0);
+            float stay = Vector3.Distance(Drawn(r["Right"]).world.Translation, cRight0);
+            var lookedNow = LookedAt(r, out float uNow);
             Want($"focus dwell: a 0.15 s glance at the right monitor keeps the middle {glance} (want True); 0.4 s focuses the right one {switched} (want True), " +
-                 $"settled {rightRest} (want True): {whyR}; the edge they share moved {seamMid * 100:0.0} cm mid-way and {seam1 * 100:0.0} cm in all (want < 2: the new " +
-                 $"one grows outwards from it); the largest step of a centre {r.MaxMove * 100:0.00} cm, of a width {r.MaxGrow * 100:0.00} cm per frame (want < 3)",
-                glance && switched && rightRest && seam1 < 0.02f && seamMid < 0.02f && r.MaxMove < 0.03f && r.MaxGrow < 0.03f);
+                 $"settled {rightRest} (want True): {whyR}; its centre moved {stayMid * 100:0.0} cm mid-way and {stay * 100:0.0} cm in all (want < 2: it grows " +
+                 $"about its centre, what you look at stays under the look - the look is at {uNow:0.00} of it now, {(lookedNow == r["Right"] ? "still on it" : "NOT on it")}); " +
+                 $"the largest step of a centre {r.MaxMove * 100:0.00} cm, of a width {r.MaxGrow * 100:0.00} cm per frame (want < 3)",
+                glance && switched && rightRest && stay < 0.02f && stayMid < 0.02f && lookedNow == r["Right"] && r.MaxMove < 0.03f && r.MaxGrow < 0.03f);
 
             // ---- back to the middle, then dithering: on the edge band (never past 15 %), and across it but back before the dwell ----
             r.Yaw = 0; r.Run(0.8);
@@ -360,6 +389,102 @@ static class GazeFocusTools
                      $"{none} (want True)", start2 && right2 && none);
             }
 
+            // ---- no drift: monitors of three widths (the only way a row could wander), the look going round for a while - every time the
+            // middle is focused the row is back where it was, exactly; a side one grows where it is ----
+            {
+                var d = new Rig(gpu, dir, 3) { Pitch = -8 };    // the 0.7 m one's small self is 22 cm tall: the look a little down, onto it
+                d["Left"].Cfg.Width = 1.1f; d["Right"].Cfg.Width = 0.7f;
+                d.Layout.Reflow(d["Middle"]);
+                d.Run(1);
+                var home0 = Centres(d);
+                d.Yaw = 30; d.Step();
+                var meets = LookedAt(d, out float uMeet);
+                d.Yaw = 0; d.Step();
+                float wander = 0, sideStay = 0;
+                Vector3 rightAt = default, leftAt = default;
+                bool sides = true;
+                for (int cycle = 0; cycle < 4; cycle++)
+                {
+                    d.Yaw = 30; d.Run(0.8);
+                    sides &= d.FocusName == "Right";
+                    var cR = Drawn(d["Right"]).world.Translation;
+                    if (cycle > 0) sideStay = MathF.Max(sideStay, Vector3.Distance(cR, rightAt));
+                    rightAt = cR;
+                    d.Yaw = -30; d.Run(0.8);
+                    sides &= d.FocusName == "Left";
+                    var cL = Drawn(d["Left"]).world.Translation;
+                    if (cycle > 0) sideStay = MathF.Max(sideStay, Vector3.Distance(cL, leftAt));
+                    leftAt = cL;
+                    d.Yaw = 30; d.Run(0.8);
+                    d.Yaw = 0; d.Run(0.8);
+                    sides &= d.FocusName == "Middle";
+                    wander = MathF.Max(wander, Farthest(Centres(d), home0));
+                }
+                bool homeOk = RowOk(d, Others, out string whyD) && d.FocusName == "Middle";
+                Want($"focus drift: widths 1.1 / 0.9 / 0.7 m, the look 30 deg right and 8 down meets the {meets?.Mon.Name ?? "-"} at {uMeet:0.00} of it; " +
+                     $"the look round right - left - right - middle 4 times, every focus taken {sides} (want True); " +
+                     $"back on the middle the row is where it started, {wander * 100:0.0} cm off at most (want < 1), {homeOk} (want True): {whyD}; a side one " +
+                     $"settles within {sideStay * 100:0.0} cm of where it was the time before (the row is anchored to the middle: it cannot wander off)",
+                    sides && homeOk && wander < 0.01f && sideStay < 0.1f);
+            }
+
+            // ---- leaving a row: Separate in the settings, and B / Y pulling the small right one out - each eases to its saved place, no jump ----
+            {
+                var s = new Rig(gpu, dir, 3);
+                s.Run(1);
+                s.ResetTrack();
+                s.Layout.SeparateAll();
+                s.Run(0.5);
+                bool apart = !s.Focus.Active;
+                foreach (var p in s.Panels) apart &= p.Focus == null && Drawn(p).world == Saved(p).world;
+                float sepMove = s.MaxMove, sepGrow = s.MaxGrow;
+                var g = new Rig(gpu, dir, 3);
+                g.Yaw = 0; g.Run(1);
+                var right = g["Right"];
+                var drawn0 = Drawn(right).world.Translation;
+                g.ResetTrack(relative: true);
+                var aim0 = Matrix4x4.CreateRotationX(-0.3f) * Matrix4x4.CreateTranslation(0.3f, 1.2f, -0.1f);
+                right.GrabBegin(detach: true);
+                var rel = right.WorldTransform * MathUtil.Invert(aim0);
+                for (int k = 1; k <= 45; k++)
+                {
+                    // 36 cm to the right: past the 20 cm the snap reaches, or letting go would put it straight back into the row
+                    var aim = Matrix4x4.CreateRotationX(-0.3f) * Matrix4x4.CreateTranslation(0.3f + 0.008f * k, 1.2f, -0.1f);
+                    right.GrabMove(rel * aim);
+                    g.Step();
+                }
+                float pullMove = g.MaxMove;
+                bool alone = right.Cfg.Group == null && right.Focus == null && Drawn(right).world == Saved(right).world;
+                right.GrabEnd();
+                g.Run(0.6);
+                bool restRow = RowOk(g, Others, out string whyP) && g.Focus.FocusedOf(g["Middle"]) == g["Middle"] && g.Focus.FocusedOf(right) == null;
+                Want($"focus leaving: Separate - every monitor eased to its saved place and was let go {apart} (want True), the largest step {sepMove * 100:0.00} cm, " +
+                     $"{sepGrow * 100:0.00} cm of width (want < 3); B / Y pulling the small right one out while held 45 frames - the largest step past the hand's " +
+                     $"own move {pullMove * 100:0.00} cm (want < 3), on its own at its saved size by then {alone} (want True); let go: the two left focus the middle " +
+                     $"{restRow} (want True): {whyP}", apart && sepMove < 0.03f && sepGrow < 0.03f && pullMove < 0.03f && alone && restRow);
+            }
+
+            // ---- a lone monitor grabbed beside a focused row: the row at its saved sizes while it is held (its edges where the snap goes), back after ----
+            {
+                var q = new Rig(gpu, dir, 4);
+                q.Run(1);
+                var lone = q["Lone"];
+                bool rowQ0 = RowOk(q, Others, out string whyQ0);
+                bool loneFree = lone.Focus == null && rowQ0;
+                q.ResetTrack();
+                lone.GrabBegin(detach: false);
+                q.Run(0.5);
+                bool plain = lone.Focus == null;
+                foreach (var p in q.Panels) if (p.Cfg.Group != null) plain &= Vector3.Distance(Drawn(p).world.Translation, Saved(p).world.Translation) < 0.001f && MathF.Abs(Drawn(p).width - p.Cfg.Width) < 1e-4f;
+                float holdMove = q.MaxMove;
+                lone.GrabEnd();
+                q.Run(0.6);
+                bool backQ = RowOk(q, Others, out string whyQ) && q.FocusName == "Middle";
+                Want($"focus lone grab: a fourth monitor beside the row is not drawn by it {loneFree} (want True): {whyQ0}; held: the row at its saved places and " +
+                     $"sizes {plain} (want True), the largest step {holdMove * 100:0.00} cm (want < 3); let go: the focus layout again {backQ} (want True): {whyQ}",
+                    loneFree && plain && holdMove < 0.03f && backQ);
+            }
+
             // ---- the setting off: the row eases back and lets go; on again: eases in ----
             r.Yaw = 0; r.Run(0.6);
             r.ResetTrack();
@@ -428,22 +553,6 @@ static class GazeFocusTools
         return problems;
     }
 
-    // the edge a and b share as drawn: the point between a's right and b's left arc end (one point when the row is seamless)
-    static Vector3 Seam(Rig r, string a, string b)
-    {
-        var (wa, wia, ca) = Drawn(r[a]);
-        var (wb, wib, cb) = Drawn(r[b]);
-        return (ArcEnd(wa, wia, ca, 1) + ArcEnd(wb, wib, cb, -1)) / 2;
-    }
-
-    static Vector3 ArcEnd(in Matrix4x4 world, float width, float c, int side)
-    {
-        Vector3 lp;
-        if (c > 0) { float r = width / (2 * MathF.PI * c), th = side * (width / 2) / r; lp = new Vector3(r * MathF.Sin(th), 0, r - r * MathF.Cos(th)); }
-        else lp = new Vector3(side * width / 2, 0, 0);
-        return Vector3.Transform(lp, world);
-    }
-
     // the laser's grab, as Laser.cs does it: the hand's offset from the panel's WorldTransform right after GrabBegin, then the hand moves
     // 45 frames (a push to the right, a little up and a turn); the saved layout after
     static string GrabRun(Rig r, string which)
@@ -483,9 +592,12 @@ static class GazeFocusTools
         r.Yaw = 30; r.Run(0.32); Snap("looked right 0.3 s: switching");
         r.Run(0.12); Snap("0.12 s into the change");
         r.Run(0.12); Snap("0.24 s");
-        r.Run(0.4); Snap("settled on the right one");
+        r.Run(0.4); Snap("settled on the right one (grew where it was)");
         r.Yaw = -18; r.Run(0.45); Snap("looked left 0.45 s: mid-way");
         r.Run(0.6); Snap("settled on the left one");
+        // with the left one grown where it was, the row sits centred ahead: the small middle one's centre is ~10 deg to the right (a look
+        // exactly ahead lands on their shared edge - the edge band keeps it, as it should)
+        r.Yaw = 10; r.Run(0.8); Snap("looked at the middle one: back where it started");
         const int ColW = 300, H = 440;
         const float Scale = 118;
         using var surf = new Surface(gpu, ColW * frames.Count, H);
