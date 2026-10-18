@@ -23,7 +23,10 @@ public sealed partial class WristPanel
 
     // --snapshot's time-family pictures: a fixed moment (the longest month and day names, the widest digits); null = the clock
     public DateTime? TestNow;
-    DateTime Now => TestNow ?? DateTime.Now;
+    // ORBIT_SNAP_NOW (the tools; never the app): every watch's clock held at this moment unless a tool sets its own, so two runs'
+    // pictures can be held against each other pixel by pixel (ToolsLang.Snapshot)
+    public static DateTime? TestNowDefault;
+    DateTime Now => TestNow ?? TestNowDefault ?? DateTime.Now;
     public float TestScale = 1;          // --snapshot's close-ups: the modern watch drawn bigger (what fits of it)
 
     // on the page in view (and the one sliding in beside it)
@@ -2322,7 +2325,7 @@ public sealed partial class WristPanel
         _big = false;
         SampleSources();
         if (C.Background != "cards") Theme.RetroSkin.FillDesktop(_p, new RectangleF(0, 0, TW95, TH95));     // the desktop
-        var now = DateTime.Now;
+        var now = Now;
         _ui.Inert = _open != null || EditFolderOn(list);
         Widgets95(list, grid, d, now);
         _ui.Inert = false;

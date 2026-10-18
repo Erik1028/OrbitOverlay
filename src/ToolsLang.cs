@@ -18,6 +18,11 @@ static partial class Tools
 
     public static int Snapshot(string dir, string onlyStyle = null)
     {
+        // ORBIT_SNAP_NOW=2026-09-30T23:47:58: every watch's clock held at that moment, so the pictures of two builds can be held
+        // against each other pixel by pixel (the clock's digits differed otherwise)
+        if (DateTime.TryParse(Environment.GetEnvironmentVariable("ORBIT_SNAP_NOW"), System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AssumeLocal, out var fixedNow))
+            WristPanel.TestNowDefault = fixedNow;
         Dictionary<string, int> missing = null;
         if (!Lang.English)
         {

@@ -50,7 +50,7 @@ public sealed partial class WristPanel
     {
         if (SkinFace(d)) return;                  // a style's own face (ScreenHooks.cs)
         string face = C.Face ?? "full";
-        var now = DateTime.Now;
+        var now = Now;                        // (the clock; a tool's fixed moment)
         bool rich = face is "full" or "analog";
         bool media = rich && C.ShowMedia, bats = rich && C.ShowBatteries, perf = rich && C.ShowPerformance;
         bool row2 = media || bats, tools = face != "time";
