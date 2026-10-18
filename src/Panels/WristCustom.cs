@@ -84,9 +84,10 @@ public sealed partial class WristPanel
     }
 
     // "A long song ti…" (never splits an emoji)
-    string Ellipsize(string s, float maxW, float size, FontWeight wt, string family = null)
+    // (shorter: the short form of a text made already - translated, so the table cannot be asked for it)
+    string Ellipsize(string s, float maxW, float size, FontWeight wt, string family = null, string shorter = null)
     {
-        string sh = Lang.Short(s);
+        string sh = shorter ?? Lang.Short(s);
         s = Lang.T(s);                     // cut in the language picked (its short form first, where it has one)
         if (string.IsNullOrEmpty(s) || _p.MeasureWidth(s, size, wt, family) <= maxW) return s;
         if (sh != null && _p.MeasureWidth(s = sh, size, wt, family) <= maxW) return s;
@@ -839,21 +840,22 @@ public sealed partial class WristPanel
     }
 
     // the caption row: the caption on the left (its first form that fits beside the note), a note on the right in what is
-    // left (grey 17 px, cut to fit, left out when there is no room)
-    void CaptionRow(RectangleF r, string note, string[] forms, StatLevel badge = StatLevel.Ok) =>
-        CaptionRow(r, r.X + PadX(r), r.Right - PadX(r), note, Bento.Cap, forms, badge);
+    // left (grey 17 px, cut to fit - its shorter form first, when it has one - left out when there is no room)
+    void CaptionRow(RectangleF r, string note, string[] forms, StatLevel badge = StatLevel.Ok, string noteShort = null) =>
+        CaptionRow(r, r.X + PadX(r), r.Right - PadX(r), note, Bento.Cap, forms, badge, noteShort);
 
-    void CaptionRow(RectangleF r, float x, float right, string note, uint noteColor, string[] forms, StatLevel badge = StatLevel.Ok)
+    void CaptionRow(RectangleF r, float x, float right, string note, uint noteColor, string[] forms, StatLevel badge = StatLevel.Ok,
+        string noteShort = null)
     {
-        if (Theme.Cyber) { CyberCaptionRow(r, x, right, note, noteColor, forms); return; }
+        if (Theme.Cyber) { CyberCaptionRow(r, x, right, note, noteColor, forms, noteShort: noteShort); return; }
         float iw = right - x;
         float nw = string.IsNullOrEmpty(note) ? 0 : _p.MeasureWidth(note, SmallText, FontWeight.SemiBold);
         float cw = Caption(x, r, nw > 0 ? MathF.Max(iw * 0.4f, iw - nw - 10) : iw, forms, badge);
         if (nw <= 0) return;
         float room = iw - (cw > 0 ? cw + 10 : 0);
         if (room < 36) return;
-        TextAt(Ellipsize(note, room, SmallText, FontWeight.SemiBold), right - room, r.Y + CapBase, room, noteColor, SmallText, FontWeight.SemiBold,
-            TextAlignment.Trailing);
+        TextAt(Ellipsize(note, room, SmallText, FontWeight.SemiBold, null, noteShort), right - room, r.Y + CapBase, room, noteColor, SmallText,
+            FontWeight.SemiBold, TextAlignment.Trailing);
     }
 
     // A value and its unit on one baseline: the value bold (as big as 'size', smaller down to 'min' until both fit maxW), the

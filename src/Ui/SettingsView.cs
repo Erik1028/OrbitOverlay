@@ -146,7 +146,13 @@ public sealed partial class SettingsView
                 h.Add(us); h.Add(umsg); h.Add(uprog); h.Add(ulatest); h.Add(_h.Updates.Busy);
                 break;
             case TabDesktops:
-                foreach (var m in _h.MonitorList) h.Add(m.Id);
+                // where and how big too: the page draws the map and "2560×1440 · primary" from them, and a monitor whose mode changes
+                // (a game switching the desktop's resolution) keeps its Id
+                foreach (var m in _h.MonitorList)
+                {
+                    h.Add(m.Id); h.Add(m.X); h.Add(m.Y); h.Add(m.W); h.Add(m.H); h.Add(m.Primary);
+                    h.Add(m.Name); h.Add(m.Device); h.Add(m.Virtual);
+                }
                 break;
             case TabLayouts:
                 h.Add(_h.RunningApp.key);                   // Per game offers the app running now (RuleChoices): it starts and stops by itself

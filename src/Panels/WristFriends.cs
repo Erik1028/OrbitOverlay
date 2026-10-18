@@ -121,7 +121,7 @@ public sealed partial class WristPanel
             bool here = f.Kind == FriendsWatcher.Where.Here;
             if (here) _frHere++;
             (r.Key, r.Name, r.Kind, r.Since, r.Star, r.Here) = (f.Id.Length > 0 ? f.Id : f.Name, f.Name, f.Kind, f.Since, f.Star, here);
-            r.Type = Lang.T(FrType(f.Kind));
+            r.Type = Lang.C("vrchat", FrType(f.Kind));              // ("vrchat|Public": a world or a friend called Public stays so)
             r.World = f.World.Length > 0 ? f.World : Lang.T(FrNoWorld(f.Kind));
             r.Line = f.World.Length > 0 && r.Type.Length > 0 ? r.World + " · " + r.Type : r.World;
             r.WorldDot = " · " + r.World;

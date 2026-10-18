@@ -339,6 +339,7 @@ public sealed class SettingsWindow : Form
         if (!draw) return;
         Dirty = false;
         _nextRefresh = now + 0.5;
+        int sig = View.LiveSig();            // asked before the draw: a value moving while it draws is drawn on the next beat (SettingsPanel.Update)
         _beforeDraw?.Invoke();
         AnimWake.Take();             // the previews' asks (the watch, the keyboard) are their own panels', not this window's
         EnsureTarget();
@@ -352,7 +353,7 @@ public sealed class SettingsWindow : Form
             _ui.End();
         }
         _swap.Present(0, PresentFlags.None);
-        _liveSig = View.LiveSig();
+        _liveSig = sig;
         _wake = AnimWake.Take();                                       // a style's animation wants its next frame (AnimWake.cs)
         if (_ui.Interacting || _ui.Changed || _ui.Animating || _ui.Pressed || _ui.Released) Dirty = true;
     }

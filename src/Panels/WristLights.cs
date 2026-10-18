@@ -46,7 +46,7 @@ public sealed partial class WristPanel
         public LampState S;
         public int Lang = -1;
         public string Bulb;
-        public bool Ready, On, CanWake;
+        public bool Ready, On, CanWake, Direct;
         public uint Glow;
         public float Frac;
         public string Value, Note, Msg, Short, Hint, Icon, State, Pct, Name, White, Status;
@@ -60,7 +60,7 @@ public sealed partial class WristPanel
         public bool Ready, Off;
         public uint Color;
         public float Frac;
-        public string Effect, Value, Name, Short, Msg, ShortMsg, Hint, Pct, Bright, Status;
+        public string Effect, Value, Name, NameShort, Short, Msg, ShortMsg, Hint, Pct, Bright, Status;
         public int QuickAt = -1, ColorAt = -1;
     }
 
@@ -76,8 +76,9 @@ public sealed partial class WristPanel
         var s = d.Lamp?.State ?? NoLamp;
         var t = _lxt;
         string bulb = _cfg.Data.Lights?.Bulb;
-        if (ReferenceEquals(s, t.S) && t.Lang == Lang.Version && ReferenceEquals(bulb, t.Bulb)) return t;
-        (t.S, t.Lang, t.Bulb) = (s, Lang.Version, bulb);
+        bool direct = d.Lamp?.Direct == true;          // a Tapo key kept: the bulb itself answers, Lumos is never asked
+        if (ReferenceEquals(s, t.S) && t.Lang == Lang.Version && ReferenceEquals(bulb, t.Bulb) && direct == t.Direct) return t;
+        (t.S, t.Lang, t.Bulb, t.Direct) = (s, Lang.Version, bulb, direct);
         _lxFits.Clear();
         _lxTwo.Clear();
         t.Ready = s.Ready;
@@ -96,16 +97,17 @@ public sealed partial class WristPanel
             LinkStatus.NoApp => ("Lumos isn't running", "No Lumos", "Start Lumos on this PC", ""),
             LinkStatus.NoDevice => ("Set the bulb", "No bulb", "Edit layout > Light", ""),
             LinkStatus.Error => ("Bulb not reachable", "No answer", s.Message, ""),
-            _ => ("Connecting", "Connecting", "Lumos", BulbGlyph),
+            _ => ("Connecting", "Connecting", direct ? bulb ?? "" : "Lumos", BulbGlyph),
         };
         t.WhiteAt = t.HueAt = -1;
         if (t.Ready && s.Temp > 0)
             for (int i = 0; i < LampWhites.Length; i++) if (Math.Abs(s.Temp - LampWhites[i]) <= 150) t.WhiteAt = i;
         if (t.Ready && s.Temp == 0 && s.HasColor)
             for (int i = 0; i < LampHues.Length; i++) if (Math.Abs(s.Hue - LampHues[i].h) <= 6 && Math.Abs(s.Sat - LampHues[i].s) <= 8) t.HueAt = i;
-        t.White = !t.Ready ? "" : s.Temp > 0 ? (t.WhiteAt >= 0 ? Lang.F("{0} white · {1} K", Lang.T(LampWhiteNames[t.WhiteAt]), s.Temp) : Lang.F("White · {0} K", s.Temp))
+        t.White = !t.Ready ? "" : s.Temp > 0 ? (t.WhiteAt >= 0 ? Lang.F("{0} white · {1} K", Lang.C("light", LampWhiteNames[t.WhiteAt]), s.Temp) : Lang.F("White · {0} K", s.Temp))
             : s.HasColor ? Lang.T("Colour") : "";
-        t.Status = bulb is { Length: > 0 } ? "Lumos · " + bulb : "Lumos";
+        string via = direct ? Lang.T("Direct") : "Lumos";      // who answers: the editor's row says the same
+        t.Status = bulb is { Length: > 0 } ? via + " · " + bulb : via;
         return t;
     }
 
@@ -122,8 +124,9 @@ public sealed partial class WristPanel
         t.Color = s.Color | 0xFF000000;
         t.Frac = (Math.Clamp(s.Brightness, 1, 100) - 1) / 99f;
         t.Pct = Pct(Math.Clamp(s.Brightness, 1, 100));
-        t.Name = t.Ready ? Lang.T(RgbState.Name(s.Effect)) : "";
-        t.Short = t.Ready ? Lang.T(RgbState.Short(s.Effect)) : "–";
+        t.Name = t.Ready ? Lang.C("rgb", RgbState.Name(s.Effect)) : "";          // ("rgb|Static": not a friend called Static)
+        t.Short = t.Ready ? Lang.C("rgb", RgbState.Short(s.Effect)) : "–";
+        t.NameShort = t.Ready ? Lang.Short(RgbState.Name(s.Effect)) : null;      // a card's note where the whole name does not fit ("Szivárvány")
         t.Value = !t.Ready ? "–" : t.Off ? Lang.T("Off") : t.Pct;
         t.Bright = Lang.F("Brightness {0}", t.Pct);
         (t.Msg, t.ShortMsg, t.Hint) = s.Status switch
@@ -285,7 +288,7 @@ public sealed partial class WristPanel
             TextAt(LxFit(t.Ready ? t.Short : t.ShortMsg, iw, SmallText), x, r.Bottom - (_big ? 14 : 12), iw + 2, Sub, SmallText, FontWeight.SemiBold);
             return;
         }
-        CaptionRow(r, t.Ready ? t.Name : null, CapRgb);
+        CaptionRow(r, t.Ready ? t.Name : null, CapRgb, noteShort: t.NameShort);
         if (w.H >= 2 && !t.Ready) { LxNone(r, "", t.Msg, t.Hint); return; }
         // the four quick effects
         float cs = _big ? 50 : 36, top = r.Y + 38, gap = (iw - 4 * cs) / 3;     // (under a header look's band)
@@ -483,7 +486,7 @@ public sealed partial class WristPanel
             if (Press(Ui.Id("wdlw", i), tile, null, null, on, t.S.HasTemp, 18)) { lamp?.SetTemp(LampWhites[i]); _dirty = true; }
             _p.Circle(tile.X + tile.Width / 2, tile.Y + 19, 8, LampState.Kelvin(LampWhites[i]));
             uint fg = !t.S.HasTemp ? Bento.Faint : on ? (Theme.Cyber ? CyInk : Bento.OnAccent) : Theme.Cyber ? CyW : Bento.Text;
-            TextAt(LxFit(Lang.T(LampWhiteNames[i]), tile.Width - 10, SmallText), tile.X + 5, tile.Bottom - 10, tile.Width - 10, fg, SmallText, FontWeight.SemiBold,
+            TextAt(LxFit(Lang.C("light", LampWhiteNames[i]), tile.Width - 10, SmallText), tile.X + 5, tile.Bottom - 10, tile.Width - 10, fg, SmallText, FontWeight.SemiBold,
                 TextAlignment.Center);
         }
         // the colours
@@ -524,7 +527,7 @@ public sealed partial class WristPanel
             if (Press(Ui.Id("wdre", i), tile, null, null, on, true, 18)) { rgb?.SetEffect(RgbState.Quick[i]); _dirty = true; }
             EffectPic(RgbState.Quick[i], tile.X + 24, tile.Y + th / 2, 13, t.Color, false, on);
             uint fg = on ? (Theme.Cyber ? CyInk : Bento.OnAccent) : Theme.Cyber ? CyW : Bento.Text;
-            TextAt(LxFit(Lang.T(RgbState.Name(RgbState.Quick[i])), tw - 50, SmallText), tile.X + 44, tile.Y + th / 2 + 6, tw - 48, fg, SmallText, FontWeight.SemiBold);
+            TextAt(LxFit(Lang.C("rgb", RgbState.Name(RgbState.Quick[i])), tw - 50, SmallText), tile.X + 44, tile.Y + th / 2 + 6, tw - 48, fg, SmallText, FontWeight.SemiBold);
         }
         y = c.Y + 150;
         CapText(Upper("Brightness"), rx, y + 16, rw - 60, Sub);
@@ -657,7 +660,8 @@ public sealed partial class WristPanel
         var rgb = d.Rgb;
         float pad = PadX(r), x = r.X + pad, iw = r.Width - 2 * pad, right = r.Right - pad;
         if (t.Ready && !t.Off) CyLit(r, CyC);
-        CyberCaptionRow(r, x, right, !t.Ready ? (w.W >= 2 ? t.ShortMsg : null) : w.W >= 2 ? t.Name : null, !t.Ready ? CyR : CyC, CapRgb);
+        CyberCaptionRow(r, x, right, !t.Ready ? (w.W >= 2 ? t.ShortMsg : null) : w.W >= 2 ? t.Name : null, !t.Ready ? CyR : CyC, CapRgb,
+            noteShort: t.Ready ? t.NameShort : null);
         if (w.W == 1)
         {
             string mk = Ui.Id("wrt", id);

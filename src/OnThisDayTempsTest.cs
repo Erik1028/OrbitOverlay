@@ -203,13 +203,18 @@ static class OnThisDayTempsTools
             data.Temps = Temps();
             wcfg.Widgets = Face().FindAll(x => x.Type is "memory" or "temps");
             wrist.Settle();
+            // (--lang's count of the texts drawn without a translation makes garbage of its own on every text: off while it is measured)
+            var miss = Lang.Miss;
+            Lang.Miss = null;
             for (int i = 0; i < 6; i++) wrist.Draw(data);
             long a0 = GC.GetAllocatedBytesForCurrentThread();
             for (int i = 0; i < 20; i++) wrist.Draw(data);
             long perFrame = (GC.GetAllocatedBytesForCurrentThread() - a0) / 20;
+            if (Environment.GetEnvironmentVariable("ORBIT_PERF_TYPES") == "1") Tools.OnThisDayAllocTypes("onthisday/temps" + tag, () => wrist.Draw(data));
+            Lang.Miss = miss;
             Want($"onthisday/temps view{tag}: On this day shows its newest {memShown} (want True), opened on it {memOpen} (want True), the arrow steps to the one " +
                  $"before {stepped} (want True), none: its empty state {memEmpty} (want True); temperatures GPU/CPU '{temps}' (want '66/61'), nothing read '{dash}' " +
-                 $"(want '–/–'); a frame at rest {perFrame} B (want 0)");
+                 $"(want '–/–'); a frame at rest {perFrame} B, none {perFrame == 0} (want True)");
             Preview.RemoveAll(p => p.tag == tag);
             Preview.Add((tag, face, mem, tp));
         }
@@ -268,4 +273,9 @@ static class OnThisDayTempsTools
         sheet.Save(path, ImageFormat.Png);
         Log.Info("onthisday/temps: every style side by side: " + path);
     }
+}
+
+static partial class Tools
+{
+    internal static void OnThisDayAllocTypes(string what, Action draw) => AllocTypes(what, draw, null);
 }

@@ -135,7 +135,7 @@ public sealed partial class WristPanel
     }
 
     // the caption row: the tag, and the note at the right - monospace capitals, cut to what is left (left out under 36 px)
-    void CyberCaptionRow(RectangleF r, float x, float right, string note, uint noteColor, string[] forms, uint tagFill = CyY)
+    void CyberCaptionRow(RectangleF r, float x, float right, string note, uint noteColor, string[] forms, uint tagFill = CyY, string noteShort = null)
     {
         float iw = right - x;
         string n = string.IsNullOrEmpty(note) ? null : Upper(note);
@@ -144,7 +144,7 @@ public sealed partial class WristPanel
         if (n == null) return;
         float left = x + (cw > 0 ? cw + 10 : 0), room = right - left;
         if (room < 36) return;
-        n = Ellipsize(n, room, CyNote, FontWeight.SemiBold, CyberHud.Mono);
+        n = Ellipsize(n, room, CyNote, FontWeight.SemiBold, CyberHud.Mono, noteShort == null ? null : Upper(noteShort));
         uint c = noteColor == Bento.Cap ? CyG : noteColor;
         float k = CyNoteIn(n);                          // typed in: the boot, a new note (WristCyberFx.cs)
         if (k < 1) { CyTyped(n, right, r.Y + CyBase, c, k); return; }

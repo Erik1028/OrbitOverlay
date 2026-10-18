@@ -106,13 +106,16 @@ public sealed class SettingsPanel : IPointerTarget, IDisposable
         }
         if (redraw)
         {
+            // what the page shows, asked before it is drawn: a value that moves while it draws (the updater's thread finishing its
+            // check) then differs on the next beat and is drawn again - asked after, the page kept the old one with the new one's sig
+            int sig = _view.LiveSig();
             _beforeDraw?.Invoke(_view);
             AnimWake.Take();             // the previews' asks (the watch, the keyboard) are their own panels', not this one's
             _view.Vis = _vis;
             _view.Closing = !_open;
             DrawFrame(_ptr);
             Ov.SetTexture(Surf.Tex);
-            _liveSig = _view.LiveSig();
+            _liveSig = sig;
             // a press / release frame always gets one more frame: what the click changed (picker closed,
             // new theme, other card selected) was drawn before the click was handled
             _dirty = _ui.Interacting || _ui.Changed || _ui.Pressed || _ui.Released;
