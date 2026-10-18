@@ -25,6 +25,16 @@ public sealed partial class Theater
     bool _ambFailed;                         // SteamVR would not make its overlay: none (and no sampling) until VR connects again
 
     public float AmbilightAlpha { get; private set; }       // the glow's alpha this frame (the checks)
+
+    // TheaterWarm: the glow's shape made ready for a monitor's 16:9 while theater is off - the first theater of a run drew it in its
+    // first frame (1-4 ms and ~0.8 MB of tables, once). A screen of another shape still rebuilds it then. False: nothing to do.
+    bool WarmAmbilight()
+    {
+        if (!AmbilightOn || _ambFailed || _amb?.Glow != null) return false;
+        (_amb ??= new Ambilight(_g, _p)).Shape(16 / 9f);
+        _ambDirty = true;
+        return true;
+    }
     public Ambilight AmbilightForTest => _amb;
 
     void UpdateAmbilight(float dt)

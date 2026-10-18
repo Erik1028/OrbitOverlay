@@ -9,7 +9,7 @@ namespace Orbit;
 // Theater.Update makes the style's pieces on idle frames, one piece a frame (a few ms each, at VR connect or a style change - nobody is
 // watching a theater then): in Cyber the wall (in eighths), the band, the floor's three (in quarters), the horizon's two textures, the
 // cars' three, then the band under the lamps (LifeBase's own frames and its thread); in every other style its backdrop
-// (TheaterBackdrop.cs: on its thread, uploaded when it comes). The overlays themselves are still made when first shown (SteamVR's
+// (TheaterBackdrop.cs: on its thread, uploaded when it comes); first of all, in any style, the Ambilight's shape for a 16:9 screen. The overlays themselves are still made when first shown (SteamVR's
 // overlay count is precious: none sits there for a theater never started). The rule "only the style in use has a texture" stays:
 // Cyber's pieces go when a backdrop is made, the backdrop when the city is. Everything ready: a few flag tests a frame. The tools
 // without VR (no overlay) never warm, so their numbers are their own.
@@ -19,6 +19,7 @@ public sealed partial class Theater
     void WarmTheater()
     {
         if (_dim == null || _p == null) return;
+        if (WarmAmbilight()) return;                                        // (the glow's shape, once a run: TheaterAmbilight.cs)
         if (!Theme.Cyber) { BackdropTextures(BackdropFor()); return; }     // (the city's textures let go; the picture drawn, then uploaded)
         if (_backTex != null) FreeBackdrop();
         if (!CityReady) { CityRows(CityWarmRows); return; }                    // (the wall: an eighth a frame)
