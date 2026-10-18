@@ -8,7 +8,8 @@ namespace Orbit;
 // plates (the one playing a cyan block), Theater as the yellow plate, the settings on a dark well with a small SCREEN code, the
 // keyboard plate lit cyan while it is shown, Exit edged red. The same places and ids as the modern bar (DrawModern), so the hits,
 // the stick's steps and the tests are the same. Motion: it comes in as a strip opening from its middle - the frame first, the
-// brackets riding its two ends, then what is on it (the fade's own frames; Reduced too).
+// brackets riding its two ends, then what is on it (the fade's own frames; Reduced too). In theater mode with a media session the
+// media console sits after the screens (TheaterBarMedia.cs).
 public sealed partial class TheaterBar
 {
     static readonly string CyExit = ((char)0xE711).ToString(), CyPlay = ((char)0xE8B2).ToString();

@@ -15,6 +15,7 @@ namespace Orbit;
 //   every monitor and window to switch to (left to right as on your desk, then the windows), the same settings, live,
 //   and Exit.
 // - Both: a keyboard button (lit while the keyboard is shown).
+// - Cyber, theater mode: what plays as a media console after the screens - NOW PLAYING //, play / pause, -10 s / +10 s (TheaterBarMedia.cs).
 // It fades away when you are not using it, so nothing sits under the picture. Turned off: Settings > Monitors.
 public sealed partial class TheaterBar : IPointerTarget, IDisposable
 {
@@ -80,6 +81,7 @@ public sealed partial class TheaterBar : IPointerTarget, IDisposable
     public void Update(VrSession vr, double now, float dt, Theater theater, List<ITheaterScreen> choices,
         ITheaterScreen pointed, bool lower, bool onBar)
     {
+        CyberScreenFx.BarSelect = 0;          // (the big screen's "selected" brackets: set below while the bar is up in theater mode)
         if (Ov == null) return;
         _view = theater.View;
         bool th = theater.On && _view != null && theater.Screen != null;
@@ -146,6 +148,7 @@ public sealed partial class TheaterBar : IPointerTarget, IDisposable
         // Held, it stays where it is: a new size moves the screen's bottom edge, and the bar must not slide out from
         // under the laser. Fading out under a panel it stays where it was too (the panel may be on its way out).
         float e = 1 - MathF.Pow(1 - _vis, 3);
+        if (th) CyberScreenFx.BarSelect = e;
         if (!held && (th || show))
         {
             Matrix4x4 sw;

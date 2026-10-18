@@ -16,6 +16,8 @@ namespace Orbit;
 //    at the top-left bracket and a scan line with a red / cyan split runs down it; leaving it they let go.
 // At rest none of it is there: the bounds are the whole texture again, the frame overlay hidden, nothing drawn. Every other style:
 // nothing at all (this is not even made).
+// The big screen while the bar under it is up (Panels/TheaterBarMedia.cs, BarSelect): the lock-on's brackets stay on faintly, as if the
+// console had the screen selected - the frame overlay drawn once with them and only faded with the bar after that (Reduced too).
 public sealed class CyberScreenFx : IDisposable
 {
     public static Painter Painter;                   // the app's (OrbitApp); null in the tools: no frame overlay
@@ -30,6 +32,13 @@ public sealed class CyberScreenFx : IDisposable
     double _appearAt = -10, _lockAt = -10, _releaseAt = -10;
     const float M = 28;                              // the frame's margin round the screen (texture px at 1024 wide)
     const int HudW = 1024;
+    const float SelA = 0.4f;                         // how strong the "selected" brackets are
+
+    // the theater bar's fade under the big screen this frame (0: not up; TheaterBar.Update sets it before the panels update)
+    public static float BarSelect;
+    float _sel;
+    bool _selShown;                                  // the overlay's texture is the "selected" picture (only its alpha changes)
+    Surface _selSurf;
 
     public CyberScreenFx(Gpu g, string key) { _g = g; _key = key; }
 
@@ -56,14 +65,19 @@ public sealed class CyberScreenFx : IDisposable
         double ta = now - _appearAt, tl = now - _lockAt, tr = now - _releaseAt;
         bool appear = ta < 0.42, lockOn = tl < 0.6, release = tr < 0.35;
         bool frame = on && CyberFx.Full && Painter != null && panel.Visible && (appear || lockOn || release || hiding || k < 1);
+        _sel = on && theater && !hiding && k >= 1 && Painter != null && panel.Visible ? BarSelect : 0;
         if (!frame)
         {
+            if (_sel > 0.01f) { Selected(panel, tex); return; }
             _hud?.Hide();
+            _selShown = false;
             return;
         }
+        _selShown = false;
         try
         {
             if (!EnsureHud(tex)) return;
+            _hud.SetAlpha(1);
             panel.CopyTransformTo(_hud);
             float wIn = HudW - 2 * M, scale = HudW / wIn;
             _hud.SetWidth(panel.Width * scale);
@@ -80,6 +94,61 @@ public sealed class CyberScreenFx : IDisposable
             _hud?.Dispose();
             _hud = null;
         }
+    }
+
+    // only the bar up under the big screen: its brackets as the lock-on leaves them, drawn once, faded with the bar
+    void Selected(VrOverlay panel, Vector2 tex)
+    {
+        try
+        {
+            if (!EnsureHud(tex)) return;
+            if (!_selShown || !ReferenceEquals(_selSurf, _surf))
+            {
+                var p = Painter;
+                p.Begin(_surf.Bitmap, 0x00000000);
+                SelectCorners(p, 1);
+                p.End();
+                _hud.SetTexture(_surf.Tex);
+                _selShown = true;
+                _selSurf = _surf;
+            }
+            panel.CopyTransformTo(_hud);
+            float wIn = HudW - 2 * M, scale = HudW / wIn;
+            _hud.SetWidth(panel.Width * scale);
+            _hud.SetCurvature(Math.Clamp(panel.Curvature * scale, 0, 1));
+            _hud.SetSortOrder(109u);
+            _hud.SetAlpha(SelA * _sel);
+            _hud.Show();
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"cyber screen fx ({_key}): {e.Message}");
+            _hud?.Dispose();
+            _hud = null;
+        }
+    }
+
+    // the lock-on's brackets where they settle (its own geometry: the hand-over from the lock-on is seamless)
+    void SelectCorners(Painter p, float a)
+    {
+        var inner = new RectangleF(M, M, HudW - 2 * M, _surf.H - 2 * M);
+        float arm = MathF.Min(inner.Width, inner.Height) * 0.09f;
+        Ls(p, inner, Theme.WithAlpha(CyberHud.Yellow, a), arm * 1.2f, 6, 2);
+    }
+
+    // CyberFx.Corners with each L's two arms not overlapping: see-through, the corner square is not stronger than the arms - so the
+    // selected picture faded by the overlay is the same pixels as the lock-on's brackets at that strength (no step at the hand-over)
+    static void Ls(Painter p, RectangleF r, uint c, float arm, float w, float outset)
+    {
+        float l = r.X - outset, t = r.Y - outset, rt = r.Right + outset, b = r.Bottom + outset;
+        p.Fill(new RectangleF(l, t, arm, w), c);
+        p.Fill(new RectangleF(l, t + w, w, arm - w), c);
+        p.Fill(new RectangleF(rt - arm, t, arm, w), c);
+        p.Fill(new RectangleF(rt - w, t + w, w, arm - w), c);
+        p.Fill(new RectangleF(l, b - w, arm, w), c);
+        p.Fill(new RectangleF(l, b - arm, w, arm - w), c);
+        p.Fill(new RectangleF(rt - arm, b - w, arm, w), c);
+        p.Fill(new RectangleF(rt - w, b - arm, w, arm - w), c);
     }
 
     static void SetBounds(VrOverlay ov, float k)
@@ -136,7 +205,10 @@ public sealed class CyberScreenFx : IDisposable
             // the theater: brackets lock on round the growing screen, a scan line runs down it
             float lk = CyberFx.EaseOut(CyberFx.Ramp(tl, 0, 0.2));
             float fade = 1 - CyberFx.Ramp(tl, 0.42, 0.18);
-            CyberFx.Corners(p, inner, Theme.WithAlpha(CyberHud.Yellow, fade), arm * 1.2f, 6, (1 - lk) * (M - 4) + 2);
+            // (the bar up under it: once locked on they stay at the "selected" strength instead of going - drawn as those are)
+            uint lc = Theme.WithAlpha(CyberHud.Yellow, MathF.Max(fade, lk >= 1 ? SelA * _sel : 0));
+            if (_sel > 0.01f) Ls(p, inner, lc, arm * 1.2f, 6, (1 - lk) * (M - 4) + 2);
+            else CyberFx.Corners(p, inner, lc, arm * 1.2f, 6, (1 - lk) * (M - 4) + 2);
             float s = CyberFx.EaseInOut(CyberFx.Ramp(tl, 0.05, 0.45));
             if (s > 0 && s < 1)
             {
@@ -168,6 +240,7 @@ public sealed class CyberScreenFx : IDisposable
             if (tw > 0 && fade > 0.01f)
                 CyberHud.Tag(p, inner.X + arm * 1.2f + 14, inner.Y + 10, "LOCK", tw, tt, Theme.WithAlpha(CyberHud.Yellow, fade), Theme.WithAlpha(CyberHud.Ink, fade), 22, 30);
         }
+        else if (_sel > 0.01f && k >= 1) SelectCorners(p, SelA * _sel);       // the bar up while it unfolded / came into view
         if (tr >= 0)
         {
             float fade = 1 - CyberFx.Ramp(tr, 0.05, 0.3);
@@ -177,13 +250,26 @@ public sealed class CyberScreenFx : IDisposable
     }
 
     // --snapshot: the frame as it is drawn at these moments (a texture of the given aspect), without SteamVR
-    public Surface DrawForTest(Painter p, Vector2 tex, float k, bool hiding, double ta, double tl, double tr)
+    public Surface DrawForTest(Painter p, Vector2 tex, float k, bool hiding, double ta, double tl, double tr, float sel = 0)
     {
         var keep = Painter;
         Painter = p;
         EnsureSurf(tex);
+        _sel = sel;
         Draw(k, hiding, ta, tl, tr);
+        _sel = 0;
         Painter = keep;
+        return _surf;
+    }
+
+    // --snapshot: the "selected" picture as the overlay gets it (its alpha is the bar's fade times SelA)
+    public Surface SelectForTest(Painter p, Vector2 tex, out float alpha)
+    {
+        EnsureSurf(tex);
+        p.Begin(_surf.Bitmap, 0x00000000);
+        SelectCorners(p, 1);
+        p.End();
+        alpha = SelA;
         return _surf;
     }
 

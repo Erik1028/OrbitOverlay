@@ -43,8 +43,8 @@ public sealed partial class TheaterBar
     const float TitleSize = 21, CodeSize = 10, ArtistSize = 11;
     const double MediaGone = 3, ReadEvery = 0.25, StickRest = 0.35, TrackStep = 0.6, PlayHold = 1.2;
     const float MqSpeed = 26, MqHold = 1.8f, MqGap = 56;      // the marquee: px a second, the pause at its start, the gap round the loop
-    static readonly string CyPlayFill = "", CyPauseFill = "", CyRewind = "", CyForward = "",
-        CyPrev = "", CyNext = "";
+    static readonly string CyPlayFill = "\uF5B0", CyPauseFill = "\uF8AE", CyRewind = "\uEB9E", CyForward = "\uEB9D",
+        CyPrev = "\uE892", CyNext = "\uE893";
 
     BarMedia _m;                     // what the console shows: the last reading that had a session
     bool _mediaOn, _mHas;            // _mediaOn: the part is laid out; _mHas: a session now (else the last one, going)
@@ -69,6 +69,7 @@ public sealed partial class TheaterBar
     {
         bool fresh = now - _mTick > 0.5;           // the bar was away (or theater mode just started): what plays now, the title from its start
         _mTick = _mNow = now;
+        if (fresh) _seekPend = 0;                  // (a jump the stick asked for just before the bar went is not sent when it comes back)
         if (ReadMedia == null || !Theme.Cyber) { _mediaOn = _mHas = false; return; }
         if (fresh || now >= _mReadAt)
         {

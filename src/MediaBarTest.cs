@@ -402,7 +402,9 @@ static partial class Tools
                 advance = false;
             }
 
-            // ---- what it costs ----
+            // ---- what it costs (without --lang's own bookkeeping of untranslated text: the app has none) ----
+            var miss0 = Lang.Miss;
+            Lang.Miss = null;
             fake = playing;
             Frame(5);
             Frame();
@@ -431,6 +433,48 @@ static partial class Tools
                      $"({cTick.ms * 1000:0.0} us with a GPU flush) {cTick.bytes} B; an empty Begin / End of that size {floorMs:0.000} ms");
             Want($"allocations: the per-frame tick {cTick.bytes} B (want 0), the readout alone {cPart.bytes} B (want 0), a scrolling step {cMq.bytes} B " +
                  $"(want < 64: only the time's text, once a second)", cTick.bytes == 0 && cPart.bytes == 0 && cMq.bytes < 64);
+            Lang.Miss = miss0;
+
+            // ---- the big screen "selected" while the bar is up (CyberScreenFx) ----
+            using (var fx = new CyberScreenFx(gpu, "test"))
+            {
+                var tex = new Vector2(1920, 1080);
+                // the lock-on's last frame with the bar up, against the selected picture at its strength: the same (no dip at the hand-over)
+                var lockEnd = fx.DrawForTest(painter, tex, 1, false, -1, 0.599, -1, 1).ReadPixels(gpu);
+                var lockNoBar = fx.DrawForTest(painter, tex, 1, false, -1, 0.599, -1, 0).ReadPixels(gpu);
+                var selS = fx.SelectForTest(painter, tex, out float selA);
+                var selPx = selS.ReadPixels(gpu);
+                int off = 0, smaxd = 0, lit = 0;
+                uint maxA0 = 0;
+                for (int i = 0; i < selPx.Length; i++)
+                {
+                    uint q = selPx[i], p = lockEnd[i];
+                    if ((q >> 24) > 0) lit++;
+                    maxA0 = Math.Max(maxA0, lockNoBar[i] >> 24);
+                    for (int k = 0; k < 32; k += 8)
+                    {
+                        int want = (int)MathF.Round(((q >> k) & 0xFF) * selA), d = Math.Abs((int)((p >> k) & 0xFF) - want);
+                        smaxd = Math.Max(smaxd, d);
+                        if (d > 2) { off++; break; }
+                    }
+                }
+                Want($"selected: brackets drawn {lit} px (want > 0), the lock-on's last frame with the bar up = the selected picture at {selA:0.00}: {off} px off by more than 2 " +
+                     $"(want 0, largest {smaxd}); without the bar it fades to nothing as before (alpha {maxA0}, want <= 3)", lit > 0 && off == 0 && maxA0 <= 3);
+                SaveCrop(selS, gpu, Path.Combine(md, "mediabar_selected.png"), new RectangleF(0, 0, selS.W, selS.H), keepAlpha: true);
+                // what you see: a made-up picture on the screen, the brackets over it at their strength, the night round it
+                var sview = new uint[selPx.Length];
+                for (int i = 0; i < sview.Length; i++)
+                {
+                    int x = i % selS.W, y = i / selS.W;
+                    bool scr = x >= 28 && x < selS.W - 28 && y >= 28 && y < selS.H - 28;
+                    uint bgc = scr ? (uint)(0xFF000000 | (uint)(40 + 60 * x / selS.W) << 16 | (uint)(70 + 50 * y / selS.H) << 8 | 110) : 0xFF15121C;
+                    uint q = selPx[i];
+                    float qa = (q >> 24) / 255f * selA;
+                    uint Ch(int k) => (uint)Math.Min(255, MathF.Round(((q >> k) & 0xFF) * selA + ((bgc >> k) & 0xFF) * (1 - qa)));
+                    sview[i] = 0xFF000000 | Ch(16) << 16 | Ch(8) << 8 | Ch(0);
+                }
+                SaveStack(new List<uint[]> { sview }, selS.W, selS.H, Path.Combine(md, "mediabar_selected_view.png"));
+            }
 
             // ---- Modern and the 95 bar: the same with or without a session ----
             foreach (var (style, tag) in new[] { ("modern", "modern"), ("classic", "95") })
