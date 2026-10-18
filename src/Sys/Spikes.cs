@@ -11,13 +11,13 @@ namespace Orbit;
 public static class Spikes
 {
     public const int Vr = 0, Cursor = 1, Rays = 2, Pointer = 3, LaserRest = 4, Extras = 5, Watch = 6, WatchDraw = 7, WatchSend = 8,
-        Keyboard = 9, Settings = 10, Desktops = 11, Rest = 12, App = 13, Mixer = 14, Window = 15, Count = 16;
+        Keyboard = 9, Settings = 10, Desktops = 11, Rest = 12, App = 13, Mixer = 14, Window = 15, PerfLog = 16, Count = 17;
     public const double SpikeMs = 3;
     static readonly string[] Names =
     {
         "vr", "cursor", "laser rays", "laser pointer (mouse / panel)", "laser beam / grab", "extras + block", "watch", "watch draw",
         "watch send", "keyboard", "settings + panels", "desktops", "dashboard + osc", "app (photos, friends, temps, avatar...)",
-        "audio mixer", "window + config save",
+        "audio mixer", "window + config save", "the perf log (every 10 s)",
     };
     static bool _on;                                 // between Begin and End (the loop runs without VR too: nothing is kept then)
     static readonly long[] _frame = new long[Count], _worst = new long[Count];

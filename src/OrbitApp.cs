@@ -256,13 +256,26 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
 
     [System.Runtime.InteropServices.DllImport("user32.dll")] static extern uint GetGuiResources(IntPtr process, uint flags);
 
-    // private bytes, kernel handles, GDI / USER objects: a native leak shows up here first
+    [StructLayout(LayoutKind.Sequential)]
+    struct PROCESS_MEMORY_COUNTERS_EX
+    {
+        public uint cb, PageFaultCount;
+        public nuint PeakWorkingSetSize, WorkingSetSize, QuotaPeakPagedPoolUsage, QuotaPagedPoolUsage, QuotaPeakNonPagedPoolUsage,
+            QuotaNonPagedPoolUsage, PagefileUsage, PeakPagefileUsage, PrivateUsage;
+    }
+    [DllImport("psapi.dll")] static extern bool GetProcessMemoryInfo(IntPtr process, out PROCESS_MEMORY_COUNTERS_EX c, int size);
+    [DllImport("kernel32.dll")] static extern bool GetProcessHandleCount(IntPtr process, out uint count);
+
+    // private bytes, kernel handles, GDI / USER objects: a native leak shows up here first. Asked of this process alone - Process's
+    // PrivateMemorySize64 / HandleCount read every process of the PC (12-15 ms on the main loop every 10 s: the spike line, 10-18)
     static string ProcessCounters()
     {
         try
         {
-            using var p = Process.GetCurrentProcess();
-            return $"private {p.PrivateMemorySize64 / 1048576} MB, handles {p.HandleCount}, gdi {GetGuiResources(p.Handle, 0)}, user {GetGuiResources(p.Handle, 1)}";
+            IntPtr me = GetCurrentProcess();
+            string priv = GetProcessMemoryInfo(me, out var mc, Marshal.SizeOf<PROCESS_MEMORY_COUNTERS_EX>()) ? $"{(ulong)mc.PrivateUsage / 1048576}" : "?";
+            string handles = GetProcessHandleCount(me, out uint hc) ? $"{hc}" : "?";
+            return $"private {priv} MB, handles {handles}, gdi {GetGuiResources(me, 0)}, user {GetGuiResources(me, 1)}";
         }
         catch { return "counters n/a"; }
     }
@@ -632,6 +645,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             Spikes.Mark(Spikes.Rest);
             GpuProbeIssue();
             PerfFrame(now);
+            Spikes.Mark(Spikes.PerfLog);
         }
 
         long ap = System.Diagnostics.Stopwatch.GetTimestamp();       // (each watcher's time: the spike line's slowest piece, Sys/Spikes.cs)
