@@ -322,11 +322,28 @@ public sealed class DockInput
 
     // ---- what the views write ----
 
+    // where on the dock: made again only when the page or the folder changes (a new string every frame before)
+    string _where;
+    (bool inFolder, string name, int page, int pages) _whereFor;
+
     public string Where()
     {
-        if (Snap.InFolder)
-            return Snap.FolderPages > 1 ? $"{Snap.FolderName} · {Snap.FolderPage + 1}/{Snap.FolderPages}" : Snap.FolderName;
-        return $"{Snap.PageName} · {Snap.Page + 1}/{Snap.Pages}";
+        var s = Snap;
+        var key = s.InFolder ? (true, s.FolderName, s.FolderPage, s.FolderPages) : (false, s.PageName, s.Page, s.Pages);
+        if (_where != null && key == _whereFor) return _where;
+        _whereFor = key;
+        if (s.InFolder)
+            return _where = s.FolderPages > 1 ? $"{s.FolderName} · {s.FolderPage + 1}/{s.FolderPages}" : s.FolderName;
+        return _where = $"{s.PageName} · {s.Page + 1}/{s.Pages}";
+    }
+
+    // "42%" for 0..100, made once (the sliders' values, a frame each while the dock is shown)
+    static readonly string[] PctText = MakePct();
+    static string[] MakePct()
+    {
+        var a = new string[101];
+        for (int i = 0; i <= 100; i++) a[i] = i + "%";
+        return a;
     }
 
     public string StateLine() => Snap.State switch
@@ -369,7 +386,8 @@ public sealed class DockInput
             if (v == null) return "--";
             bool mine = Drag == id || HoldUntil.ContainsKey(id);
             if (x?.Muted == true && !mine) return "Muted";
-            return $"{MathF.Round(v.Value * Math.Max(1, c?.Max ?? 100))}%";
+            float n = MathF.Round(v.Value * Math.Max(1, c?.Max ?? 100));
+            return n >= 0 && n <= 100 ? PctText[(int)n] : $"{n}%";
         }
         if (t == Slide.Jog)
             return Drag != id ? "" : JogSent > 0 ? $"+{JogSent}" : JogSent < 0 ? $"−{-JogSent}" : "0";

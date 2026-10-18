@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Globalization;
 using System.Linq;
@@ -50,7 +51,7 @@ public sealed partial class WristPanel
     {
         if (SkinFace(d)) return;                  // a style's own face (ScreenHooks.cs)
         string face = C.Face ?? "full";
-        var now = DateTime.Now;
+        var now = Now;                        // (the clock; a tool's fixed moment)
         bool rich = face is "full" or "analog";
         bool media = rich && C.ShowMedia, bats = rich && C.ShowBatteries, perf = rich && C.ShowPerformance;
         bool row2 = media || bats, tools = face != "time";
@@ -118,7 +119,21 @@ public sealed partial class WristPanel
         }
     }
 
+    // a text cut to its room, the answer kept by text and room (a cut text was made again, many of them, on every frame of the 95
+    // face: a widget's title, a song's line); the language or the look changing (another retro style, another font) throws the kept
+    // ones out
+    readonly Dictionary<(string s, float w, float size, bool bold, int lang, int look), string> _fits = new();
+
     string Fit(string s, float w, float size = Ui.F95, bool bold = false)
+    {
+        if (string.IsNullOrEmpty(s)) return s;
+        var key = (s, w, size, bold, Lang.Version, Theme.Version);
+        if (_fits.TryGetValue(key, out var kept)) return kept;
+        if (_fits.Count > 512) _fits.Clear();
+        return _fits[key] = FitNow(s, w, size, bold);
+    }
+
+    string FitNow(string s, float w, float size, bool bold)
     {
         string sh = Lang.Short(s);
         s = Lang.T(s);                     // cut in the language picked (its short form first, where it has one)
@@ -163,6 +178,8 @@ public sealed partial class WristPanel
         _p.Fill(new RectangleF(cx - 1, cy - 1, 3, 3), Blk95);
     }
 
+    readonly Vector2[] _hand95 = new Vector2[4];
+
     void Hand95(float cx, float cy, float frac, float len, float half)
     {
         float a = frac * MathF.Tau - MathF.PI / 2;
@@ -173,7 +190,9 @@ public sealed partial class WristPanel
         var tail = c - dir * (len * 0.14f);
         var l = c + dir * (len * 0.24f) + perp * half;
         var rr = c + dir * (len * 0.24f) - perp * half;
-        _p.Polygon(new[] { tail, l, tip, rr }, Teal95);
+        var pts = _hand95;                   // (the one array: no garbage a frame)
+        pts[0] = tail; pts[1] = l; pts[2] = tip; pts[3] = rr;
+        _p.Polygon(pts, Teal95);
         // light from the top left: the edges facing it white, the others dark
         void Edge(Vector2 p0, Vector2 p1)
         {
@@ -228,7 +247,7 @@ public sealed partial class WristPanel
             var bar = new RectangleF(r.X + 36, y + 1, r.Width - 36 - 32, 10);
             _ui.Progress95(bar, b.pct, b.pct > 0.2f ? Theme.W95Navy : 0xFF800000);
             if (b.charging) _p.Pixels(BoltGlyph, bar.Right + 3, y + 3, Blk95);
-            _ui.Text95($"{b.pct * 100:0}%", new RectangleF(bar.Right + 2, y, 30, 12), Blk95, false, TextAlignment.Trailing);
+            _ui.Text95(Pct(ShownPct(b.pct)), new RectangleF(bar.Right + 2, y, 30, 12), Blk95, false, TextAlignment.Trailing);      // (the "0" format's rounding, made once)
             shown++;
         }
         if (shown == 0) _ui.Text95(d.VrConnected ? "No battery info" : "SteamVR is off", new RectangleF(r.X, r.Y, r.Width, 12), Gry95);
@@ -267,33 +286,58 @@ public sealed partial class WristPanel
         }
     }
 
+    // the status bar's texts, made again only when a number they show changes (eight strings a frame before: 2.4 KB a draw)
+    readonly string[] _statusText = new string[4], _statusShort = new string[4];
+    (float fps, float hz, float rp, float ms, float vram, float total, int lang) _statusFor = (-2, -2, -2, -2, -2, -2, -1);
+
     void Status95(PanelData d, RectangleF r)
     {
         var v = d.Vr;
         float budget = 1000f / Math.Max(1, v.DisplayHz);
         float vram = d.VramUsed;
-        (string, uint)[] panes =
+        var key = (v.AppFps, v.DisplayHz, v.ReprojPct, v.GpuMs, vram, d.VramTotalGB, Lang.Version);
+        if (key != _statusFor)
         {
-            (v.AppFps < 0 ? "-- fps" : $"{v.AppFps:0}/{v.DisplayHz:0} fps", v.AppFps >= 0 && v.AppFps < v.DisplayHz * 0.85f ? 0xFF806000 : Blk95),
-            (v.ReprojPct < 0 ? Lang.T("-- reproj.") : Lang.F("{0:0}% reproj.", v.ReprojPct), v.ReprojPct > 25 ? 0xFF800000 : v.ReprojPct > 8 ? 0xFF806000 : Blk95),
-            (v.GpuMs < 0 ? "-- ms GPU" : $"{v.GpuMs:0.0} ms GPU", v.GpuMs > budget ? 0xFF800000 : v.GpuMs > budget * 0.85f ? 0xFF806000 : Blk95),
-            (vram < 0 ? "-- GB" : d.VramTotalGB > 0 ? $"{vram:0.0}/{d.VramTotalGB:0} GB" : $"{vram:0.0} GB",
-                vram > 0 && d.VramTotalGB > 0 && vram > d.VramTotalGB * 0.92f ? 0xFF806000 : Blk95),
-        };
-        // narrow panes drop the words: "86 fps", "4%", "9.3 ms", "9.4 GB"
-        string[] shortText =
-        {
-            v.AppFps < 0 ? "--" : $"{v.AppFps:0} fps", v.ReprojPct < 0 ? "--" : $"{v.ReprojPct:0}%", v.GpuMs < 0 ? "--" : $"{v.GpuMs:0.0} ms",
-            vram < 0 ? "--" : $"{vram:0.0} GB",
-        };
+            _statusFor = key;
+            _statusText[0] = v.AppFps < 0 ? "-- fps" : $"{v.AppFps:0}/{v.DisplayHz:0} fps";
+            _statusText[1] = v.ReprojPct < 0 ? Lang.T("-- reproj.") : Lang.F("{0:0}% reproj.", v.ReprojPct);
+            _statusText[2] = v.GpuMs < 0 ? "-- ms GPU" : $"{v.GpuMs:0.0} ms GPU";
+            _statusText[3] = vram < 0 ? "-- GB" : d.VramTotalGB > 0 ? $"{vram:0.0}/{d.VramTotalGB:0} GB" : $"{vram:0.0} GB";
+            // narrow panes drop the words: "86 fps", "4%", "9.3 ms", "9.4 GB"
+            _statusShort[0] = v.AppFps < 0 ? "--" : $"{v.AppFps:0} fps";
+            _statusShort[1] = v.ReprojPct < 0 ? "--" : $"{v.ReprojPct:0}%";
+            _statusShort[2] = v.GpuMs < 0 ? "--" : $"{v.GpuMs:0.0} ms";
+            _statusShort[3] = vram < 0 ? "--" : $"{vram:0.0} GB";
+        }
+        var colors = _statusColor;          // (the array kept: no garbage a frame)
+        colors[0] = v.AppFps >= 0 && v.AppFps < v.DisplayHz * 0.85f ? 0xFF806000 : Blk95;
+        colors[1] = v.ReprojPct > 25 ? 0xFF800000 : v.ReprojPct > 8 ? 0xFF806000 : Blk95;
+        colors[2] = v.GpuMs > budget ? 0xFF800000 : v.GpuMs > budget * 0.85f ? 0xFF806000 : Blk95;
+        colors[3] = vram > 0 && d.VramTotalGB > 0 && vram > d.VramTotalGB * 0.92f ? 0xFF806000 : Blk95;
         float pw = MathF.Floor((r.Width - 3 * 2) / 4);
         for (int i = 0; i < 4; i++)
         {
             var pr = new RectangleF(r.X + i * (pw + 2), r.Y + 3, i == 3 ? r.Right - (r.X + i * (pw + 2)) : pw, 18);
             _ui.Pane95(pr, null);
-            string s = _ui.Width95(panes[i].Item1) <= pr.Width - 7 ? panes[i].Item1 : Fit(shortText[i], pr.Width - 7);
-            _ui.Text95(s, new RectangleF(pr.X + 4, pr.Y, pr.Width - 6, pr.Height), panes[i].Item2);
+            string s = _ui.Width95(_statusText[i]) <= pr.Width - 7 ? _statusText[i] : Fit(_statusShort[i], pr.Width - 7);
+            _ui.Text95(s, new RectangleF(pr.X + 4, pr.Y, pr.Width - 6, pr.Height), colors[i]);
         }
+    }
+    readonly uint[] _statusColor = new uint[4];
+
+    // the graph's label, made again only when its numbers, the room it has, the language or the look (its font) change
+    string _graphLabel;
+    (float fps, float ms, float rp, float w, int lang, int look) _graphLabelFor = (-2, -2, -2, -2, -1, -1);
+
+    string GraphLabel95(VrStats v, float w)
+    {
+        var key = (v.AppFps, v.GpuMs, v.ReprojPct, w, Lang.Version, Theme.Version);
+        if (_graphLabel != null && key == _graphLabelFor) return _graphLabel;
+        _graphLabelFor = key;
+        string label = v.AppFps < 0 ? "waiting for frames" : Lang.F("{0:0} fps  {1:0.0} ms GPU  {2:0}% reproj.", v.AppFps, v.GpuMs, Math.Max(0, v.ReprojPct));
+        if (v.AppFps >= 0 && _ui.Width95(label) > w)
+            label = $"{v.AppFps:0} fps  {v.GpuMs:0.0} ms  {Math.Max(0, v.ReprojPct):0}%";
+        return _graphLabel = Fit(label, w);                  // a narrow graph widget
     }
 
     // last ~5 s of frames on black: green bars, yellow over budget / reprojected, red dropped
@@ -320,10 +364,7 @@ public sealed partial class WristPanel
         }
         float by = MathF.Round(inner.Bottom - inner.Height * (budget / top));
         _p.Fill(new RectangleF(inner.X, by, inner.Width, 1), Wht95);
-        string label = v.AppFps < 0 ? "waiting for frames" : Lang.F("{0:0} fps  {1:0.0} ms GPU  {2:0}% reproj.", v.AppFps, v.GpuMs, Math.Max(0, v.ReprojPct));
-        if (v.AppFps >= 0 && _ui.Width95(label) > inner.Width - 12)
-            label = $"{v.AppFps:0} fps  {v.GpuMs:0.0} ms  {Math.Max(0, v.ReprojPct):0}%";
-        label = Fit(label, inner.Width - 12);                  // a narrow graph widget
+        string label = GraphLabel95(v, inner.Width - 12);
         _p.Fill(new RectangleF(inner.X + 2, inner.Y + 1, MathF.Min(_ui.Width95(label) + 4, inner.Width - 4), 12), Blk95);
         _ui.Text95(label, new RectangleF(inner.X + 4, inner.Y + 1, inner.Width - 8, 12), green);
     }

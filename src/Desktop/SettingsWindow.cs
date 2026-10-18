@@ -20,7 +20,9 @@ public sealed class SettingsWindow : Form
     ID2D1Bitmap1 _target;
     public bool Dirty = true;
     public bool AllowClose;
-    double _nextRefresh;
+    double _nextRefresh;        // when the page is next asked whether it shows anything new (SettingsView.LiveSig)
+    double _wake = double.PositiveInfinity;    // a style's animation wants its next frame then (AnimWake.cs)
+    int _liveSig;
 
     public SettingsWindow(Gpu g, Painter p, SettingsView view, Action beforeDraw, Icon icon)
     {
@@ -318,12 +320,23 @@ public sealed class SettingsWindow : Form
         Dirty = true;
     }
 
-    // Called from the main loop. Redraws on input, otherwise twice a second for live values.
+    // Called from the main loop. Redraws on input, when a style's animation asks, and otherwise twice a second - only when a live
+    // value shows differently (SettingsView.LiveSig; it drew and presented on every beat whatever it showed).
     public void Tick(double now)
     {
         if (!Visible || WindowState == FormWindowState.Minimized || _swap == null) return;
         if (StyleChanged) ApplyStyle();
-        if (!Dirty && now < _nextRefresh) return;
+        // 95: busy in the background (the updater) - the cursor is the arrow with the hourglass, as 1995's was. Set on every tick,
+        // not only after a draw: a page that does not show the updater is not drawn again when it starts or finishes
+        var cur = _classic && View.Busy95 ? Cursors.AppStarting : Cursors.Default;
+        if (Cursor != cur) Cursor = cur;
+        bool draw = Dirty || now >= _wake;
+        if (!draw && now >= _nextRefresh)
+        {
+            _nextRefresh = now + 0.5;
+            draw = View.LiveSig() != _liveSig;
+        }
+        if (!draw) return;
         Dirty = false;
         _nextRefresh = now + 0.5;
         _beforeDraw?.Invoke();
@@ -339,11 +352,9 @@ public sealed class SettingsWindow : Form
             _ui.End();
         }
         _swap.Present(0, PresentFlags.None);
-        _nextRefresh = Math.Min(_nextRefresh, AnimWake.Take());       // a style's animation wants its next frame (AnimWake.cs)
+        _liveSig = View.LiveSig();
+        _wake = AnimWake.Take();                                       // a style's animation wants its next frame (AnimWake.cs)
         if (_ui.Interacting || _ui.Changed || _ui.Animating || _ui.Pressed || _ui.Released) Dirty = true;
-        // 95: busy in the background (the updater) - the cursor is the arrow with the hourglass, as 1995's was
-        var cur = _classic && View.Busy95 ? Cursors.AppStarting : Cursors.Default;
-        if (Cursor != cur) Cursor = cur;
     }
 
     protected override void Dispose(bool disposing)

@@ -36,7 +36,22 @@ public sealed class NotificationListener : IDisposable
     public readonly ConcurrentQueue<Notification> Incoming = new();
     // off / listening / busy - Status says it in the language picked (the log in English)
     int _st;
-    public string Status => _st == 1 ? Lang.F("listening on UDP {0}", Port) : _st == 2 ? Lang.F("UDP {0} is busy (XSOverlay running?)", Port) : Lang.T("off");
+    public string Status
+    {
+        get
+        {
+            // made again only when the state or the language changes (the settings read it on every frame of theirs)
+            int st = _st;
+            if (_statusText == null || st != _statusFor || Lang.Version != _statusLang)
+            {
+                _statusFor = st; _statusLang = Lang.Version;
+                _statusText = st == 1 ? Lang.F("listening on UDP {0}", Port) : st == 2 ? Lang.F("UDP {0} is busy (XSOverlay running?)", Port) : Lang.T("off");
+            }
+            return _statusText;
+        }
+    }
+    string _statusText;
+    int _statusFor = -1, _statusLang = -1;
     UdpClient _udp;
     Thread _t;
 

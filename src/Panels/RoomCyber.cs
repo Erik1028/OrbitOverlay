@@ -15,10 +15,7 @@ public sealed partial class RoomPanel
         float hx = Pad + 4 + tw + 14;
         if (_s.InRoom)
         {
-            int friends = _s.Here.FindAll(p => p.Friend).Count;
-            string count = _s.Here.Count == 1 ? Lang.T("1 person") : Lang.F("{0} people", _s.Here.Count);
-            if (friends > 0) count += " · " + RoomPanel.FriendsText(friends);           // in the language picked (it was English only)
-            count = count.ToUpperInvariant();
+            string count = CountText(_s.Here.Count, FriendsHere(), true);     // in the language picked (it was English only), in capitals
             float cw = CyberHud.MonoWidth(_p, count, 15, FontWeight.Bold);
             CyberHud.MonoAt(_p, count, hx, 38, cw + 4, CyberHud.Cyan, 15, FontWeight.Bold);
             hx += cw + 18;
@@ -41,7 +38,7 @@ public sealed partial class RoomPanel
         _p.Text(star ? "★" : "☆", sr, star ? CyberHud.Yellow : hover ? CyberHud.White : CyberHud.Grey, 22, FontWeight.Normal, TextAlignment.Center);
         if (hover) CyberHud.Brackets(_p, RectangleF.Inflate(sr, -4, -3), CyberHud.Cyan, 6, 0, 1.5f);
         float x = sr.Right + 4;
-        string when = Lang.Upper(gone ? LeftText(p.Left, now, 1) : Ago(p.Joined, now));
+        string when = Lang.Upper(When(p, now, gone, 1));
         float ww = CyberHud.MonoWidth(_p, when, 13, FontWeight.SemiBold) + 16;
         float nw = r.Right - x - ww - (p.Friend ? 86 : 8);
         string name = Ellipsize(p.Name, nw, 18, FontWeight.SemiBold);

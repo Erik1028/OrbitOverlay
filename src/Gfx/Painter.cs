@@ -837,6 +837,11 @@ public sealed class Painter : IDisposable
 
     ID2D1StrokeStyle _roundCaps;
 
+    // The arcs' shapes, kept by where and how far they run (the same place, the same geometry: the same pixels) - a watch at rest draws
+    // the same rings every frame, and a path geometry made and thrown away each time was two COM objects of garbage and ~20 us a ring.
+    // Past 128 (a ring filling up makes one a frame) they start over.
+    readonly Dictionary<(float, float, float, float, float), ID2D1PathGeometry> _arcs = new();
+
     // a ring segment with round ends, Apple-watch style: 'start' and 'sweep' in turns (0 = 12 o'clock, clockwise)
     public void Arc(float cx, float cy, float r, float start, float sweep, uint c, float width)
     {
@@ -846,20 +851,32 @@ public sealed class Painter : IDisposable
             StartCap = CapStyle.Round, EndCap = CapStyle.Round, LineJoin = LineJoin.Round,
         });
         if (sweep >= 0.9995f) { Dc.DrawEllipse(new Ellipse(new Vector2(cx, cy), r, r), Brush(c), width); return; }
-        Vector2 At(float t) => new(cx + r * MathF.Sin(t * MathF.Tau), cy - r * MathF.Cos(t * MathF.Tau));
-        using var geo = _g.D2DFactory.CreatePathGeometry();
-        using (var sink = geo.Open())
+        var key = (cx, cy, r, start, sweep);
+        if (!_arcs.TryGetValue(key, out var geo))
         {
-            sink.BeginFigure(At(start), FigureBegin.Hollow);
-            sink.AddArc(new ArcSegment
+            if (_arcs.Count >= 128) DropArcs();
+            Vector2 At(float t) => new(cx + r * MathF.Sin(t * MathF.Tau), cy - r * MathF.Cos(t * MathF.Tau));
+            geo = _g.D2DFactory.CreatePathGeometry();
+            using (var sink = geo.Open())
             {
-                Point = At(start + sweep), Size = new Vortice.Mathematics.Size(r, r), RotationAngle = 0,
-                SweepDirection = SweepDirection.Clockwise, ArcSize = sweep > 0.5f ? ArcSize.Large : ArcSize.Small,
-            });
-            sink.EndFigure(FigureEnd.Open);
-            sink.Close();
+                sink.BeginFigure(At(start), FigureBegin.Hollow);
+                sink.AddArc(new ArcSegment
+                {
+                    Point = At(start + sweep), Size = new Vortice.Mathematics.Size(r, r), RotationAngle = 0,
+                    SweepDirection = SweepDirection.Clockwise, ArcSize = sweep > 0.5f ? ArcSize.Large : ArcSize.Small,
+                });
+                sink.EndFigure(FigureEnd.Open);
+                sink.Close();
+            }
+            _arcs[key] = geo;
         }
         Dc.DrawGeometry(geo, Brush(c), width, _roundCaps);
+    }
+
+    void DropArcs()
+    {
+        foreach (var g in _arcs.Values) g.Dispose();
+        _arcs.Clear();
     }
 
     // a line with round ends (clock hands)
@@ -971,18 +988,56 @@ public sealed class Painter : IDisposable
         Dc.DrawLine(new Vector2(x1, y1), new Vector2(x2, y2), Brush(c), width, st);
     }
 
-    // a filled polygon (the 95 clock's hands)
+    // a filled polygon (the 95 clock's hands): its shape kept by its points as they are (the same points, the same pixels) - the hands
+    // stand still for a minute, drawn twice a second; past 64 shapes they start over
+    readonly Dictionary<PointsKey, ID2D1PathGeometry> _polys = new();
+
+    readonly struct PointsKey : IEquatable<PointsKey>
+    {
+        readonly Vector2[] _pts;
+        readonly int _hash;
+
+        public PointsKey(Vector2[] pts)
+        {
+            _pts = pts;
+            var h = new HashCode();
+            foreach (var p in pts) { h.Add(p.X); h.Add(p.Y); }
+            _hash = h.ToHashCode();
+        }
+
+        public bool Equals(PointsKey o)
+        {
+            if (_pts.Length != o._pts.Length) return false;
+            for (int i = 0; i < _pts.Length; i++) if (_pts[i] != o._pts[i]) return false;
+            return true;
+        }
+        public override bool Equals(object o) => o is PointsKey k && Equals(k);
+        public override int GetHashCode() => _hash;
+    }
+
     public void Polygon(Vector2[] pts, uint c)
     {
-        using var geo = _g.D2DFactory.CreatePathGeometry();
-        using (var sink = geo.Open())
+        var key = new PointsKey(pts);
+        if (!_polys.TryGetValue(key, out var geo))
         {
-            sink.BeginFigure(pts[0], FigureBegin.Filled);
-            for (int i = 1; i < pts.Length; i++) sink.AddLine(pts[i]);
-            sink.EndFigure(FigureEnd.Closed);
-            sink.Close();
+            if (_polys.Count >= 64) DropPolys();
+            geo = _g.D2DFactory.CreatePathGeometry();
+            using (var sink = geo.Open())
+            {
+                sink.BeginFigure(pts[0], FigureBegin.Filled);
+                for (int i = 1; i < pts.Length; i++) sink.AddLine(pts[i]);
+                sink.EndFigure(FigureEnd.Closed);
+                sink.Close();
+            }
+            _polys[new PointsKey((Vector2[])pts.Clone())] = geo;      // (its own copy of the points: the caller may reuse the array)
         }
         Dc.FillGeometry(geo, Brush(c));
+    }
+
+    void DropPolys()
+    {
+        foreach (var g in _polys.Values) g.Dispose();
+        _polys.Clear();
     }
 
     public void Line(float x1, float y1, float x2, float y2, uint c, float width = 1) =>
@@ -1543,6 +1598,8 @@ public sealed class Painter : IDisposable
         DropSquircles();
         DropCuts();
         DropShapes();
+        DropArcs();
+        DropPolys();
         _corners?.Dispose();
         _corners = null;
         DropClipGeos();

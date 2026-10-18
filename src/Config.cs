@@ -442,16 +442,21 @@ public sealed class ConfigStore
     bool _soft, _failWarned;
 
     // a change worth keeping but not worth a disk write of its own (a mirrored window's title changes
-    // all the time): saved together with the next real change, or when Orbit closes
-    public void MarkSoftDirty() => _soft = true;
+    // all the time): saved together with the next real change, or when Orbit closes. A change all the same for the settings
+    // (Changes: the theater's width after a resize in VR shows on Layouts > Per game)
+    public void MarkSoftDirty() { _soft = true; Changes++; }
 
     public bool Dirty => _dirty;      // a change not on disk yet (the 95 sheet's Apply button)
+
+    // how many times a change was marked (a grab marks one every frame): the settings draw again when it moved (SettingsView.LiveSig)
+    public int Changes { get; private set; }
 
     public void MarkDirty()
     {
         if (!_dirty) _dirtySince = Now;
         _lastChange = Now;
         _dirty = true;
+        Changes++;
     }
 
     // Saves once things have been quiet for a second (sliders fire every frame).
