@@ -380,7 +380,8 @@ public sealed class RoomWatcher : IDisposable
         _wake.Set();
         _thread?.Join(2000);
         _fs?.Dispose();
-        _wake.Dispose();
+        // (_wake is left to the GC, as AvatarLink's and LumosLink's are: a step still running past the Join - VRCX's database being read -
+        // would come back to a disposed handle in its WaitOne and throw on a thread with no handler: the process gone mid-exit)
     }
 }
 

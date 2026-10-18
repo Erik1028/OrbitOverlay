@@ -322,6 +322,7 @@ static partial class Tools
         var culture = System.Globalization.CultureInfo.CurrentCulture;
         System.Globalization.CultureInfo.CurrentCulture = SnapCulture;
         LightsViewTools.DataChecks(wrist, data, dir);
+        TapoSafetyTools.Run(dir);                                  // the bulb straight, against a made-up bulb (TapoSafetyTest.cs)
         foreach (var (style, tag) in new[] { ("modern", ""), ("classic", "_95"), ("xp", "_xp"), ("aero", "_aero"), ("mac", "_mac"), ("terminal", "_term"), (CyberHud.Id, "_cyber") })
         {
             cfg.Data.Appearance = new AppearanceConfig { Style = style, Clock24h = true };

@@ -310,6 +310,38 @@ static partial class Tools
                      $"widgets {w5.Widgets?.Count} + {w5.Pages?[0].Widgets.Count} (want 7 + 10), every cell used {Cells(w5.Widgets)} + {Cells(w5.Pages?[0].Widgets)} (want 24 + 24)");
         }
         {
+            // an update (OrbitApp.NoteVersion -> ConfigStore.KeepBackup): the config as the old version left it kept as
+            // config.backup-<it>.json, byte for byte - the .bak alone is the new version's own after two saves; the same jump again keeps
+            // the copy there as it is; a version that is no file name stays in the folder; a new install has nothing to copy
+            string ud = Path.Combine(dir, "update");
+            if (Directory.Exists(ud)) Directory.Delete(ud, true);
+            Directory.CreateDirectory(ud);
+            string up = Path.Combine(ud, "config.json");
+            var old = new Config();
+            old.General.LastVersion = "1.14.1";
+            old.Wrist.Face = "custom";
+            old.Wrist.Widgets = BusyFace();
+            File.WriteAllText(up, JsonSerializer.Serialize(old, opts));
+            byte[] before = File.ReadAllBytes(up);
+            var u1 = new ConfigStore(up);
+            string k1 = u1.KeepBackup("1.14.1");
+            u1.Data.General.LastVersion = "1.15.0";
+            u1.MarkDirty(); u1.SaveIfDue(force: true);
+            u1.Data.Wrist.Widgets = null;
+            u1.MarkDirty(); u1.SaveIfDue(force: true);
+            bool copied = k1 != null && Path.GetFileName(k1) == "config.backup-1.14.1.json" && File.ReadAllBytes(k1).AsSpan().SequenceEqual(before);
+            bool bakNew = !File.ReadAllBytes(up + ".bak").AsSpan().SequenceEqual(before);
+            string k2 = new ConfigStore(up).KeepBackup("1.14.1");
+            bool kept = k2 == null && File.ReadAllBytes(k1).AsSpan().SequenceEqual(before);
+            string k3 = new ConfigStore(up).KeepBackup(@"..\..\1.13");
+            bool inside = k3 != null && Path.GetFullPath(Path.GetDirectoryName(k3)) == Path.GetFullPath(ud);
+            string k4 = new ConfigStore(Path.Combine(ud, "new", "config.json")).KeepBackup("1.14.1");
+            int copies = Directory.GetFiles(ud, "config.backup-*").Length;
+            Log.Info($"update: the old config kept as {Path.GetFileName(k1)}, byte for byte {copied} (want True) - the .bak no longer the old file after two " +
+                     $"saves {bakNew} (want True); the same jump again: the copy kept as it was {kept} (want True); a version with path characters - " +
+                     $"'{Path.GetFileName(k3)}' in the config's folder {inside} (want True); a new install: no copy {k4 == null} (want True); copies {copies} (want 2)");
+        }
+        {
             // the 4 x 3 grid's rules
             var g = GridSpec.G43;
             string Z((int W, int H)? s) => s is { } v ? $"{v.W}x{v.H}" : "none";

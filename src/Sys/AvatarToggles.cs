@@ -628,8 +628,10 @@ public sealed class AvatarLink : IDisposable
 
     string Get(int port, bool v6, string path, int ms = 2000)
     {
-        // no proxy (a system proxy must not see a call to this PC), a short wait: it is on this PC or not there at all
-        _http ??= new HttpClient(new SocketsHttpHandler { UseProxy = false, ConnectTimeout = TimeSpan.FromMilliseconds(500) }) { Timeout = TimeSpan.FromSeconds(2) };
+        // no proxy (a system proxy must not see a call to this PC), no redirect (only VRChat's own port is asked), a short wait: it is on
+        // this PC or not there at all
+        _http ??= new HttpClient(new SocketsHttpHandler { UseProxy = false, AllowAutoRedirect = false, ConnectTimeout = TimeSpan.FromMilliseconds(500) })
+            { Timeout = TimeSpan.FromSeconds(2) };
         try
         {
             using var req = new HttpRequestMessage(HttpMethod.Get, $"http://{(v6 ? "[::1]" : "127.0.0.1")}:{port.ToString(CultureInfo.InvariantCulture)}{path}");
@@ -727,26 +729,45 @@ public sealed class AvatarLink : IDisposable
     // ---- the configs (read only; each read again only when its file changes) ----
 
     readonly Dictionary<string, AvatarConfigFile> _configs = new(StringComparer.OrdinalIgnoreCase);
+    readonly Dictionary<string, DateTime> _unreadable = new(StringComparer.OrdinalIgnoreCase);     // a file that failed, as it was then
+    public long MaxConfig = 8 << 20;        // bytes: a bigger avtr_*.json is not read (VRChat writes a few hundred bytes a parameter)
+    public int ConfigReads;                 // files read (--snapshot: an unreadable one is not read again every poll)
 
     AvatarConfigFile Load(string path)
     {
         DateTime t;
         try { t = File.GetLastWriteTimeUtc(path); } catch (Exception) { return null; }
         if (_configs.TryGetValue(path, out var a) && a.Written == t) return a;
+        // one that could not be read (too big, broken): not again until it is written anew - FindByName / Newest look at every file each
+        // poll, and a multi-GB one was allocated in full every 2.5 s
+        if (_unreadable.TryGetValue(path, out var bad) && bad == t) return null;
         try
         {
             byte[] bytes;
-            using (var f = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete)) { bytes = new byte[f.Length]; f.ReadExactly(bytes); }
+            using (var f = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+            {
+                if (f.Length > MaxConfig) throw new InvalidDataException($"{f.Length} bytes");
+                ConfigReads++;
+                bytes = new byte[f.Length];
+                f.ReadExactly(bytes);
+            }
             a = AvatarFilter.Parse(bytes, path);
             a.Written = t;
             a.User = Path.GetFileName(Path.GetDirectoryName(Path.GetDirectoryName(path)) ?? "");
             if (_configs.Count > 64) _configs.Clear();
             _configs[path] = a;
+            _unreadable.Remove(path);
             return a;
         }
         catch (Exception e)
         {
-            Log.Info("avatar: a config not readable (" + e.GetType().Name + ")");
+            Log.Info("avatar: a config not readable (" + e.GetType().Name + (e is InvalidDataException ? ", " + e.Message : "") + ")");
+            // (too big or broken: kept as such; one held by its writer right then is simply asked again the next poll)
+            if (e is not (IOException or UnauthorizedAccessException))
+            {
+                if (_unreadable.Count > 64) _unreadable.Clear();
+                _unreadable[path] = t;
+            }
             return null;
         }
     }
