@@ -326,6 +326,10 @@ public sealed class SettingsWindow : Form
     {
         if (!Visible || WindowState == FormWindowState.Minimized || _swap == null) return;
         if (StyleChanged) ApplyStyle();
+        // 95: busy in the background (the updater) - the cursor is the arrow with the hourglass, as 1995's was. Set on every tick,
+        // not only after a draw: a page that does not show the updater is not drawn again when it starts or finishes
+        var cur = _classic && View.Busy95 ? Cursors.AppStarting : Cursors.Default;
+        if (Cursor != cur) Cursor = cur;
         bool draw = Dirty || now >= _wake;
         if (!draw && now >= _nextRefresh)
         {
@@ -351,9 +355,6 @@ public sealed class SettingsWindow : Form
         _liveSig = View.LiveSig();
         _wake = AnimWake.Take();                                       // a style's animation wants its next frame (AnimWake.cs)
         if (_ui.Interacting || _ui.Changed || _ui.Animating || _ui.Pressed || _ui.Released) Dirty = true;
-        // 95: busy in the background (the updater) - the cursor is the arrow with the hourglass, as 1995's was
-        var cur = _classic && View.Busy95 ? Cursors.AppStarting : Cursors.Default;
-        if (Cursor != cur) Cursor = cur;
     }
 
     protected override void Dispose(bool disposing)

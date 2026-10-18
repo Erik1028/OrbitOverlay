@@ -148,6 +148,9 @@ public sealed partial class SettingsView
             case TabDesktops:
                 foreach (var m in _h.MonitorList) h.Add(m.Id);
                 break;
+            case TabLayouts:
+                h.Add(_h.RunningApp.key);                   // Per game offers the app running now (RuleChoices): it starts and stops by itself
+                break;
             case TabVrchat:
                 h.Add(_h.StatusLinePreview); h.Add(_h.RoomStatus);
                 break;
