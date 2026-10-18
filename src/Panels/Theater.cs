@@ -307,6 +307,7 @@ public sealed partial class Theater : IDisposable
             if (!On && _t <= 0) { Release(_screen); _screen = null; }
             else Blend();
         }
+        long pt = PerfTrace.Now();              // (the perf tools: where a theater frame's time goes, section by section - PerfTrace.cs)
         if (_dim != null)
         {
             float a = Math.Clamp(dim, 0, 0.95f) * Ease(_t);
@@ -321,9 +322,13 @@ public sealed partial class Theater : IDisposable
                 _dim.Show();
             }
         }
+        PerfTrace.Add(PerfTrace.Wall, pt); pt = PerfTrace.Now();
         UpdateCityLife(dt);                     // Cyber's night city alive: its lamps, its flying cars (TheaterCityLife.cs)
+        PerfTrace.Add(PerfTrace.CityLife, pt); pt = PerfTrace.Now();
         UpdateAmbilight(dt);                    // the glow round the screen (TheaterAmbilight.cs)
+        PerfTrace.Add(PerfTrace.Ambilight, pt); pt = PerfTrace.Now();
         UpdateHorizon(dt, dim);                 // Cyber: the neon horizon's breathing and its sweep (TheaterHorizon.cs)
+        PerfTrace.Add(PerfTrace.Horizon, pt);
         // once it is in: how the screen is doing (if it does not show up, the log says why)
         if (On && _screen != null && _t >= 1 && !_checked)
         {
