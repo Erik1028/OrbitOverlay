@@ -53,6 +53,8 @@ public sealed partial class WristPanel : IPointerTarget, IDisposable
     public readonly Surface Surf;
     public VrOverlay Ov { get; private set; }
     public Action<string> OnAction;
+    bool _eyeOn;                         // eye tracking: your eyes are on it (EyeOn / EyeOff degrees, a hysteresis)
+    const float EyeOn = 15, EyeOff = 28;
     double _shownAt = -1e9;              // the last frame the watch showed (its intro: not on a glance back)
     public float Alpha;
     bool _dirty = true, _grabbing;
@@ -114,9 +116,22 @@ public sealed partial class WristPanel : IPointerTarget, IDisposable
             Vector3 n = Vector3.Normalize(MathUtil.Back(world));
             Vector3 toEye = Vector3.Normalize(vr.Hmd.Translation - world.Translation);
             float facing = Vector3.Dot(n, toEye);
-            float look = Vector3.Dot(Vector3.Normalize(MathUtil.Forward(vr.Hmd)), -toEye);
-            if (vr.EyesValid) look = MathF.Max(look, Vector3.Dot(vr.Gaze, -toEye));     // a glance at it (eye tracking: VrSession.Gaze)
-            target = MathUtil.Smoothstep(0.45f, 0.75f, facing) * MathUtil.Smoothstep(0.55f, 0.8f, look);
+            float look;
+            if (vr.EyesValid)
+            {
+                // eye tracking (Erik 10-18: "only when I look at it"): your eyes alone, on it - shown from 15 deg off it, gone past 28 (a look
+                // at its edge does not make it blink); a blink is held by EyeGaze, the head counts only when the eyes are not tracked
+                float ang = MathF.Acos(Math.Clamp(Vector3.Dot(vr.Gaze, -toEye), -1f, 1f)) * 180 / MathF.PI;
+                if (ang < EyeOn) _eyeOn = true;
+                else if (ang > EyeOff) _eyeOn = false;
+                look = _eyeOn ? 1 : 0;
+            }
+            else
+            {
+                _eyeOn = false;
+                look = MathUtil.Smoothstep(0.55f, 0.8f, Vector3.Dot(Vector3.Normalize(MathUtil.Forward(vr.Hmd)), -toEye));
+            }
+            target = MathUtil.Smoothstep(0.45f, 0.75f, facing) * look;
         }
         if (_dismissReq) { _dismissReq = false; _dismissed = true; _dismissUntil = now + (C.AlwaysVisible ? 8 : 30); }
         if (_dismissed)

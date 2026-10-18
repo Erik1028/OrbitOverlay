@@ -18,6 +18,9 @@ public sealed class EyeGaze : IDisposable
 {
     public const string MapName = "VirtualDesktop.BodyState";
     public const double Hold = 0.25;                // seconds a blink keeps the last look
+    // the look smoothed like the laser (a One Euro filter on its direction): resting eyes tremble and the tracker is noisy - filtered at
+    // ~1.5 Hz; a saccade (hundreds of degrees a second) opens it up so the look jumps with the eyes, not after them
+    public const float MinCutoff = 1.5f, Beta = 0.06f;  // Hz, Hz per degree a second
     public const float MinConfidence = 0.3f;
 
     [StructLayout(LayoutKind.Sequential)]
@@ -85,6 +88,7 @@ public sealed class EyeGaze : IDisposable
         Last = s;
         if (Take(s, out var dir, out var origin, out float conf))
         {
+            dir = Smooth(dir, now);
             HeadDir = dir;
             HeadOrigin = origin;
             Confidence = conf;
@@ -93,6 +97,24 @@ public sealed class EyeGaze : IDisposable
         }
         else Valid = now - _lastGood < Hold;        // a blink: the last look a moment longer
     }
+
+    Vector3 _smooth;
+    double _smoothAt = -1;
+    float _speed;                                   // degrees a second, itself smoothed
+
+    Vector3 Smooth(Vector3 raw, double now)
+    {
+        float dt = (float)(now - _smoothAt);
+        if (_smoothAt < 0 || dt <= 0 || dt > 0.25f) { _smoothAt = now; _smooth = raw; _speed = 0; return raw; }     // (after a gap: as it is)
+        _smoothAt = now;
+        float deg = MathF.Acos(Math.Clamp(Vector3.Dot(_smooth, raw), -1, 1)) * 180 / MathF.PI;
+        _speed += (deg / dt - _speed) * Alpha(dt, 1);
+        float a = Alpha(dt, MinCutoff + Beta * _speed);
+        _smooth = Vector3.Normalize(Vector3.Lerp(_smooth, raw, a));
+        return _smooth;
+    }
+
+    static float Alpha(float dt, float cutoff) => 1 - MathF.Exp(-2 * MathF.PI * cutoff * dt);
 
     // the look from one reading: both eyes that are valid and sure enough, averaged; false when neither is (or the numbers are not a
     // pose - a reading torn by the writer, another program's map)

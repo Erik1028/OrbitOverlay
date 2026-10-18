@@ -99,7 +99,7 @@ public sealed class DesktopPanel : ITheaterScreen, IDisposable
             // the dim (eye tracking, VRChat > Eye tracking): looked at or pointed at - as it is; else a little darker
             bool looked = !DimUnlooked || th != null || _hovering[0] || _hovering[1]
                 || LookedAt(vr, WorldTransform, th?.Width ?? fv?.Width ?? Cfg.Width, th?.Curvature ?? fv?.Curvature ?? Cfg.Curvature, TextureSize);
-            _lookA = LookDim(_lookA, looked, dt);
+            _lookA = LookDim(_lookA, ref _lookedAt, looked, now, dt);
             Ov.SetAlpha(_opacity * (1 - MathF.Pow(1 - _vis, 3)) * _lookA);
             Ov.Show();
         }
@@ -133,16 +133,19 @@ public sealed class DesktopPanel : ITheaterScreen, IDisposable
     // tracked; a monitor your eyes are not on (nor a laser) eases to DimTo in ~0.15 s and back as soon as you look at it.
     public bool DimUnlooked;
     public const float DimTo = 0.6f;
+    public const double DimAfter = 0.35;               // seconds off it before it dims (a glance away, an eye's jitter at its edge: nothing)
     float _lookA = 1;
+    double _lookedAt = -100;
 
     public static bool LookedAt(VrSession vr, in Matrix4x4 world, float width, float curvature, System.Numerics.Vector2 tex) =>
         vr.EyesValid && LocalRaycast.Intersect(world, width, curvature, tex.X, tex.Y, vr.GazeOrigin, vr.Gaze, out _, out _, out _, out _);
 
-    public static float LookDim(float a, bool looked, float dt)
+    public static float LookDim(float a, ref double lookedAt, bool looked, double now, float dt)
     {
-        float want = looked ? 1 : DimTo;
+        if (looked) lookedAt = now;
+        float want = now - lookedAt < DimAfter ? 1 : DimTo;
         if (!Motion.Any) return want;
-        a += (want - a) * (1 - MathF.Exp(-dt * 14));
+        a += (want - a) * (1 - MathF.Exp(-dt * (want > a ? 28 : 7)));          // back at once, darker slowly
         return MathF.Abs(want - a) < 0.004f ? want : a;
     }
 
@@ -186,7 +189,14 @@ public sealed class DesktopPanel : ITheaterScreen, IDisposable
         // the panel's half-width widens the "looked at" cone for big / close monitors
         float half = MathF.Atan2(width / 2, to.Length());
         float ang = MathF.Acos(Math.Clamp(cos, -1f, 1f)) - half;
-        if (ang < 30 * MathF.PI / 180) return focus;
+        if (vr.EyesValid)
+        {
+            // the eyes say exactly which one (Erik 10-18: eye tracking): the full rate only for it, 30 just beside it - smooth enough in
+            // the corner of the eye - and the rest as below
+            if (ang < 6 * MathF.PI / 180) return focus;
+            if (ang < 35 * MathF.PI / 180) return Math.Min(fps, 30);
+        }
+        else if (ang < 30 * MathF.PI / 180) return focus;
         if (ang < 70 * MathF.PI / 180) return Math.Min(fps, 15);
         return Math.Min(fps, 4);
     }

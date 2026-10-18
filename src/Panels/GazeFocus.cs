@@ -50,6 +50,9 @@ public sealed class GazeFocus
     public const float EaseTime = 0.3f, ShortTime = 0.2f;        // seconds: Motion full (eased) / reduced (linear)
     public const float GrabEaseTime = 0.35f;                     // a hand takes a monitor: the row back to its saved sizes, unhurried (it moves under the hand)
     public const float Lead = 0.1f, MaxLead = 10 * MathF.PI / 180;     // the look: where the head's turn takes it in 0.1 s, at most 10 deg ahead
+    // with eye tracking: the eyes flick to a neighbour far more easily than a head turns - a glance to read something must not reshuffle
+    // the row: 10 % in and 0.2 s on it
+    public const float EyeDwell = 0.2f, EyeEdge = 0.10f;
     public const float OthersMin = 0.4f, OthersMax = 0.75f, OthersDefault = 0.55f;
 
     sealed class Member
@@ -110,6 +113,7 @@ public sealed class GazeFocus
     public void Update(VrSession vr, double now, float dt, FocusConfig cfg, bool theater, bool hold, IPointerTarget laserA, IPointerTarget laserB)
     {
         bool on = cfg is { Enabled: true };
+        if (cfg is { Laser: false }) laserA = laserB = null;                   // only the look moves the focus (Focus > Laser too off)
         if (!on && _rows.Count == 0) return;                                     // the usual frame with the feature off: nothing
         float others = Math.Clamp(cfg?.Others ?? OthersDefault, OthersMin, OthersMax);
         bool othersChanged = others != _others;
@@ -401,10 +405,11 @@ public sealed class GazeFocus
         else
         {
             // inside the neighbour: past 5 % of its drawn width from the edge on the focused one's side (Edge)
-            bool inside = hit > row.Focused ? u > Edge : u < 1 - Edge;
+            float edge = vr.EyesValid ? EyeEdge : Edge, dwell = vr.EyesValid ? EyeDwell : Dwell;
+            bool inside = hit > row.Focused ? u > edge : u < 1 - edge;
             if (!inside) row.Looked = -1;
             else if (row.Looked != hit) { row.Looked = hit; row.LookSince = now; }
-            else if (now - row.LookSince >= Dwell) { Switch(row, hit); return; }
+            else if (now - row.LookSince >= dwell) { Switch(row, hit); return; }
         }
         // a laser on another monitor of the row: a short dwell, then that one (you are about to click there)
         int pointed = -1;

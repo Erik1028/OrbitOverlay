@@ -253,6 +253,8 @@ public sealed partial class SettingsView
         float oth = C.Focus?.Others ?? GazeFocus.OthersDefault;
         if (TrackRow(ui, "d95.others", 388, 390, 476, 150, 90, "Ot&hers:", ref oth, GazeFocus.OthersMin, GazeFocus.OthersMax, $"{oth * 100:0}%", focus))
             (C.Focus ??= new FocusConfig()).Others = oth;
+        bool las = C.Focus?.Laser ?? true;                  // a laser on a monitor focuses it too (off: only the look)
+        if (ui.Check95("d95.flaser", 388, 424, "A &laser on a monitor focuses it too", ref las, focus)) (C.Focus ??= new FocusConfig()).Laser = las;
     }
 
     // ---------------- Windows ----------------

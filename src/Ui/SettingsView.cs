@@ -458,8 +458,11 @@ public sealed partial class SettingsView
         if (ui.Toggle("d.focus", new RectangleF(rx, y, cw, 46), "Focus the monitor you look at", ref on, "look at one and the others shrink beside it"))
             (C.Focus ??= new FocusConfig()).Enabled = on;
         float v = C.Focus?.Others ?? GazeFocus.OthersDefault;
-        if (ui.Slider("d.others", new RectangleF(rx, y + 48, cw, 44), "Others", ref v, GazeFocus.OthersMin, GazeFocus.OthersMax, f => $"{f * 100:0}%", on))
+        if (ui.Slider("d.others", new RectangleF(rx, y + 48, cw - 156, 44), "Others", ref v, GazeFocus.OthersMin, GazeFocus.OthersMax, f => $"{f * 100:0}%", on))
             (C.Focus ??= new FocusConfig()).Others = v;
+        // a laser on a monitor focuses it too - off: only the look (Erik 10-18: with eye tracking the controllers need not)
+        bool las = C.Focus?.Laser ?? true;
+        if (ui.Toggle("d.flaser", new RectangleF(rx + cw - 150, y + 48, 150, 44), "Laser too", ref las, null, on)) (C.Focus ??= new FocusConfig()).Laser = las;
     }
 
     // ---------------- Wrist ----------------

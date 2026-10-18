@@ -1591,6 +1591,8 @@ static class Hu
         ("Eye tracking", "Szemkövetés"),
         ("Use eye tracking", "Szemkövetés"),
         ("Dim the rest", "Halványítás"),
+        ("Laser too", "Lézerre is"),
+        ("A &laser on a monitor focuses it too", "A &lézer is fókuszba hozza a monitort"),
         ("Use &eye tracking (Virtual Desktop's)", "&Szemkövetés (a Virtual Desktopé)"),
         ("&Dim the monitors you don't look at", "A nem &nézett monitorok halványabbak"),
         ("off: the head's direction", "ki: a fej iránya számít"),

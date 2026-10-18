@@ -561,6 +561,11 @@ static class GazeFocusTools
                 bool eyeGlance = er.FocusName == "Middle";
                 er.EyeYaw = null; er.Run(0.6);                    // the eyes lost: the head (ahead) counts again
                 bool headAgain = er.FocusName == "Middle";
+                er.Cfg.Laser = false; er.Laser = er["Right"]; er.Run(0.5);     // Laser too off: a laser on the right one does nothing
+                bool laserOff = er.FocusName == "Middle";
+                er.Cfg.Laser = true; er.Run(0.5);
+                bool laserOn = er.FocusName == "Right";
+                er.Laser = null; er.EyeYaw = 0; er.Run(0.6);
                 var emid = r["Middle"];
                 var (mw, mwidth, mcurv) = Drawn(emid);
                 er.EyeYaw = 0; er.Step();
@@ -570,15 +575,27 @@ static class GazeFocusTools
                 float fpsAway = DesktopPanel.SmartFps(er.Vr, mw, mwidth, false, 60);
                 bool notLooked = !DesktopPanel.LookedAt(er.Vr, mw, mwidth, mcurv, emid.TextureSize);
                 float a = 1;
-                for (int i = 0; i < 27; i++) a = DesktopPanel.LookDim(a, false, 1 / 90f);       // 0.3 s looking away
+                double seen = 0, tt = 0;
+                for (int i = 0; i < 27; i++) { tt += 1 / 90.0; a = DesktopPanel.LookDim(a, ref seen, false, tt, 1 / 90f); }    // 0.3 s away: held
+                float held03 = a;
+                bool flicker = false;
+                for (int i = 0; i < 270; i++)                                       // 3 s at its edge: the eyes on and off it every 0.1 s
+                {
+                    tt += 1 / 90.0;
+                    a = DesktopPanel.LookDim(a, ref seen, i / 9 % 2 == 0, tt, 1 / 90f);
+                    flicker |= a < 0.999f;
+                }
+                for (int i = 0; i < 90; i++) { tt += 1 / 90.0; a = DesktopPanel.LookDim(a, ref seen, false, tt, 1 / 90f); }    // 1 s away
                 float dimmed = a;
-                for (int i = 0; i < 27; i++) a = DesktopPanel.LookDim(a, true, 1 / 90f);        // 0.3 s back on it
+                for (int i = 0; i < 14; i++) { tt += 1 / 90.0; a = DesktopPanel.LookDim(a, ref seen, true, tt, 1 / 90f); }     // 0.15 s back
                 Want($"focus eyes: the eyes on the right one (the head ahead) take it {eyesTake} (want True), back on the middle {eyesBack} (want True), " +
-                     $"a 0.06 s glance keeps it {eyeGlance} (want True), the eyes lost - the head again {headAgain} (want True); smart capture by the eyes: " +
+                     $"a 0.06 s glance keeps it {eyeGlance} (want True), the eyes lost - the head again {headAgain} (want True); Laser too off: the laser ignored {laserOff} (want True), on: it focuses " +
+                     $"{laserOn} (want True); smart capture by the eyes: " +
                      $"the middle looked at {fpsLooked:0} fps, the eyes 100 deg away {fpsAway:0} fps (want the full rate / 4); the gaze ray on it {eLooked} " +
-                     $"(want True), off it {notLooked} (want True); the dim 0.3 s away {dimmed:0.00} (want {DesktopPanel.DimTo:0.00}), back {a:0.00} (want 0.99 or more)",
-                    eyesTake && eyesBack && eyeGlance && headAgain && fpsLooked >= 60 && fpsAway <= 4 && eLooked && notLooked &&
-                    MathF.Abs(dimmed - DesktopPanel.DimTo) < 0.01f && a > 0.99f);
+                     $"(want True), off it {notLooked} (want True); the dim: 0.3 s away {held03:0.00} (want 1.00: a glance), 3 s on and off its edge dimmed {flicker} (want False), 1 s away {dimmed:0.00} " +
+                     $"(want {DesktopPanel.DimTo:0.00}), 0.15 s back {a:0.00} (want 0.99 or more)",
+                    eyesTake && eyesBack && eyeGlance && headAgain && laserOff && laserOn && fpsLooked >= 60 && fpsAway <= 4 && eLooked && notLooked &&
+                    held03 == 1 && !flicker && MathF.Abs(dimmed - DesktopPanel.DimTo) < 0.01f && a > 0.99f);
             }
 
             // ---- Virtual Desktop's reading (EyeGaze.Take / Feed): the layout, both eyes, one eye, nothing sure, a blink's hold ----

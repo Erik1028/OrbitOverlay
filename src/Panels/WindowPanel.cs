@@ -27,6 +27,7 @@ public sealed class WindowPanel : ITheaterScreen, IDisposable
     readonly bool[] _hovering = new bool[2];
     public bool DimUnlooked;                 // (eye tracking: OrbitApp sets it; DesktopPanel.LookDim)
     float _lookA = 1;
+    double _lookedAt = -100;
     Vector2 _lastPx;
     public string Error;
 
@@ -145,7 +146,7 @@ public sealed class WindowPanel : ITheaterScreen, IDisposable
             // the dim of what you are not looking at (eye tracking: DesktopPanel.LookDim)
             bool looked = !DimUnlooked || th != null || _hovering[0] || _hovering[1]
                 || DesktopPanel.LookedAt(vr, WorldTransform, th?.Width ?? Cfg.Width, th?.Curvature ?? Cfg.Curvature, TextureSize);
-            _lookA = DesktopPanel.LookDim(_lookA, looked, dt);
+            _lookA = DesktopPanel.LookDim(_lookA, ref _lookedAt, looked, now, dt);
             Ov.SetAlpha(_opacity * (1 - MathF.Pow(1 - _vis, 3)) * _lookA);
             Ov.Show();
         }

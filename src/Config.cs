@@ -170,6 +170,7 @@ public sealed class FocusConfig
 {
     public bool Enabled { get; set; }
     public float Others { get; set; } = GazeFocus.OthersDefault;    // the others' width as a part of their own (0.4 .. 0.75)
+    public bool Laser { get; set; } = true;          // a laser on a monitor focuses it too (off: only the look - Erik 10-18, with eye tracking)
 }
 
 // The VRChat chatbox as a status line (Sys/StatusLine.cs)
