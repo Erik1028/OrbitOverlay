@@ -23,8 +23,9 @@ public sealed class FocusView
 // B / Y pulling it out, a profile switch) eases to its saved place by itself: nothing jumps.
 //
 // Which one: the head's forward ray against the panels as they are drawn (the laser's hit math, LocalRaycast - tilted rows and lying
-// back work), with hysteresis so it never flaps: the look must land clearly inside a neighbour (past 15 % of its drawn width from
-// the edge it shares with the focused one) and stay there 0.3 s; a laser on a monitor focuses it after 0.15 s (you are about to
+// back work), carried a moment ahead along the head's turn, with hysteresis so it never flaps: the look must land inside a neighbour
+// (past 5 % of its drawn width from the edge it shares with the focused one) and stay there 0.12 s; a laser on a monitor focuses it
+// after 0.15 s (you are about to
 // click there). Looking at nothing (the watch, the keyboard, the room) keeps the focus - typing never changes it. At start the
 // focus is the primary monitor (else the middle of the row): the row's home.
 //
@@ -33,7 +34,7 @@ public sealed class FocusView
 // The home monitor, focused, sits at its saved place: the row never drifts from the saved layout, and looking back at the middle
 // brings the row back to where it was. Any other monitor grows where it is drawn, about its own centre, so what you look at stays
 // under your gaze (the chain hangs from it there, the rest tuck in beside it). A switch eases the anchor's pose and every width over
-// 0.35 s (Motion reduced: a short linear move, off: at once), and a switch mid-way starts from what is drawn then: nothing jumps.
+// 0.3 s (Motion reduced: a short linear move, off: at once), and a switch mid-way starts from what is drawn then: nothing jumps.
 // The anchor's poses are kept relative to its saved pose, so a saved layout that moves meanwhile (a grab, Recenter) carries the
 // drawn row along.
 //
@@ -42,9 +43,13 @@ public sealed class FocusView
 // allocated per frame: the rows are rebuilt only when a monitor joins or leaves a row or is turned on / off.
 public sealed class GazeFocus
 {
-    public const float Dwell = 0.3f, LaserDwell = 0.15f;         // seconds a look / a laser must stay on a neighbour
-    public const float Edge = 0.15f;                             // the part of a neighbour's drawn width next to the focused one that does not count
-    public const float EaseTime = 0.35f, ShortTime = 0.2f;       // seconds: Motion full (eased) / reduced (linear)
+    // Erik 10-18: "it reacts slowly to the look" - the look had to get 15 % into the small neighbour and stay 0.3 s, then 0.35 s of
+    // easing: now 5 % and 0.12 s, the look carried a moment ahead along the head's turn (Lead), 0.3 s of easing
+    public const float Dwell = 0.12f, LaserDwell = 0.15f;        // seconds a look / a laser must stay on a neighbour
+    public const float Edge = 0.05f;                             // the part of a neighbour's drawn width next to the focused one that does not count
+    public const float EaseTime = 0.3f, ShortTime = 0.2f;        // seconds: Motion full (eased) / reduced (linear)
+    public const float GrabEaseTime = 0.35f;                     // a hand takes a monitor: the row back to its saved sizes, unhurried (it moves under the hand)
+    public const float Lead = 0.1f, MaxLead = 10 * MathF.PI / 180;     // the look: where the head's turn takes it in 0.1 s, at most 10 deg ahead
     public const float OthersMin = 0.4f, OthersMax = 0.75f, OthersDefault = 0.55f;
 
     sealed class Member
@@ -114,6 +119,7 @@ public sealed class GazeFocus
         // and the join go by the saved layout, so that is what you see while you arrange things
         bool grab = false;
         foreach (var p in _panels) if (p.Grabbing) { grab = true; break; }
+        LookAhead(vr, dt);
         for (int i = _rows.Count - 1; i >= 0; i--)
         {
             var row = _rows[i];
@@ -340,7 +346,7 @@ public sealed class GazeFocus
         // ---- the drawn chain ----
         if (row.T < 1)
         {
-            row.T = Math.Min(1, row.T + dt / (Motion.Full ? EaseTime : ShortTime));
+            row.T = Math.Min(1, row.T + dt / (Motion.Full ? (grab ? GrabEaseTime : EaseTime) : ShortTime));
             row.Settled = false;
         }
         if (row.Settled) return;
@@ -352,6 +358,25 @@ public sealed class GazeFocus
 
     float _others = OthersDefault;
 
+    // where the look is going: the head's forward carried Lead seconds ahead along its (smoothed) turn, at most MaxLead - a deliberate
+    // turn to a side monitor counts on its way there; held still it is the look itself; a quick sweep past is gone before the dwell
+    Vector3 _lookDir = -Vector3.UnitZ, _prevFwd, _turn;
+    bool _prevOk;
+
+    void LookAhead(VrSession vr, float dt)
+    {
+        if (!vr.HmdValid) { _prevOk = false; return; }
+        var f = MathUtil.Forward(vr.Hmd);
+        if (_prevOk && dt > 1e-4f) _turn = Vector3.Lerp(_turn, (f - _prevFwd) / dt, 0.35f);
+        else _turn = Vector3.Zero;
+        _prevFwd = f;
+        _prevOk = true;
+        var lead = _turn * Lead;
+        float len = lead.Length();
+        if (len > MaxLead) lead *= MaxLead / len;
+        _lookDir = Vector3.Normalize(f + lead);
+    }
+
     void Look(Row row, VrSession vr, double now, DesktopPanel laserA, DesktopPanel laserB)
     {
         int hit = -1;
@@ -359,7 +384,7 @@ public sealed class GazeFocus
         if (vr.HmdValid)
         {
             var o = vr.Hmd.Translation;
-            var d = MathUtil.Forward(vr.Hmd);
+            var d = _lookDir;
             for (int i = 0; i < row.Members.Count; i++)
             {
                 var m = row.Members[i];
@@ -374,7 +399,7 @@ public sealed class GazeFocus
         if (hit < 0 || hit == row.Focused) row.Looked = -1;              // the focused one, or nothing: the focus stays
         else
         {
-            // clearly inside the neighbour: past 15 % of its drawn width from the edge on the focused one's side
+            // inside the neighbour: past 5 % of its drawn width from the edge on the focused one's side (Edge)
             bool inside = hit > row.Focused ? u > Edge : u < 1 - Edge;
             if (!inside) row.Looked = -1;
             else if (row.Looked != hit) { row.Looked = hit; row.LookSince = now; }

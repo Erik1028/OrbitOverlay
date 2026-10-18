@@ -241,7 +241,7 @@ static class GazeFocusTools
                  $"the row {rowW:0.00} m of {savedW:0.00} m saved; one row made {r.Focus.Rebuilds} (want 1)", mid && rest && looked == r["Middle"] && lookedR == r["Right"] && r.Focus.Rebuilds == 1);
 
             // ---- the dwell: a glance does not switch, 0.4 s does; the new one grows where it is (its centre stays under the look) ----
-            r.Yaw = 30; r.Run(0.15);
+            r.Yaw = 30; r.Run(0.06);
             bool glance = r.FocusName == "Middle";
             r.Yaw = 0; r.Run(0.5);
             r.ResetTrack();
@@ -253,13 +253,13 @@ static class GazeFocusTools
             bool rightRest = RowOk(r, Others, out string whyR);
             float stay = Vector3.Distance(Drawn(r["Right"]).world.Translation, cRight0);
             var lookedNow = LookedAt(r, out float uNow);
-            Want($"focus dwell: a 0.15 s glance at the right monitor keeps the middle {glance} (want True); 0.4 s focuses the right one {switched} (want True), " +
+            Want($"focus dwell: a 0.06 s glance at the right monitor keeps the middle {glance} (want True); 0.4 s focuses the right one {switched} (want True), " +
                  $"settled {rightRest} (want True): {whyR}; its centre moved {stayMid * 100:0.0} cm mid-way and {stay * 100:0.0} cm in all (want < 2: it grows " +
                  $"about its centre, what you look at stays under the look - the look is at {uNow:0.00} of it now, {(lookedNow == r["Right"] ? "still on it" : "NOT on it")}); " +
                  $"the largest step of a centre {r.MaxMove * 100:0.00} cm, of a width {r.MaxGrow * 100:0.00} cm per frame (want < 3)",
                 glance && switched && rightRest && stay < 0.02f && stayMid < 0.02f && lookedNow == r["Right"] && r.MaxMove < 0.03f && r.MaxGrow < 0.03f);
 
-            // ---- back to the middle, then dithering: on the edge band (never past 15 %), and across it but back before the dwell ----
+            // ---- back to the middle, then dithering: around the edge band, and across it but back before the dwell (0.12 s) ----
             r.Yaw = 0; r.Run(0.8);
             bool back = r.FocusName == "Middle" && RowOk(r, Others, out _);
             int sw0 = r.Focus.Switches;
@@ -295,7 +295,7 @@ static class GazeFocusTools
 
             // ---- a switch mid-way (the laser 0.05 s after a look started a switch): continuous ----
             r.ResetTrack();
-            r.Yaw = 30; r.Run(0.32);                            // the switch to the right just started (the dwell is 0.3 s)
+            r.Yaw = 30; r.Run(0.14);                            // the switch to the right just started (the dwell is 0.12 s)
             bool started = r.FocusName == "Right";
             r.Laser = r["Left"]; r.Run(0.2);                    // mid-way: the laser takes it to the left
             bool midway = r.FocusName == "Left";
@@ -328,7 +328,7 @@ static class GazeFocusTools
 
             // ---- Motion reduced: a short linear move; off: at once ----
             Motion.Level = MotionLevel.Reduced;
-            r.Yaw = 0; r.Run(0.32);                             // the switch to the middle happens now
+            r.Yaw = 0; r.Run(0.14);                             // the switch to the middle happens now
             bool swR = r.FocusName == "Middle";
             int frames = 0;
             while (frames < 60 && !RowOk(r, Others, out _)) { r.Step(); frames++; }
@@ -337,7 +337,7 @@ static class GazeFocusTools
             float step1 = r.MaxGrow; r.ResetTrack(); r.Step(); r.Step(); float step2 = r.MaxGrow;      // (a reset takes a frame as its base)
             r.Run(0.3);
             Motion.Level = MotionLevel.Off;
-            r.Yaw = 0; r.Run(0.32);
+            r.Yaw = 0; r.Run(0.14);
             bool offRow = RowOk(r, Others, out string whyO);
             bool offNow = r.FocusName == "Middle" && offRow;
             Motion.Level = MotionLevel.Full;
@@ -595,7 +595,7 @@ static class GazeFocusTools
         }
         double t0 = r.T;
         Snap("at rest, looking ahead");
-        r.Yaw = 30; r.Run(0.32); Snap("looked right 0.3 s: switching");
+        r.Yaw = 30; r.Run(0.14); Snap("looked right 0.12 s: switching");
         r.Run(0.12); Snap("0.12 s into the change");
         r.Run(0.12); Snap("0.24 s");
         r.Run(0.4); Snap("settled on the right one (grew where it was)");
