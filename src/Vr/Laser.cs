@@ -94,8 +94,8 @@ public sealed class Laser : IDisposable
     // (reading along a line) is followed softly, a look elsewhere glides there. The trigger clicks there.
     public static bool EyeFollow;                    // Eye cursor "Follow", eye tracking on (OrbitApp, every frame)
     // eye tracking only (Erik 10-19): the cursor is the eyes alone - the ray goes from the eyes to the smoothed spot, no beam, no dot, the
-    // hand never fine-tunes. The hand says on / off: on while it is held towards the screens (within EyeEngage of the spot, off past
-    // EyeRelease) and not on another panel (the keyboard, the watch, a bar: the laser as usual there); off too once the eyes have been
+    // hand never fine-tunes. The hand says on / off: on while it is held towards the screens (its ray on any monitor / window, or within
+    // EyeEngage of the spot, off past EyeRelease) and not on another panel (the keyboard, the watch, a bar: the laser as usual there); off too once the eyes have been
     // off the screens for EyeAway (looking at the world: the trigger is the game's again)
     public const float EyeEngage = 40 * MathF.PI / 180, EyeRelease = 50 * MathF.PI / 180, EyeAway = 0.4f;
     double _eyeSeenAt;
@@ -464,10 +464,14 @@ public sealed class Laser : IDisposable
     void FollowEyes(VrSession vr, IReadOnlyList<IPointerTarget> targets, Vector3 hand, float dt)
     {
         bool seen = GazeSpot(vr, targets, out var look);
-        if (HandOn(vr, targets, _handO, hand) == 2) { if (_eyeOn) EyeOff(); return; }     // the hand on the keyboard, the watch, a bar
+        int on = HandOn(vr, targets, _handO, hand);
+        if (on == 2) { if (_eyeOn) EyeOff(); return; }     // the hand on the keyboard, the watch, a bar
+        // the hand towards the screens: its ray on any monitor / window - the eyes then go anywhere on all of them (Erik 10-19: on the
+        // side monitors the cursor stopped half-way - the far half was past 50 deg from a hand on the middle one); else near the spot
+        bool handOnScreen = on == 1;
         if (!_eyeOn)
         {
-            if (!seen || EyeSpot.Angle(hand, Vector3.Normalize(look - _handO)) > EyeEngage) return;
+            if (!seen || (!handOnScreen && EyeSpot.Angle(hand, Vector3.Normalize(look - _handO)) > EyeEngage)) return;
             _eyeOn = true;                               // the hand towards the screens, the eyes on one: the cursor where the eyes are
             _eye.Start(look, hand);
             _eyeSeenAt = _clock;
@@ -476,7 +480,7 @@ public sealed class Laser : IDisposable
             return;
         }
         if (seen) _eyeSeenAt = _clock;
-        if (EyeSpot.Angle(hand, Vector3.Normalize(_eye.Spot(_clock) - _handO)) > EyeRelease || _clock - _eyeSeenAt > EyeAway)
+        if ((!handOnScreen && EyeSpot.Angle(hand, Vector3.Normalize(_eye.Spot(_clock) - _handO)) > EyeRelease) || _clock - _eyeSeenAt > EyeAway)
         {
             EyeOff();                                    // the hand turned away, or the eyes on the world: the laser / the game again
             return;
