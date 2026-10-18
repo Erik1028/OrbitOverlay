@@ -99,7 +99,9 @@ public sealed partial class WristPanel
     // ================= the boot =================
 
     double _cyBootAt = -100;
-    const double CyBootLen = 1.05;
+    const double CyBootLen = 1.05;                  // (in the boot's own time: it runs CyBootSpeed times as fast as the clock)
+    const double CyBootSpeed = 1.5;                 // the whole boot in 0.7 s, not 1.05 - the same moves, sooner (Erik 10-18: "very responsive")
+    double CyBootT => (_cyT - _cyBootAt) * CyBootSpeed;
     const float CyCardLen = 0.62f;                  // a card's own part of it
     const float CyEdgeAt = 0.32f;                   // the card's outline is its own again (the scan has passed)
 
@@ -149,10 +151,10 @@ public sealed partial class WristPanel
         _cyEdgeTL = k.Button ? CyberHud.CardTL + 2 : CyberHud.CardTL;
         _cyEdgeBR = CyberHud.CardBR;
         CyScanCount(id, k);
-        double bt = _cyT - _cyBootAt;
+        double bt = CyBootT;
         if (bt >= CyBootLen) return;
         _cyBusy = true;
-        _cyU = (float)(bt - (0.06 + (w.X + w.Y * 1.25f) * 0.036));
+        _cyU = (float)(bt - (0.03 + (w.X + w.Y * 1.25f) * 0.036));
         float s = CyScanK(_cyU);
         if (s >= 1) return;
         _p.PushClip(new RectangleF(r.X - 3, r.Y - 3, r.Width + 6, s <= 0 ? 0 : (r.Height + 6) * s));
@@ -191,7 +193,7 @@ public sealed partial class WristPanel
     // the page: the olive frame drawn in from its corners, the page's corners locked on in yellow
     void CyberPageBoot(RectangleF all)
     {
-        float bt = (float)(_cyT - _cyBootAt);
+        float bt = (float)CyBootT;
         _p.FillCut(all, Theme.OverlayBg, 18, 18, 18, 18);
         CyberFx.OutlineIn(_p, RectangleF.Inflate(all, -0.5f, -0.5f), CyberHud.Frame, 2, 17, 17, 17, 17, CyberFx.EaseOut(CyberFx.Ramp(bt, 0, 0.32)), CyberHud.Yellow);
         float lk = CyberFx.EaseOut(CyberFx.Ramp(bt, 0, 0.12)), fade = 1 - CyberFx.Ramp(bt, 0.45, 0.25);
@@ -199,7 +201,7 @@ public sealed partial class WristPanel
         _cyBusy = true;
     }
 
-    bool CyPageBooting { get { CyFrame(); return _cyT - _cyBootAt < 0.7; } }
+    bool CyPageBooting { get { CyFrame(); return CyBootT < 0.7; } }
 
     // ================= the minute glitch =================
 
@@ -391,7 +393,7 @@ public sealed partial class WristPanel
         _cyIdCount = 0;
         _cyGraphLast = _cyGraphId;
         _cyGraphId = -1;
-        if (!CyLiveFx || _cyT - _cyBootAt < CyBootLen || _open != null || _swiping || _slideOther >= 0) { _cyScanId = -1; return; }
+        if (!CyLiveFx || CyBootT < CyBootLen || _open != null || _swiping || _slideOther >= 0) { _cyScanId = -1; return; }
         if (_cyScanId >= 0)
         {
             if (_cyT - _cyScanAt < CyScanLen) { CyWant(_cyT + 1 / 30.0); return; }

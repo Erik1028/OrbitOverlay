@@ -577,9 +577,10 @@ public sealed partial class WristPanel
                 lift = _ui.Spring(Ui.Id("wcl", id), held ? 0.97f : over ? 1.012f : 1, 400, 28);
                 veil = _ui.Anim(Ui.Id("wcv", id), held ? 1 : over ? 0.4f : 0, 22);
             }
-            // the cascade when the watch comes into view: row by row, a little spring each
-            float delay = (w.Y * grid.Cols + w.X) * 0.018f;
-            float p = (float)Math.Clamp((t - delay) / 0.42, 0, 1);
+            // the cascade when the watch comes into view: row by row, a little spring each - tighter (Erik 10-18: "very responsive"):
+            // the whole face in ~0.65 s, it was ~0.85
+            float delay = (w.Y * grid.Cols + w.X) * 0.014f;
+            float p = (float)Math.Clamp((t - delay) / 0.32, 0, 1);
             float scale = pop * lift * (0.82f + 0.18f * EaseOutBack(p));
             float alpha = MathF.Min(1, p * 1.6f);
             bool anim = scale < 0.999f || scale > 1.001f || alpha < 0.999f;

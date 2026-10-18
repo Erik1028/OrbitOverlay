@@ -344,7 +344,8 @@ public sealed class GazeFocus
             row.Settled = false;
         }
         if (row.Settled) return;
-        float e = row.T >= 1 ? 1 : Motion.Full ? row.T * row.T * (3 - 2 * row.T) : row.T;
+        // eased out (it moves the frame the switch starts - an ease-in-out sat still for the first frames; Erik 10-18: "very responsive")
+        float e = row.T >= 1 ? 1 : Motion.Full ? 1 - (1 - row.T) * (1 - row.T) : row.T;
         Chain(row, e);
         row.Settled = row.T >= 1;
     }
