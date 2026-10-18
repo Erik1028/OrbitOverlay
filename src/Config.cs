@@ -372,6 +372,25 @@ public sealed class ConfigStore
         Path = path ?? System.IO.Path.Combine(Log.Dir, "config.json");
         Fresh = !File.Exists(Path);
         Data = Load();
+        WarmSave();
+    }
+
+    // The serializer makes its getters on its first save - ~40 ms, and that came on the main loop the first time something was saved
+    // (Erik 10-18, the spike line: a monitor moved, 48.7 ms). A copy of the file (read again, never the live settings) is serialized once
+    // on a worker at start: the first real save finds them made. Nothing is written.
+    void WarmSave()
+    {
+        string path = Path;
+        if (!File.Exists(path)) return;
+        System.Threading.Tasks.Task.Run(() =>
+        {
+            try
+            {
+                var copy = JsonSerializer.Deserialize<Config>(File.ReadAllText(path), Json);
+                if (copy != null) JsonSerializer.Serialize(copy, Json);
+            }
+            catch { }       // (only a warm-up)
+        });
     }
 
     // set when the file exists but could not be read (locked): saving is refused, so a

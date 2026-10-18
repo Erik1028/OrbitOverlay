@@ -31,7 +31,16 @@ static class Native
     [DllImport("user32.dll", SetLastError = true)]
     public static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
 
-    [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll", EntryPoint = "SetCursorPos")] static extern bool SetCursorPosRaw(int x, int y);
+
+    // the laser's cursor into Windows (timed: the spike line's slowest piece - a slow low-level mouse hook of another app shows here)
+    public static bool SetCursorPos(int x, int y)
+    {
+        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        bool ok = SetCursorPosRaw(x, y);
+        Spikes.Piece("pointer: SetCursorPos", t0);
+        return ok;
+    }
     [DllImport("user32.dll")] public static extern IntPtr SetTimer(IntPtr hWnd, IntPtr id, uint ms, IntPtr proc);
     [DllImport("user32.dll")] public static extern bool KillTimer(IntPtr hWnd, IntPtr id);
     [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT p);
@@ -43,7 +52,9 @@ static class Native
         inp[0].type = INPUT_MOUSE;
         inp[0].mi.dwFlags = flags;
         inp[0].mi.mouseData = unchecked((uint)data);
+        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
         SendInput(1, inp, Marshal.SizeOf<INPUT>());
+        Spikes.Piece("pointer: SendInput (mouse)", t0);
     }
 
     public static void SendScan(ushort scan, bool extended, bool up)

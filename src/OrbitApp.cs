@@ -692,8 +692,11 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         AudioMixer.Mode = C.General.VolumeToApps is "on" or "off" ? C.General.VolumeToApps : "auto";
         _mixer.Pump(now, _vr.Connected);   // (its Core Audio work on a worker of its own: Sys/AudioMixer.cs)
         Spikes.Mark(Spikes.Mixer);
+        long wt = System.Diagnostics.Stopwatch.GetTimestamp();
         _win.Tick(now);
+        Spikes.Piece("the settings window", wt); wt = System.Diagnostics.Stopwatch.GetTimestamp();
         _cfg.SaveIfDue();
+        Spikes.Piece("config save", wt);
         Spikes.Mark(Spikes.Window);
         Spikes.End();                       // (the frame's parts kept if it was the window's slowest: Sys/Spikes.cs)
     }
