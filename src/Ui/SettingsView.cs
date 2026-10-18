@@ -132,6 +132,8 @@ public sealed partial class SettingsView
         var h = new HashCode();
         h.Add(Theme.Version); h.Add(Lang.Version); h.Add(Tab); h.Add(_h.Cfg.Changes); h.Add(_h.Cfg.Dirty);
         h.Add(_h.VrConnected); h.Add(_h.VrStatus); h.Add(_h.InputStatus);
+        // the header's buttons and the layout in use: flipped from the watch or by the app itself (the keyboard hiding on its own)
+        h.Add(C.Keyboard.Visible); h.Add(C.General.DesktopsVisible); h.Add(C.ActiveLayout);
         h.Add(WhatsNewShown?.Count ?? 0);                   // the host's card comes by itself (an update)
         if (Theme.Cyber) { h.Add(CyberLiveLine()); h.Add(CyberVrTime()); }
         if (ShowsWristPreview || ShowsKeyboardPreview || Tab == TabWindows) h.Add(++_liveTick);
