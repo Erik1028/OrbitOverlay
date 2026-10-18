@@ -279,8 +279,10 @@ public sealed partial class Theater : IDisposable
         _glide = GrowsFromHome(_screen);  // the one playing now may be another than the one it started with
     }
 
-    // before the panels update: where the screen is this frame, who steps aside, how dark the world is
-    public void Update(VrSession vr, float dt, float dim, IReadOnlyCollection<ITheaterScreen> live)
+    // before the panels update: where the screen is this frame, who steps aside, how dark the world is. (live is the List itself, not
+    // IReadOnlyCollection: through the interface every foreach boxed the list's enumerator - 40 B a frame, theater on or off, the main
+    // loop's largest steady garbage (Erik 10-18: "it must be optimized"); the List's own enumerator is a struct, nothing is allocated.)
+    public void Update(VrSession vr, float dt, float dim, List<ITheaterScreen> live)
     {
         if (_leaving != null)
         {
@@ -338,9 +340,9 @@ public sealed partial class Theater : IDisposable
         }
     }
 
-    static bool Contains(IReadOnlyCollection<ITheaterScreen> live, ITheaterScreen s)
+    static bool Contains(List<ITheaterScreen> live, ITheaterScreen s)
     {
-        foreach (var x in live) if (x == s) return true;
+        for (int i = 0; i < live.Count; i++) if (live[i] == s) return true;
         return false;
     }
 

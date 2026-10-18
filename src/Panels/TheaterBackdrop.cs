@@ -131,6 +131,13 @@ public sealed partial class Theater
             }
         }
         // the style changed while one was drawn: that one is dropped, this one drawn now
+        BackdropJob(want);
+    }
+
+    // (its own method: the lambda's closure over 'want' is made only here - in BackdropTextures the compiler made it on entry, every
+    // frame the backdrop showed, 32 B a frame for a thread started once)
+    void BackdropJob(Backdrop want)
+    {
         _jobKind = want;
         _job = new Thread(() =>
         {
