@@ -12,7 +12,8 @@ namespace Orbit;
 //  - the data (once): the Lumos link on a made-up Lumos (its answers in Lumos's own shape, nothing on the network: the link's HTTP is
 //    replaced) - read, toggle, brightness, a white, a colour, never /api/config, Lumos not running, no bulb set, Lumos's error; the
 //    Prisma link through a REAL named pipe of the tool's own (another name than Prisma's) with a made-up settings.json - the commands as
-//    Prisma's pipe gets them, the state read back, Prisma not running, its settings file never written.
+//    Prisma's pipe gets them, the state read back, Prisma not running, its settings file never written; the bulb straight (TapoDirect)
+//    on a made-up KLAP bulb of the tool's own on 127.0.0.1 (TapoDirectTest.cs).
 //  - each style: a tap on a 1x1 switches it, a tap on a 2x1's card opens it, no garbage at rest; pictures wrist_lights_<case><tag>.png.
 static class LightsViewTools
 {
@@ -46,7 +47,7 @@ static class LightsViewTools
     public static void DataChecks(WristPanel wrist, PanelData data, string dir)
     {
         var keep = (data.Lamp, data.Rgb);
-        try { LumosChecks(wrist, data); PrismaChecks(wrist, data, dir); }
+        try { LumosChecks(wrist, data); PrismaChecks(wrist, data, dir); TapoChecks.Run(); }
         finally { (data.Lamp, data.Rgb) = keep; }
     }
 
@@ -90,16 +91,18 @@ static class LightsViewTools
             bool colour = Wait(() => temp == 0 && !l.State.Pending) && l.State.Temp == 0 && l.State.Hue == 285;
             bool noConfig = Count("/api/config") == 0 && Count("/api/discover") == 0 && Count("/api/connect") == 0 && Count("/api/forget") == 0;
             bool host = Count("10.0.0.99") == calls.Count;
-            Log.Info($"lights lumos: read from a made-up Lumos {read} (want True), a tap shows on at once {shown} (want True) and switched the bulb on {toggled} (want True), " +
-                     $"the watch shows {val} (want 40%)");
-            Log.Info($"lights lumos: the brightness dragged reached 55 {brightened} (want True) in {sends} call(s) of 10 values (want fewer than 10), a warm white " +
-                     $"{warm} (want True), a colour {colour} (want True); never asked its config / discover / connect / forget {noConfig} (want True), only about the bulb set {host} (want True)");
+            Tools.Want($"lights lumos: read from a made-up Lumos {read}, a tap shows on at once {shown} and switched the bulb on {toggled}, " +
+                       $"the watch shows {val} (want 40%) -", read && shown && toggled && val == "40%");
+            Tools.Want($"lights lumos: the brightness dragged reached 55 {brightened} in {sends} call(s) of 10 values (want fewer than 10), a warm white " +
+                       $"{warm}, a colour {colour}; never asked its config / discover / connect / forget {noConfig}, only about the bulb set {host} -",
+                       brightened && sends < 10 && warm && colour && noConfig && host);
             // Lumos's own error: shown with its words
             fail = true;
             l.Watched = false; l.Watched = true;
             bool err = Wait(() => l.State.Status == LinkStatus.Error) && l.State.Message.Contains("Could not reach");
             data.Lamp = l;
-            Log.Info($"lights lumos: an error from Lumos shown as such {err} (want True), the watch says '{wrist.LightShown(data)}' (want Bulb not reachable)");
+            string says = wrist.LightShown(data);
+            Tools.Want($"lights lumos: an error from Lumos shown as such {err}, the watch says '{says}' (want Bulb not reachable) -", err && says == "Bulb not reachable");
             // Lumos not running: nothing to switch, '-' and why
             fail = false;
             down = true;
@@ -108,7 +111,9 @@ static class LightsViewTools
             int before = calls.Count;
             l.SetBrightness(90);
             bool none = l.State.Status == LinkStatus.NoApp && l.State.Brightness != 90;
-            Log.Info($"lights lumos: not running {gone} (want True), the watch says '{wrist.LightShown(data)}' (want Lumos isn't running), a command shows nothing it cannot do {none} (want True)");
+            string saysGone = wrist.LightShown(data);
+            Tools.Want($"lights lumos: not running {gone}, the watch says '{saysGone}' (want Lumos isn't running), a command shows nothing it cannot do {none} -",
+                       gone && saysGone == "Lumos isn't running" && none);
         }
         // no bulb set: nothing asked at all
         calls.Clear();
@@ -120,13 +125,15 @@ static class LightsViewTools
             bool nob = Wait(() => l.State.Status == LinkStatus.NoDevice);
             Thread.Sleep(150);
             data.Lamp = l;
-            Log.Info($"lights lumos: no bulb set says '{wrist.LightShown(data)}' (want Set the bulb), asked nothing {calls.Count == 0 && nob} (want True)");
+            string saysNone = wrist.LightShown(data);
+            Tools.Want($"lights lumos: no bulb set says '{saysNone}' (want Set the bulb), asked nothing {calls.Count == 0 && nob} -", saysNone == "Set the bulb" && calls.Count == 0 && nob);
         }
         // Lumos's answer read as Lumos writes it (a real state_dict's keys; an error)
         var p = LumosLink.Parse(200, "{\"host\": \"10.0.0.98\", \"alias\": \"Lamp\", \"is_on\": true, \"has_light\": true, \"has_color\": true, \"has_color_temp\": true, " +
                                      "\"brightness\": 100, \"hsv\": null, \"color_temp\": 6500, \"ct_min\": 2500, \"ct_max\": 6500}");
         var e = LumosLink.Parse(500, "{\"error\": \"Authentication failed.\"}");
-        Log.Info($"lights lumos: parsed on / 100 / 6500 K {p.Ready && p.On && p.Brightness == 100 && p.Temp == 6500} (want True), an error {e.Status} (want Error)");
+        Tools.Want($"lights lumos: parsed on / 100 / 6500 K {p.Ready && p.On && p.Brightness == 100 && p.Temp == 6500}, an error {e.Status} (want Error) -",
+                   p.Ready && p.On && p.Brightness == 100 && p.Temp == 6500 && e.Status == LinkStatus.Error);
     }
 
     static void PrismaChecks(WristPanel wrist, PanelData data, string dir)
@@ -134,6 +141,8 @@ static class LightsViewTools
         // a pipe of the tool's own, read as Prisma's RemoteControl reads it; it writes a made-up settings.json the way Prisma does after a change
         string pipe = "OrbitTest_Prisma_" + Environment.ProcessId, file = Path.Combine(dir, "prisma_test_settings.json");
         File.WriteAllText(file, "{\"Effect\": \"Breathing\", \"ColorArgb\": -16725846, \"Speed\": 50, \"Brightness\": 70, \"Profiles\": []}");
+        // what the made-up Prisma wrote last and when: the file must be just that at the end (a link that wrote it would change either)
+        var written = (text: File.ReadAllText(file), at: File.GetLastWriteTimeUtc(file));
         var got = new List<string>();
         string effect = "Breathing"; int bright = 70;
         bool stop = false;
@@ -154,7 +163,12 @@ static class LightsViewTools
                     if (w[0] == "--brightness") bright = int.Parse(w[1]);
                     if (w[0] == "--toggle") effect = effect == "Off" ? "RainbowWave" : "Off";
                     Thread.Sleep(30);
-                    File.WriteAllText(file, $"{{\"Effect\": \"{effect}\", \"ColorArgb\": -16725846, \"Brightness\": {bright}}}");
+                    string json = $"{{\"Effect\": \"{effect}\", \"ColorArgb\": -16725846, \"Brightness\": {bright}}}";
+                    lock (got)
+                    {
+                        File.WriteAllText(file, json);
+                        written = (json, File.GetLastWriteTimeUtc(file));
+                    }
                 }
                 catch (Exception) { Thread.Sleep(30); }
             }
@@ -181,9 +195,10 @@ static class LightsViewTools
             bool off = Wait(() => effect == "Off" && l.State.Off && !l.State.Pending) && Last() == "--toggle";
             l.SetColor(0xFF0050FF);
             bool col = Wait(() => Got() == n + 2) && Last() == "--color 0050FF";
-            Log.Info($"lights prisma: read from a made-up settings.json {read} (want True), the watch shows '{shown0}' (want Breathing); a rainbow picked shows at once {atOnce} " +
-                     $"(want True) and Prisma's pipe got '--effect rainbow' {fx} (want True); a slider dragged sent '--brightness 55' last {br} (want True) in {n - 1} command(s) " +
-                     $"(want fewer than 8); a tap's '--toggle' {off} (want True); a colour '--color 0050FF' {col} (want True)");
+            Tools.Want($"lights prisma: read from a made-up settings.json {read}, the watch shows '{shown0}' (want Breathing); a rainbow picked shows at once {atOnce} " +
+                       $"and Prisma's pipe got '--effect rainbow' {fx}; a slider dragged sent '--brightness 55' last {br} in {n - 1} command(s) " +
+                       $"(want fewer than 8); a tap's '--toggle' {off}; a colour '--color 0050FF' {col} -",
+                       read && shown0 == "Breathing" && atOnce && fx && br && n - 1 < 8 && off && col);
         }
         finally
         {
@@ -197,11 +212,15 @@ static class LightsViewTools
             l.Active = true;
             bool gone = Wait(() => l.State.Status == LinkStatus.NoApp);
             data.Rgb = l;
-            Log.Info($"lights prisma: not running {gone} (want True), the watch says '{wrist.RgbShown(data)}' (want Prisma isn't running)");
+            string says = wrist.RgbShown(data);
+            Tools.Want($"lights prisma: not running {gone}, the watch says '{says}' (want Prisma isn't running) -", gone && says == "Prisma isn't running");
         }
         string text = File.ReadAllText(file);
+        var at = File.GetLastWriteTimeUtc(file);
         File.Delete(file);
-        Log.Info($"lights prisma: the settings file read, never written by the link (its last writer the made-up Prisma) {text.Contains("\"Off\"") || text.Contains("Effect")} (want True)");
+        bool untouched;
+        lock (got) untouched = text == written.text && at == written.at;
+        Tools.Want("lights prisma: the settings file read, never written by the link (as the made-up Prisma wrote it last, its text and its time)", untouched);
     }
 
     // ---- each style ----
@@ -263,13 +282,14 @@ static class LightsViewTools
             for (int k = 0; k < 11; k++) { Thread.Sleep(30); wrist.Draw(data); }
             bool shut = !wrist.IsOpen;
             wrist.CloseForTest();
-            Log.Info($"lights view{tag}: a tap on the 1x1 light switched it off {lampOff} (want True), on the 1x1 RGB off {rgbOff} and back to its rainbow {rgbBack} (want True True); " +
-                     $"a tap on a 2x1's card opened it {opened} (want True), its X closed it {shut} (want True)");
+            Tools.Want($"lights view{tag}: a tap on the 1x1 light switched it off {lampOff}, on the 1x1 RGB off {rgbOff} and back to its rainbow {rgbBack}; " +
+                       $"a tap on a 2x1's card opened it {opened}, its X closed it {shut} -", lampOff && rgbOff && rgbBack && opened && shut);
             // no garbage a frame at rest
             Fake(data);
             wcfg.Widgets = Face64().Where(w => w.Type is "light" or "rgb").ToList();
             long Bytes()
             {
+                using var appOnly = Tools.AppAllocs();
                 wrist.Settle();
                 for (int i = 0; i < 4; i++) wrist.Draw(data);
                 long a0 = GC.GetAllocatedBytesForCurrentThread();
@@ -277,9 +297,11 @@ static class LightsViewTools
                 return (GC.GetAllocatedBytesForCurrentThread() - a0) / 20;
             }
             long rest = Bytes();
+            if (Environment.GetEnvironmentVariable("ORBIT_PERF_TYPES") == "1") Tools.SocialAllocTypes("lights" + tag, () => wrist.Draw(data));
             Fake(data, new LampState { Status = LinkStatus.NoApp }, new RgbState { Status = LinkStatus.NoApp });
             long none = Bytes();
-            Log.Info($"lights view{tag}: a frame of every size at rest makes {rest} B of garbage (want 0), without the apps {none} B (want 0)");
+            if (Environment.GetEnvironmentVariable("ORBIT_PERF_TYPES") == "1") Tools.SocialAllocTypes("lights none" + tag, () => wrist.Draw(data));
+            Tools.Want($"lights view{tag}: a frame of every size at rest makes {rest} B of garbage (want 0), without the apps {none} B (want 0)", rest == 0 && none == 0);
             // the pictures
             void Shot(string name, List<WatchWidget> face, LampState l, RgbState r, string open = null, string grid = null)
             {
@@ -319,6 +341,7 @@ static partial class Tools
     // ORBIT_SNAP_ONLY=lights: the links' checks, the views' checks and pictures and the layout check (their sizes and opened only), in every style
     static int LightsOnly(WristPanel wrist, PanelData data, ConfigStore cfg, Painter painter, Gpu gpu, string dir)
     {
+        int failed0 = WantsFailed, layout = 0;
         var culture = System.Globalization.CultureInfo.CurrentCulture;
         System.Globalization.CultureInfo.CurrentCulture = SnapCulture;
         LightsViewTools.DataChecks(wrist, data, dir);
@@ -331,16 +354,16 @@ static partial class Tools
             foreach (var kind in new[] { "light", "rgb" })
             {
                 string f0 = cfg.Data.Wrist.Face;
-                LayoutCheckRun(wrist, data, cfg, painter, gpu, dir, tag.Length > 0 ? tag[1..] : "modern", onlyKind: kind);
+                layout += LayoutCheckRun(wrist, data, cfg, painter, gpu, dir, tag.Length > 0 ? tag[1..] : "modern", onlyKind: kind);
                 cfg.Data.Wrist.Face = f0;
                 cfg.Data.Wrist.Widgets = null;
             }
         }
         cfg.Data.Appearance = new AppearanceConfig { Clock24h = true };
         Theme.Apply(cfg.Data.Appearance);
-        StylesRun(wrist, data, painter, cfg, gpu, dir);           // every kind in every look (the light's and the RGB's among them)
+        layout += StylesRun(wrist, data, painter, cfg, gpu, dir);           // every kind in every look (the light's and the RGB's among them)
         System.Globalization.CultureInfo.CurrentCulture = culture;
         Log.Info("snapshot (lights only) written to " + dir);
-        return 0;
+        return layout > 0 ? 1 : WantsExit(failed0);
     }
 }

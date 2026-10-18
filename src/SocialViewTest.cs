@@ -156,13 +156,20 @@ static class SocialViewTools
         catch (Exception e) { err = e.Message; }
         string Of(string name) => s?.Online.FirstOrDefault(f => f.Name == name) is { } f ? $"{f.Kind}{(f.World.Length > 0 ? " " + f.World : "")}" : "offline";
         string online = s == null ? err : string.Join(", ", s.Online.Select(f => f.Name).OrderBy(x => x, StringComparer.Ordinal));
-        Log.Info($"friends data: a made-up VRCX database written {made} (want True), read {s != null} (want True), {s?.Total} friends (want 12); " +
-                 $"online since VRCX's start: {online} (want Basil, Juniper, Kite, Mira, Nova, Static, Wren)");
-        Log.Info($"friends data: Nova {Of("Nova")} (want Public Pixel Plaza), Juniper {Of("Juniper")} (want InvitePlus Moonlit Library), " +
-                 $"Basil {Of("Basil")} (want GroupPlus Clockwork Garden), Static {Of("Static")} (want Friends Pixel Plaza), Mira {Of("Mira")} (want Private), " +
-                 $"Wren {Of("Wren")} (want Traveling), Kite {Of("Kite")} (want Unknown); Tobi, Moss, Lark offline again, Echo from before the start: " +
-                 $"{Of("Tobi")} {Of("Moss")} {Of("Lark")} {Of("Echo")} (want offline offline offline offline); Basil a favourite " +
-                 $"{s?.Online.FirstOrDefault(f => f.Name == "Basil")?.Favorite == true} (want True), a stranger left out {s?.Online.All(f => f.Name != "Stranger") == true} (want True)");
+        const string wantOnline = "Basil, Juniper, Kite, Mira, Nova, Static, Wren";
+        Tools.Want($"friends data: a made-up VRCX database written {made}, read {s != null}, {s?.Total} friends (want 12); " +
+                   $"online since VRCX's start: {online} (want {wantOnline})", made && s != null && s.Total == 12 && online == wantOnline);
+        var wantWhere = new (string name, string where)[]
+        {
+            ("Nova", "Public Pixel Plaza"), ("Juniper", "InvitePlus Moonlit Library"), ("Basil", "GroupPlus Clockwork Garden"), ("Static", "Friends Pixel Plaza"),
+            ("Mira", "Private"), ("Wren", "Traveling"), ("Kite", "Unknown"), ("Tobi", "offline"), ("Moss", "offline"), ("Lark", "offline"), ("Echo", "offline"),
+        };
+        bool basilFav = s?.Online.FirstOrDefault(f => f.Name == "Basil")?.Favorite == true, stranger = s?.Online.All(f => f.Name != "Stranger") == true;
+        Tools.Want($"friends data: Nova {Of("Nova")} (want Public Pixel Plaza), Juniper {Of("Juniper")} (want InvitePlus Moonlit Library), " +
+                   $"Basil {Of("Basil")} (want GroupPlus Clockwork Garden), Static {Of("Static")} (want Friends Pixel Plaza), Mira {Of("Mira")} (want Private), " +
+                   $"Wren {Of("Wren")} (want Traveling), Kite {Of("Kite")} (want Unknown); Tobi, Moss, Lark offline again, Echo from before the start: " +
+                   $"{Of("Tobi")} {Of("Moss")} {Of("Lark")} {Of("Echo")} (want offline offline offline offline); Basil a favourite {basilFav}, a stranger left out {stranger} -",
+                   wantWhere.All(w => Of(w.name) == w.where) && basilFav && stranger);
         // the instance kinds from VRChat's locations
         var kinds = new[]
         {
@@ -173,7 +180,7 @@ static class SocialViewTools
             ("traveling:traveling", FriendsWatcher.Where.Traveling), ("offline", FriendsWatcher.Where.Unknown), ("", FriendsWatcher.Where.Unknown),
         };
         int kindsOk = kinds.Count(k => FriendsWatcher.Instance(k.Item1) == k.Item2);
-        Log.Info($"friends data: instance kinds read right {kindsOk} of {kinds.Length} (want {kinds.Length} of {kinds.Length})");
+        Tools.Want($"friends data: instance kinds read right {kindsOk} of {kinds.Length} (want {kinds.Length} of {kinds.Length})", kindsOk == kinds.Length);
         // the watch's order: starred (Static: Orbit's star; Basil: VRCX's favourite), with you (Opal in your instance), the worlds A-Z,
         // private, traveling, not known
         var room = new RoomWatcher.Snapshot
@@ -184,15 +191,20 @@ static class SocialViewTools
         };
         var merged = new List<FriendsWatcher.Friend>();
         if (s != null) FriendsWatcher.Merge(merged, s, room, new List<string> { Id(9) });
-        Log.Info($"friends order: {string.Join(", ", merged.Select(f => f.Name))} (want Basil, Static, Opal, Juniper, Nova, Mira, Wren, Kite)");
+        const string wantOrder = "Basil, Static, Opal, Juniper, Nova, Mira, Wren, Kite";
+        string order = string.Join(", ", merged.Select(f => f.Name));
+        Tools.Want($"friends order: {order} (want {wantOrder})", order == wantOrder);
         // the same on the watch, its rows' words
         var stars0 = cfg.Data.Room.Starred;
         var (f0, r0) = (data.Friends, data.Room);
         cfg.Data.Room.Starred = new List<string> { Id(9) };
         (data.Friends, data.Room) = (s, room);
-        Log.Info($"friends view: the watch lists {wrist.FriendsShown(data)} (want 8) in the order {wrist.FriendsOrder(data)} " +
-                 $"(want Basil, Static, Opal, Juniper, Nova, Mira, Wren, Kite); Opal's line '{wrist.FriendsLine(data, 2)}' (want Velvet Lounge · with you), " +
-                 $"Basil's '{wrist.FriendsLine(data, 0)}' (want Clockwork Garden · Group+), Mira's '{wrist.FriendsLine(data, 5)}' (want Private world)");
+        int listed = wrist.FriendsShown(data);
+        string watchOrder = wrist.FriendsOrder(data), opalLine = wrist.FriendsLine(data, 2), basilLine = wrist.FriendsLine(data, 0), miraLine = wrist.FriendsLine(data, 5);
+        string wantOpal = "Velvet Lounge · " + Lang.T("with you"), wantBasil = "Clockwork Garden · " + Lang.T("Group+"), wantMira = Lang.T("Private world");
+        Tools.Want($"friends view: the watch lists {listed} (want 8) in the order {watchOrder} (want {wantOrder}); Opal's line '{opalLine}' (want {wantOpal}), " +
+                   $"Basil's '{basilLine}' (want {wantBasil}), Mira's '{miraLine}' (want {wantMira})",
+                   listed == 8 && watchOrder == wantOrder && opalLine == wantOpal && basilLine == wantBasil && miraLine == wantMira);
         cfg.Data.Room.Starred = stars0;
         (data.Friends, data.Room) = (f0, r0);
 
@@ -218,8 +230,9 @@ static class SocialViewTools
         var ra = Run(a, Steps(0, 25, true, true).Concat(Steps(25.25, 27.9, true, false)), out _, out _);
         bool quietAt2 = ra == null;
         ra = Run(a, Steps(28, 29, true, false), out bool cardA, out double atA);
-        Log.Info($"recap when: 25 min in VR, the headset off - nothing after 2 min {quietAt2} (want True), the recap after 3 min {ra != null && atA <= 28.3} " +
-                 $"(want True), a card {cardA} (want True), its length {ra?.Length.TotalMinutes:0.##} min (want 25.25)");
+        Tools.Want($"recap when: 25 min in VR, the headset off - nothing after 2 min {quietAt2}, the recap after 3 min {ra != null && atA <= 28.3}, a card {cardA}, " +
+                   $"its length {ra?.Length.TotalMinutes:0.##} min (want 25.25) -",
+                   quietAt2 && ra != null && atA <= 28.3 && cardA && Math.Abs(ra.Length.TotalMinutes - 25.25) < 1e-6);
         // 15 minutes: no recap at all
         var b = new SessionTracker();
         var rb = Run(b, Steps(0, 15, true, true).Concat(Steps(15.25, 25, true, false)), out _, out _);
@@ -230,9 +243,11 @@ static class SocialViewTools
         var d2 = new SessionTracker();
         var rd = Run(d2, Steps(0, 25, true, true).Concat(Steps(25.25, 27, true, false)).Concat(Steps(27.25, 37, true, true)).Concat(Steps(37.25, 41, true, false)),
             out _, out double atD);
-        Log.Info($"recap when: 15 min in VR gives none {rb == null} (want True); 30 min then SteamVR gone gives one {rc != null} (want True) without a card " +
-                 $"{!cardC} (want True), {rc?.Length.TotalMinutes:0.##} min (want 30.25); a 2 min break is no end - one recap of {rd?.Length.TotalMinutes:0.##} min " +
-                 $"(want 37.25) {atD:0.##} min in (want 40.25)");
+        Tools.Want($"recap when: 15 min in VR gives none {rb == null}; 30 min then SteamVR gone gives one {rc != null} without a card {!cardC}, " +
+                   $"{rc?.Length.TotalMinutes:0.##} min (want 30.25); a 2 min break is no end - one recap of {rd?.Length.TotalMinutes:0.##} min (want 37.25) " +
+                   $"{atD:0.##} min in (want 40.25) -",
+                   rb == null && rc != null && !cardC && Math.Abs(rc.Length.TotalMinutes - 30.25) < 1e-6 && rd != null &&
+                   Math.Abs(rd.Length.TotalMinutes - 37.25) < 1e-6 && Math.Abs(atD - 40.25) < 1e-6);
         // ---- the recap's numbers: a made-up evening ----
         RoomWatcher.Snapshot R(int v, string world, double since0, params (string name, bool friend)[] here)
         {
@@ -254,9 +269,12 @@ static class SocialViewTools
         }
         var re = Run(ev, steps, out _, out _);
         string worlds = re == null ? "none" : string.Join(", ", re.Worlds.Select(w => $"{w.Name} {w.Minutes:0}"));
-        Log.Info($"recap numbers: a made-up evening of {re?.Length.TotalMinutes:0} min (want 70): worlds {worlds} (want Velvet Lounge 30, Pixel Plaza 21, " +
-                 $"Moonlit Library 17), {re?.WorldCount} visited (want 3), the longest {re?.Longest?.Name} (want Velvet Lounge); people met {re?.People} (want 6), " +
-                 $"friends {re?.Friends} (want 3) - someone who came while the headset was off not counted {re?.Names.Contains("Late Comer") == false} (want True)");
+        const string wantWorlds = "Velvet Lounge 30, Pixel Plaza 21, Moonlit Library 17";
+        Tools.Want($"recap numbers: a made-up evening of {re?.Length.TotalMinutes:0} min (want 70): worlds {worlds} (want {wantWorlds}), {re?.WorldCount} visited " +
+                   $"(want 3), the longest {re?.Longest?.Name} (want Velvet Lounge); people met {re?.People} (want 6), friends {re?.Friends} (want 3) - someone who " +
+                   $"came while the headset was off not counted {re?.Names.Contains("Late Comer") == false} -",
+                   re != null && Math.Abs(re.Length.TotalMinutes - 70) < 0.5 && worlds == wantWorlds && re.WorldCount == 3 && re.Longest?.Name == "Velvet Lounge" &&
+                   re.People == 6 && re.Friends == 3 && !re.Names.Contains("Late Comer"));
         // photos: made-up files named the way VRChat names them, 3 in the session, 2 outside it
         string pics = Path.Combine(qa, "recap_photos");
         if (Directory.Exists(pics)) Directory.Delete(pics, true);
@@ -272,8 +290,8 @@ static class SocialViewTools
         var back = RecapStore.Load(file);
         bool same = re != null && back != null && back.Start == re.Start && back.End == re.End && back.Photos == re.Photos && back.People == re.People &&
                     back.Friends == re.Friends && back.Worlds.Count == re.Worlds.Count && back.Longest?.Name == re.Longest?.Name;
-        Log.Info($"recap numbers: photos taken in the session {photos} (want 3), no folder {none} (want -1); recap.json written and read back the same {same} " +
-                 $"(want True); the card says '{(re == null ? "" : WristPanel.RecapLine(re))}'");
+        Tools.Want($"recap numbers: photos taken in the session {photos} (want 3), no folder {none} (want -1); recap.json written and read back the same {same} " +
+                   $"(the card says '{(re == null ? "" : WristPanel.RecapLine(re))}') -", photos == 3 && none == -1 && same);
         var r0b = data.Recap;
         data.Recap = re;
         Log.Info($"recap view: the watch shows '{wrist.RecapShown(data)}'");
@@ -360,6 +378,7 @@ static class SocialViewTools
             Settle(wrist, data);
             bool opened = wrist.IsOpen && wrist.DetailKind == kind;
             string scrolled = "";
+            bool scrollOk = true;
             if (kind == "friends" && !classic)
             {
                 // a long list: the stick scrolls it down and back up
@@ -379,19 +398,22 @@ static class SocialViewTools
                 wrist.PointerLeave(Hand.Left);
                 data.Friends = f0;
                 Draw2(wrist, data);
-                scrolled = $", the stick scrolled 30 friends down {down > 0 && down <= downMax} (want True) and back up {back == 0} (want True)";
+                scrollOk = down > 0 && down <= downMax && back == 0;
+                scrolled = $", the stick scrolled 30 friends down {down > 0 && down <= downMax} and back up {back == 0}";
             }
             var x = wrist.ControlPoint(data, xId);
             if (x is { } xp) Tap(wrist, data, xp);
             bool shut = x != null && !wrist.IsOpen;
             Settle(wrist, data);
             wrist.CloseForTest();
-            Log.Info($"{kind} view{tag}: a tap on the card opened it {opened} (want True), its X closed it {shut && !wrist.DetailShown} (want True){scrolled}");
+            Tools.Want($"{kind} view{tag}: a tap on the card opened it {opened}, its X closed it {shut && !wrist.DetailShown}{scrolled} -",
+                       opened && shut && !wrist.DetailShown && scrollOk);
         }
         // no garbage a frame: both, every size, at rest (alone: the 95 family's clock makes its seconds' text)
         wcfg.Widgets = Face64().FindAll(x => x.Type is "friends" or "recap");
         long Bytes()
         {
+            using var appOnly = Tools.AppAllocs();
             wrist.Settle();
             for (int i = 0; i < 4; i++) wrist.Draw(data);
             long a0 = GC.GetAllocatedBytesForCurrentThread();
@@ -411,8 +433,8 @@ static class SocialViewTools
         long openR = Bytes();
         wrist.CloseForTest();
         if (Environment.GetEnvironmentVariable("ORBIT_PERF_TYPES") == "1") Tools.SocialAllocTypes("social" + tag, () => wrist.Draw(data));
-        Log.Info($"social view{tag}: a frame of the friends and recap sizes at rest makes {rest} B of garbage (want 0), on a 4 x 3 page {rest43} B (want 0); " +
-                 $"opened: the friends {openF} B, the recap {openR} B");
+        Tools.Want($"social view{tag}: a frame of the friends and recap sizes at rest makes {rest} B of garbage (want 0), on a 4 x 3 page {rest43} B (want 0) " +
+                   $"(opened: the friends {openF} B, the recap {openR} B) -", rest == 0 && rest43 == 0);
     }
 
     static void Pictures(WristPanel wrist, PanelData data, WristConfig wcfg, Gpu gpu, string dir, string tag)
@@ -492,6 +514,7 @@ static partial class Tools
     // sizes and opened only) in every style, the sheets, in seconds
     static int SocialOnly(WristPanel wrist, PanelData data, ConfigStore cfg, Painter painter, Gpu gpu, string dir)
     {
+        int failed0 = WantsFailed, layout = 0;
         var culture = CultureInfo.CurrentCulture;
         CultureInfo.CurrentCulture = SnapCulture;
         SocialViewTools.DataChecks(wrist, data, cfg, dir);
@@ -503,7 +526,7 @@ static partial class Tools
             foreach (var kind in new[] { "friends", "recap" })
             {
                 string f0 = cfg.Data.Wrist.Face;
-                LayoutCheckRun(wrist, data, cfg, painter, gpu, dir, tag.Length > 0 ? tag[1..] : "modern", onlyKind: kind);
+                layout += LayoutCheckRun(wrist, data, cfg, painter, gpu, dir, tag.Length > 0 ? tag[1..] : "modern", onlyKind: kind);
                 cfg.Data.Wrist.Face = f0;
                 cfg.Data.Wrist.Widgets = null;
             }
@@ -513,6 +536,6 @@ static partial class Tools
         SocialViewTools.Sheets(dir);
         CultureInfo.CurrentCulture = culture;
         Log.Info("snapshot (friends and recap only) written to " + dir);
-        return 0;
+        return layout > 0 ? 1 : WantsExit(failed0);
     }
 }

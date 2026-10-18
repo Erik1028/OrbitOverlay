@@ -23,6 +23,7 @@ static partial class Tools
         ConfigStore cfg, KeyboardPanel kb, PanelData data, string dir, IReadOnlyList<MonitorInfo> mons, Windows.Graphics.DirectX.Direct3D11.IDirect3DDevice dev)
     {
         System.Globalization.CultureInfo.CurrentCulture = SnapCulture;
+        int failed0 = WantsFailed;
         bool still = Motion.Still;
         Motion.Still = false;                          // the loops run as on the headset
         bool types = Environment.GetEnvironmentVariable("ORBIT_PERF_TYPES") == "1";
@@ -180,7 +181,7 @@ static partial class Tools
 
         File.WriteAllLines(Path.Combine(dir, "perf.tsv"), rows.Select(r => $"{r.style}\t{r.what}\t{r.ms:0.000}\t{r.bytes}\t{r.layouts:0.0}"));
         Motion.Still = still;
-        return 0;
+        return WantsExit(failed0);
     }
 
     static int _perfFrames;
@@ -270,7 +271,7 @@ static partial class Tools
         ui.ResetAnimations();
         cfg.Data.Appearance.Style = style0;
         Theme.Apply(cfg.Data.Appearance);
-        Log.Info($"perf: the retro styles' pixel text from kept layouts against DrawText, {shots} pictures: {diff} pixels differ (want 0)");
+        Want($"perf: the retro styles' pixel text from kept layouts against DrawText, {shots} pictures: {diff} pixels differ (want 0)", diff == 0 && shots > 0);
     }
 
     // the modern keyboard's kept picture (KeyboardPanel.Draw: the frame and the keys at rest kept, only the keys doing something drawn
@@ -314,17 +315,23 @@ static partial class Tools
         typeof(KeyboardPanel).GetField("_chat", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.SetValue(kb, false);
         cfg.Data.Appearance.Style = style0;
         Theme.Apply(cfg.Data.Appearance);
-        Log.Info($"perf: the modern keyboard's kept picture against the whole picture drawn, {shots} states: {diff} pixels differ (want 0)");
+        Want($"perf: the modern keyboard's kept picture against the whole picture drawn, {shots} states: {diff} pixels differ (want 0)", diff == 0 && shots > 0);
     }
 
     // the VR settings panel's corners cut after drawing (Painter.CutCorners) against the clip layer they replaced, every tab: the
-    // pixels that differ and by how much (a channel, 0-255)
+    // pixels that differ and by how much (a channel, 0-255). CutCorners keeps the layer's coverage of a corner as an 8-bit alpha and
+    // multiplies by it later, where the layer multiplies by its own coverage at once: two roundings for one, a pixel on the curve can be
+    // a level off (the "one 8-bit step" of its comment). So a level is allowed - only in the four corner squares; a pixel anywhere
+    // else differing at all, or one more than a level off, is a real difference.
     static void PanelCornersCheck(SettingsView panelView, Ui ui, Surface surf, PointerState ptr, Painter painter, Gpu gpu, ConfigStore cfg)
     {
         string style0 = cfg.Data.Appearance.Style;
         cfg.Data.Appearance.Style = null;
         Theme.Apply(cfg.Data.Appearance);
-        int keep = panelView.Tab, diff = 0, max = 0;
+        int keep = panelView.Tab, diff = 0, max = 0, over = 0, outside = 0;
+        // the corner squares as CutCorners takes them (its own sums: the radius 22 at the panel's 1.5 scale, 2 px more)
+        int cs = (int)MathF.Ceiling(22 * 1.5f) + 2, cx1 = (int)MathF.Ceiling(SettingsView.W * 1.5f) - cs, cy1 = (int)MathF.Ceiling(SettingsView.H * 1.5f) - cs;
+        bool InCorner(int x, int y) => (x < cs || (x >= cx1 && x < cx1 + cs)) && (y < cs || (y >= cy1 && y < cy1 + cs));
         ptr.Leave();
         var all = new RectangleF(0, 0, SettingsView.W, SettingsView.H);
         uint[] Shot(bool layer)
@@ -357,15 +364,19 @@ static partial class Tools
             {
                 if (a[i] == b[i]) continue;
                 diff++;
-                for (int sh = 0; sh < 32; sh += 8) max = Math.Max(max, Math.Abs((int)((a[i] >> sh) & 0xFF) - (int)((b[i] >> sh) & 0xFF)));
+                int most = 0;
+                for (int sh = 0; sh < 32; sh += 8) most = Math.Max(most, Math.Abs((int)((a[i] >> sh) & 0xFF) - (int)((b[i] >> sh) & 0xFF)));
+                max = Math.Max(max, most);
+                if (most > 1) over++;
+                if (!InCorner(i % surf.W, i / surf.W)) outside++;
             }
         }
         panelView.Tab = keep;
         ui.ResetAnimations();
         cfg.Data.Appearance.Style = style0;
         Theme.Apply(cfg.Data.Appearance);
-        Log.Info($"perf: the VR settings panel's corners cut against the clip layer, {SettingsView.TabCount} tabs: {diff} pixels differ (want 0), " +
-                 $"by up to {max} of 255");
+        Want($"perf: the VR settings panel's corners cut against the clip layer, {SettingsView.TabCount} tabs: {diff} pixels differ by up to {max} of 255 " +
+             $"(want 1 or less: the 8-bit corner picture's rounding) - {over} more than a level off (want 0), {outside} outside the corners (want 0)", over == 0 && outside == 0);
     }
 
     // like FrameCost, but each round starts something (start) and then draws n frames on a 90 Hz grid - an animation measured over
@@ -422,6 +433,7 @@ static partial class Tools
     // (a listener of its own each time: one left listening would slow the next case's measurement down)
     static void AllocTypes(string what, Action draw, Action start)
     {
+        using var appOnly = AppAllocs();
         using var l = new AllocListener();
         Thread.Sleep(300);
         l.On = true;

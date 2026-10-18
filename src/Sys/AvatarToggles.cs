@@ -300,6 +300,7 @@ public sealed class AvatarLink : IDisposable
     public Action<string, object> Send;     // a parameter to VRChat: its address and a bool / int / float (null: nothing is sent)
     public int OscPort = 9000;              // General's OSC port: where a tap goes when VRChat's HOST_INFO says none
     public double Poll = 2.5, Slow = 20, Confirm = 0.6, Hold = 1.5;      // seconds: watched, not watched, after a tap, a tap shown
+    public Func<DateTime> HoldClock = () => DateTime.UtcNow;              // a tap's hold runs on it (--snapshot: a made-up clock, stepped)
 
     readonly AutoResetEvent _wake = new(false);
     readonly object _lock = new();
@@ -407,7 +408,7 @@ public sealed class AvatarLink : IDisposable
             n.Values[i] = v;
             n.Pending = !_frozen;
             Publish(n);
-            _held[p.Address] = (v, DateTime.UtcNow.AddSeconds(Hold));
+            _held[p.Address] = (v, HoldClock().AddSeconds(Hold));
             _out[p.Address] = (p, v);
             if (p.Kind != AvatarKind.Slider) _sentAt.Remove(p.Address);      // a tap goes at once, however soon after the last
 
@@ -511,7 +512,7 @@ public sealed class AvatarLink : IDisposable
         lock (_lock)
         {
             var old = _pub;
-            var now = DateTime.UtcNow;
+            var now = HoldClock();
             // a tap's hold that is over: what VRChat says wins again (another avatar's too: it would keep the reads coming fast)
             if (_held.Count > 0)
                 foreach (var addr in new List<string>(_held.Keys))
