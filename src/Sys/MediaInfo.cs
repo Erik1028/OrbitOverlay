@@ -11,7 +11,7 @@ namespace Orbit;
 
 // "Now playing" from the Windows media session (the same source as the volume flyout):
 // title, artist, cover art and play state of whatever player is active (Spotify, browser, ...),
-// plus play/pause and next/previous. Read on a background thread when Windows reports a change
+// plus play/pause and next/previous (and a jump in the track, for the theater bar). Read on a background thread when Windows reports a change
 // (session switched, new track, play/pause) and every 10 s as a safety net. It used to poll every
 // second: each poll left WinRT objects behind that only a GC frees (~14 MB a minute, measured),
 // and Orbit's VR loop now makes so little garbage that GCs became rare. Some players (live streams)
@@ -101,12 +101,17 @@ public sealed class MediaInfo : IDisposable
                 if (s == null)
                 {
                     lastKey = null;            // the same track coming back must load its cover again
+                    lock (_lock) _canSeek = false;
                     Set(false, null, null, false, null, null, null);
                 }
                 else
                 {
                     var props = s.TryGetMediaPropertiesAsync().AsTask().GetAwaiter().GetResult();
-                    bool playing = s.GetPlaybackInfo()?.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing;
+                    var info = s.GetPlaybackInfo();
+                    bool playing = info?.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing;
+                    bool seek = false;
+                    try { seek = info?.Controls?.IsPlaybackPositionEnabled == true; } catch { }
+                    lock (_lock) _canSeek = seek;
                     string key = props?.Title + "\u0001" + props?.Artist;
                     uint[] art = null;
                     bool newKey = key != lastKey;
@@ -168,6 +173,13 @@ public sealed class MediaInfo : IDisposable
             double p = _pos + (_playing ? (DateTimeOffset.Now - _posAt).TotalSeconds : 0);
             return (true, Math.Clamp(p, 0, _dur), _dur);
         }
+    }
+
+    // the player lets you jump about in the track (the theater bar's -10 s / +10 s, Panels/TheaterBarMedia.cs - else it steps tracks)
+    bool _canSeek;
+    public bool CanSeek()
+    {
+        lock (_lock) return _canSeek && _has;
     }
 
     void Set(bool has, string title, string artist, bool playing, uint[] art, string artChanged, string app)
@@ -234,6 +246,31 @@ public sealed class MediaInfo : IDisposable
                 _wake.Set();
             }
             catch (Exception e) { Log.Warn("media command: " + e.Message); }
+        });
+    }
+
+    // to this many seconds into the track (the theater bar's -10 s / +10 s and its stick steps: it works out where from what it shows,
+    // so quick presses add up even before the player has told where it is now); read again right after, like a command
+    public void SeekTo(double seconds)
+    {
+        var mgr = _mgr;
+        if (mgr == null) return;
+        Task.Run(async () =>
+        {
+            try
+            {
+                var s = mgr.GetCurrentSession();
+                if (s == null) return;
+                var tl = s.GetTimelineProperties();
+                var to = tl.StartTime + TimeSpan.FromSeconds(Math.Max(0, seconds));
+                if (to > tl.EndTime - TimeSpan.FromSeconds(1)) to = tl.EndTime - TimeSpan.FromSeconds(1);    // not past the end: that ends it
+                if (to < tl.StartTime) to = tl.StartTime;
+                await s.TryChangePlaybackPositionAsync(to.Ticks);
+                await Task.Delay(150);
+                _now = true;
+                _wake.Set();
+            }
+            catch (Exception e) { Log.Warn("media seek: " + e.Message); }
         });
     }
 

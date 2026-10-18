@@ -47,6 +47,7 @@ public sealed partial class TheaterBar
                 _p.Text(t, new RectangleF(r.X + 50, r.Y, r.Width - 58, r.Height), fg, ts, FontWeight.SemiBold);
                 CyberHud.MonoAt(_p, Ui.Id("SCR-0", i + 1), r.Right - 50, r.Y + 15, 44, Theme.Mix(CyberHud.Faint, CyberHud.Ink, a), 10, FontWeight.Bold);
             }
+            x = MediaCyber(x, ch);          // what plays: the readout and the transport (TheaterBarMedia.cs; nothing without a session)
         }
         else
         {
@@ -103,6 +104,7 @@ public sealed partial class TheaterBar
             AnimWake.At(Clock.Now);
         }
         _p.End();
+        MediaAfter();
         _ui.End();
         Act(pick, go, exit, changed, kb);
     }

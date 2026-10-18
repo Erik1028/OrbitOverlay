@@ -125,6 +125,7 @@ public sealed partial class TheaterBar : IPointerTarget, IDisposable
             return;
         }
 
+        if (th) MediaTick(now);          // theater mode: what plays, for the Cyber bar's media part (TheaterBarMedia.cs)
         // held (a slider dragged) or just stepped with the stick: the bar keeps its place and layout
         bool held = (_ptr.Down || now < _holdUntil) && _owner != null;
         if (th && !held && (!Same(choices) || _current != theater.Screen))
@@ -134,7 +135,7 @@ public sealed partial class TheaterBar : IPointerTarget, IDisposable
             _current = theater.Screen;
             _dirty = true;
         }
-        int key = (th ? 1000 + _choices.Count * 8 : 0) + (int)Theme.Retro + 100000 * Lang.Version;      // another style or language: another width
+        int key = (th ? 1000 + _choices.Count * 8 : 0) + (int)Theme.Retro + 100000 * Lang.Version + MediaKey;     // another style or language: another width
         if (key != _layoutKey && !held) Relayout(key);
         // changed elsewhere (grabbing the big screen, the settings window): the sliders follow
         if (SizeNow != _lastSize || C.Dim != _drawnDim || C.Curved != _drawnCurved || KbOn != _drawnKb) _dirty = true;
@@ -171,6 +172,7 @@ public sealed partial class TheaterBar : IPointerTarget, IDisposable
             _dirty = _ui.Interacting || _ui.Changed;
             _wake = AnimWake.Take();
         }
+        else if (MediaPartUpdate()) Ov.SetTexture(_surf.Tex);      // only the media readout moved on (TheaterBarMedia.cs)
         Ov.Show();
     }
 
@@ -202,8 +204,8 @@ public sealed partial class TheaterBar : IPointerTarget, IDisposable
         }
         else
         {
-            _tw = Pad + (_theater ? n * (ChipW + Gap) : GoW + Gap) + SliderW + Gap + SliderW + Gap + CurveW + Gap + (H - 2 * Pad) +
-                  (_theater ? Gap + (H - 2 * Pad) : 0) + Pad;
+            _tw = Pad + (_theater ? n * (ChipW + Gap) : GoW + Gap) + MediaW + SliderW + Gap + SliderW + Gap + CurveW + Gap + (H - 2 * Pad) +
+                  (_theater ? Gap + (H - 2 * Pad) : 0) + Pad;      // MediaW: Cyber's media part in theater mode (TheaterBarMedia.cs), else 0
             _th = H;
         }
         _retired?.Dispose();
@@ -509,7 +511,7 @@ public sealed partial class TheaterBar : IPointerTarget, IDisposable
         _choices.Clear();
         _choices.AddRange(choices);
         _current = current;
-        int key = (_theater ? 1000 + _choices.Count * 2 : 0) + (Theme.Classic ? 1 : 0);
+        int key = (_theater ? 1000 + _choices.Count * 2 : 0) + (Theme.Classic ? 1 : 0) + MediaKey;
         if (key != _layoutKey) Relayout(key);
         Draw();
         return _surf;
@@ -521,5 +523,7 @@ public sealed partial class TheaterBar : IPointerTarget, IDisposable
         _surf?.Dispose();
         _retired?.Dispose();
         _canvas95?.Dispose();
+        _read?.Dispose();
+        _line?.Dispose();
     }
 }
