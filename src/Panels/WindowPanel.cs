@@ -148,6 +148,7 @@ public sealed class WindowPanel : ITheaterScreen, IDisposable
         _cap?.SetCursorCapture(!(want && _mouse.Panel == this && _mouse.Hand != null && Cfg.Mouse));
         // aside in theater mode it is still captured, slowly: switching to it shows what is on it now
         bool warm = !want && TheaterHidden && _cap != null && !_cap.Closed;
+        if (want && _staleTex && _cap != null && !_cap.Closed) Hand();       // shown again: the picture taken meanwhile, at once
         if (!want && !warm) return;
         bool hovered = _hovering[0] || _hovering[1];
         float rate = !want ? 3 : !smart ? fps
@@ -156,10 +157,19 @@ public sealed class WindowPanel : ITheaterScreen, IDisposable
         if (!DesktopPanel.CaptureDue(ref _nextFrame, now, rate)) return;
         if (_cap.Poll())
         {
-            Ov.SetMouseScale(_cap.Target.W, _cap.Target.H);
-            Ov.SetTexture(_cap.Target.Tex);
-            _hasTexture = true;
+            // hidden it is only kept fresh: SteamVR gets it once it shows
+            if (want) Hand(); else _staleTex = true;
         }
+    }
+
+    bool _staleTex;
+
+    void Hand()
+    {
+        Ov.SetMouseScale(_cap.Target.W, _cap.Target.H);
+        Ov.SetTexture(_cap.Target.Tex);
+        _hasTexture = true;
+        _staleTex = false;
     }
 
     // ---- IPointerTarget ----

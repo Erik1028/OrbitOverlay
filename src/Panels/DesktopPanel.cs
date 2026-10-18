@@ -104,13 +104,23 @@ public sealed class DesktopPanel : ITheaterScreen, IDisposable
         // aside in theater mode it is still captured, slowly: switching to it shows what is on it now, not the
         // picture from when it was hidden (that jumped to the new one a moment later)
         bool warm = !want && TheaterHidden && _cap != null && !_cap.Closed;
+        if (want && _staleTex && _cap != null && !_cap.Closed) Hand();       // shown again: the picture taken meanwhile, at once
         if (!(want || warm) || !CaptureDue(ref _nextFrame, now, want ? EffectiveFps(vr, fps) : 3)) return;
         if (_cap.Poll())
         {
-            Ov.SetMouseScale(_cap.Target.W, _cap.Target.H);
-            Ov.SetTexture(_cap.Target.Tex);
-            _hasTexture = true;
+            // hidden it is only kept fresh: SteamVR gets it once it shows (it copied every one of those 3 a second for nothing)
+            if (want) Hand(); else _staleTex = true;
         }
+    }
+
+    bool _staleTex;
+
+    void Hand()
+    {
+        Ov.SetMouseScale(_cap.Target.W, _cap.Target.H);
+        Ov.SetTexture(_cap.Target.Tex);
+        _hasTexture = true;
+        _staleTex = false;
     }
 
     public bool SmartCapture = true;

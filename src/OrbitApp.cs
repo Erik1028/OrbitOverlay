@@ -89,7 +89,18 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
     double _dashNext;
 
     bool _quit;
-    double _nextConnect, _nextMonitorCheck, _nextRuntimeCheck, _last;
+    double _nextConnect, _nextMonitorCheck, _nextMonitorFull, _nextRuntimeCheck, _last;
+    int _screensSig;
+
+    bool ScreensMoved()
+    {
+        var h = new HashCode();
+        foreach (var s in Screen.AllScreens) h.Add(s.Bounds);
+        int sig = h.ToHashCode();
+        if (sig == _screensSig) return false;
+        _screensSig = sig;
+        return true;
+    }
     string _vrStatus = "Waiting for SteamVR";
 
     static double Now => Clock.Now;
@@ -275,16 +286,35 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
     }
 
     // SetGPUThreadPriority needs the "increase scheduling priority" right (admin); without it the call fails harmlessly.
-    void ApplyGpuPriority()
+    // High (7) only while Orbit is in use - a laser on a panel or holding one, the watch in view, theater playing, and 1.5 s after
+    // (Erik 10-18: "it must not lower VRChat's frame rate, above all while it is off"): at 7 every capture copy and panel draw jumped
+    // ahead of the game's frame and broke into it; while nothing is used, Orbit's few jobs wait their turn (0) like any app's.
+    Vortice.DXGI.IDXGIDevice _dxgi;
+    int _gpuPrio = -1;
+    double _gpuBusyUntil;
+    bool _gpuPrioFailed;
+
+    void ApplyGpuPriority(int want = 0)
     {
-        int want = C.General.HighGpuPriority ? 7 : 0;
+        if (!C.General.HighGpuPriority) want = 0;
+        if (want == _gpuPrio || _gpuPrioFailed) return;
         try
         {
-            using var dxgi = _gpu.Device.QueryInterface<Vortice.DXGI.IDXGIDevice>();
-            var hr = dxgi.SetGPUThreadPriority(want);
-            Log.Info($"GPU priority {want}: {(hr.Success ? "ok" : hr.ToString())}");
+            _dxgi ??= _gpu.Device.QueryInterface<Vortice.DXGI.IDXGIDevice>();
+            var hr = _dxgi.SetGPUThreadPriority(want);
+            if (_gpuPrio < 0 || !hr.Success) Log.Info($"GPU priority {want}: {(hr.Success ? "ok (7 while Orbit is in use, else 0)" : hr.ToString())}");
+            if (!hr.Success) _gpuPrioFailed = true;
+            _gpuPrio = want;
         }
-        catch (Exception e) { Log.Warn("GPU priority: " + e.Message); }
+        catch (Exception e) { Log.Warn("GPU priority: " + e.Message); _gpuPrioFailed = true; }
+    }
+
+    // each frame: in use now? (the decision's own cost: a few flag tests; the call itself only on a change)
+    void UpdateGpuPriority(double now)
+    {
+        bool busy = _lasers[0].Active || _lasers[1].Active || _theater.On || (_wrist?.Alpha ?? 0) > 0.02f;
+        if (busy) _gpuBusyUntil = now + 1.5;
+        ApplyGpuPriority(now < _gpuBusyUntil ? 7 : 0);
     }
 
     // An event query after each frame's work: if it is still pending one loop later, Orbit's GPU work
@@ -301,8 +331,15 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         _gpuProbePending = false;
     }
 
+    long _probeTex = -1;
+
     void GpuProbeIssue()
     {
+        // only a frame that gave SteamVR a picture had GPU work to hand over (a draw, a capture copy, an upload) - an idle frame
+        // sent the GPU an empty submission 90 times a second, at the high priority
+        long tex = VrOverlay.Calls.Sent[VrOverlay.Calls.Texture];
+        if (tex == _probeTex) return;
+        _probeTex = tex;
         try
         {
             _gpuProbe ??= _gpu.Device.CreateQuery(new Vortice.Direct3D11.QueryDescription(Vortice.Direct3D11.QueryType.Event));
@@ -443,7 +480,13 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         if (now >= _nextMonitorCheck)
         {
             _nextMonitorCheck = now + 5;
-            SyncMonitors(force: false);
+            // the full query (QueryDisplayConfig and a device-info call a display: some drivers take ms, on the VR loop's thread) only
+            // when the screens' places changed - Windows keeps those for free - or once a minute (a monitor swapped in the same place)
+            if (ScreensMoved() || now >= _nextMonitorFull)
+            {
+                _nextMonitorFull = now + 60;
+                SyncMonitors(force: false);
+            }
             // a monitor that dropped out for a moment (link retrain, power cycle) keeps the same layout,
             // so the check above sees nothing - but its capture has ended: rebuild (at most every 30 s)
             if (now >= _nextDeadRebuild && _desktops.Any(d => d.CaptureDead))
@@ -474,7 +517,11 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             GpuProbeCheck();
             double t = Clock.Now;
             _allocMark = GC.GetAllocatedBytesForCurrentThread();
+            _vr.Idle = VrOverlay.ShownCount == 0 && !_vr.Suppress[0] && !_vr.Suppress[1];     // nothing of Orbit's in view (VrSession.Idle)
             _vr.Update();
+            bool watched = (_wrist?.Alpha ?? 0) > 0.02f;
+            _data.Vr.Watched = watched;                 // the batteries every second while the watch shows, else every 5 s
+            _gpuStats.Active = watched;                 // the GPU counters (a few ms a sample) only while the watch can show them
             _data.Vr.Update(_vr, now);
             FirstUseIfPending();
             if (_wrist.WantsFrames) _data.Vr.SampleFrame(_vr);
@@ -534,7 +581,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
                 if (now >= _nextWindowScan) { _nextWindowScan = now + 2; ScanWindows(); }
             }
             Perf(5, ref t);
-            UpdateDashboard(now);
+            UpdateDashboard(now, dash);
             _notifyPanel.Update(_notifyIn, now, dt);
             AutoKeyboard(now);
             // night mode fades in / out over a moment
@@ -554,6 +601,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
                 _status.Update(now, C.Chatbox.StatusLine, C.General.OscPort,
                     StatusLine.Compose(C.Chatbox, (m.has, m.title, m.artist, m.playing), DateTime.Now, _data.VrSince, C.Appearance.Clock24h));
             }
+            UpdateGpuPriority(now);
             Perf(6, ref t);
             GpuProbeIssue();
             PerfFrame(now);
@@ -724,9 +772,19 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         catch (Exception e) { Log.Error("dashboard: " + e.Message); }
     }
 
-    void UpdateDashboard(double now)
+    // dashOpen: SteamVR's dashboard is open (asked once a frame anyway) - closed, its Orbit tab cannot show: no events to read, nothing
+    // to draw (two calls to SteamVR a frame spared); a leave it missed is caught up when it opens again
+    bool _dashWasOpen;
+
+    void UpdateDashboard(double now, bool dashOpen)
     {
         if (_dash == null) return;
+        if (!dashOpen)
+        {
+            if (_dashWasOpen) { _dashWasOpen = false; _dashPtr.Leave(); _dashDirty = true; }
+            return;
+        }
+        _dashWasOpen = true;
         var ev = new VREvent_t();
         uint size = (uint)Marshal.SizeOf<VREvent_t>();
         while (_vr.Ov.PollNextOverlayEvent(_dash.Handle, ref ev, size))
@@ -1961,6 +2019,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         _temps.Dispose();
         _weather.Dispose();
         _lumos.Dispose();
+        _dxgi?.Dispose();
         _prisma.Dispose();
         AvatarDispose();
         _pacer.Dispose();

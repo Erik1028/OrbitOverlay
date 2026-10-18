@@ -32,12 +32,16 @@ public sealed class KeySounds : IDisposable
     public void Reopen()
     {
         if (_initializing) return;
+        // only when the default device changed since it was opened: closing and reopening on every show left the first keys silent
+        if (_xa != null && _openedFor == AudioMixer.DefaultChanges) return;
+        _openedFor = AudioMixer.DefaultChanges;
         CloseAudio();
         _failed = false;
         Warm();
     }
 
     volatile bool _initializing;
+    int _openedFor = -1;
 
     // Opens XAudio2 on a worker thread; a click requested before it is ready is skipped
     // (better than a 60 ms hitch in the laser loop).

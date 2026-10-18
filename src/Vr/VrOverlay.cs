@@ -54,6 +54,7 @@ public sealed class VrOverlay : IDisposable
     IntPtr _lastTex;
 
     public bool Visible => _visible;
+    public static int ShownCount;                    // Orbit's overlays showing now (0: nothing of Orbit's in view - VrSession.Idle)
     public IntPtr TextureForTest => _lastTex;        // (the checks: the texture it was given last)
     public float Alpha => _alpha < 0 ? 1 : _alpha;   // as last set (never set: SteamVR's default, 1 - as Width)
     // (the checks and the headset-view renderer, CyberFloorTest.cs: what SteamVR was told last - sort order, place, part of the texture)
@@ -218,6 +219,7 @@ public sealed class VrOverlay : IDisposable
     {
         if (_visible) { Calls.Spared[Calls.Show]++; return; }
         _visible = true;
+        ShownCount++;
         ShownAt = Clock.Now;
         Calls.Sent[Calls.Show]++;
         if (!Fake) Ov.ShowOverlay(Handle);
@@ -228,6 +230,7 @@ public sealed class VrOverlay : IDisposable
     {
         if (!_visible) { Calls.Spared[Calls.Hide]++; return; }
         _visible = false;
+        ShownCount--;
         Calls.Sent[Calls.Hide]++;
         if (!Fake) Ov.HideOverlay(Handle);
     }
@@ -316,6 +319,7 @@ public sealed class VrOverlay : IDisposable
 
     public void Dispose()
     {
+        if (_visible) { _visible = false; ShownCount--; }
         _dimmed.Remove(this);
         if (Fake) return;
         try { Ov?.DestroyOverlay(Handle); } catch { }

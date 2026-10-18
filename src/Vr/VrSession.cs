@@ -34,6 +34,7 @@ public sealed class VrSession : IDisposable
     readonly TrackedDevicePose_t[] _poses = new TrackedDevicePose_t[OpenVR.k_unMaxTrackedDeviceCount];
     public readonly Matrix4x4[] Device = new Matrix4x4[OpenVR.k_unMaxTrackedDeviceCount];
     public readonly bool[] DeviceValid = new bool[OpenVR.k_unMaxTrackedDeviceCount];
+    public readonly bool[] DeviceConnected = new bool[OpenVR.k_unMaxTrackedDeviceCount];      // (the poses' own flag: no call to ask)
     public uint LeftIndex = InvalidIndex, RightIndex = InvalidIndex;
     public float DisplayHz = 90;
     public int AdapterIndex = -1;
@@ -49,6 +50,11 @@ public sealed class VrSession : IDisposable
     // priority, so the game (VRChat) does not get the trigger, grip, stick or B / Y it would otherwise also see.
     // Set by the app every frame; one entry per hand, restricted to that hand.
     public readonly bool[] Suppress = new bool[2];
+    // nothing of Orbit's shows and no hand is kept from the game (OrbitApp sets it each frame): the buttons and the aim read 30 times a
+    // second, the hands' roles once a second - the poses (the watch's raise) still every frame. 11 calls to SteamVR a frame were made
+    // for an Orbit nobody saw (Erik 10-18: "above all while it is off"); the first frame anything shows reads everything again.
+    public bool Idle;
+    int _idleTick;
     readonly ulong[] _handSource = new ulong[2];
     readonly VRActiveActionSet_t[] _handSets = new VRActiveActionSet_t[2];
     bool _perHandFailed;
@@ -78,10 +84,31 @@ public sealed class VrSession : IDisposable
     public uint HandIndex(Hand h) => h == Hand.Left ? LeftIndex : RightIndex;
     public bool HmdValid => DeviceValid[0];
 
+    static System.Diagnostics.Process _vrserver;
+
     public static bool RuntimeRunning()
     {
-        // VR_Init with an overlay app type would START SteamVR; only connect when it already runs.
-        try { return System.Diagnostics.Process.GetProcessesByName("vrserver").Length > 0 && OpenVR.IsRuntimeInstalled(); }
+        // VR_Init with an overlay app type would START SteamVR; only connect when it already runs. Its process is kept once found and
+        // asked whether it has ended (a wait of 0 ms) - listing every process on the PC every 2 s took ms on the VR loop's thread.
+        try
+        {
+            if (_vrserver != null)
+            {
+                bool gone;
+                try { gone = _vrserver.HasExited; }
+                catch (Exception) { gone = true; }        // (not allowed to ask: looked up again below)
+                if (!gone) return true;
+                _vrserver.Dispose();
+                _vrserver = null;
+            }
+            var found = System.Diagnostics.Process.GetProcessesByName("vrserver");
+            foreach (var p in found)
+            {
+                if (_vrserver == null) { try { _ = p.HasExited; _vrserver = p; continue; } catch (Exception) { } }
+                p.Dispose();
+            }
+            return found.Length > 0 && OpenVR.IsRuntimeInstalled();
+        }
         catch { return false; }
     }
 
@@ -183,11 +210,17 @@ public sealed class VrSession : IDisposable
         for (int i = 0; i < _poses.Length; i++)
         {
             DeviceValid[i] = _poses[i].bPoseIsValid && _poses[i].bDeviceIsConnected;
+            DeviceConnected[i] = _poses[i].bDeviceIsConnected;
             if (DeviceValid[i]) Device[i] = MathUtil.FromHmd(_poses[i].mDeviceToAbsoluteTracking);
         }
         UpdateWorn();
-        LeftIndex = Sys.GetTrackedDeviceIndexForControllerRole(ETrackedControllerRole.LeftHand);
-        RightIndex = Sys.GetTrackedDeviceIndexForControllerRole(ETrackedControllerRole.RightHand);
+        _idleTick = Idle ? _idleTick + 1 : 0;
+        bool readInput = !Idle || _idleTick % 3 == 1;
+        if (!Idle || _idleTick % 90 == 1)
+        {
+            LeftIndex = Sys.GetTrackedDeviceIndexForControllerRole(ETrackedControllerRole.LeftHand);
+            RightIndex = Sys.GetTrackedDeviceIndexForControllerRole(ETrackedControllerRole.RightHand);
+        }
 
         for (int h = 0; h < 2; h++)
         {
@@ -195,7 +228,8 @@ public sealed class VrSession : IDisposable
             hs.ClickPrev = hs.Click; hs.GrabPrev = hs.Grab; hs.SecondaryPrev = hs.Secondary;
         }
 
-        if (_inputOk)
+        if (_inputOk && !readInput) { }           // (idle, between two reads: the hands as last read - no edges made up)
+        else if (_inputOk)
         {
             UpdateActionSets();
             for (int h = 0; h < 2; h++)
@@ -367,7 +401,8 @@ public sealed class VrStats
     }
     public float LeftBattery = -1, RightBattery = -1, TrackerAverage = -1;
     Compositor_CumulativeStats _prev;
-    double _prevT = -1, _next;
+    double _prevT = -1, _next, _nextBatt;
+    public bool Watched = true;          // the watch shows: the batteries every second (else every 5 s: the alerts need no more)
     readonly Compositor_FrameTiming[] _timings = new Compositor_FrameTiming[30];
 
     public void Update(VrSession vr, double now)
@@ -407,6 +442,9 @@ public sealed class VrStats
             GpuMs = sum / n;
         }
 
+        // the batteries: three property reads a device (each a call to SteamVR) - every second only while the watch can show them
+        if (now < _nextBatt) return;
+        _nextBatt = now + (Watched ? 1 : 5);
         Batteries.Clear();
         Devices.Clear();
         TrackerCount = 0;
@@ -415,7 +453,7 @@ public sealed class VrStats
         bool trackerCharging = false;
         for (uint i = 0; i < OpenVR.k_unMaxTrackedDeviceCount; i++)
         {
-            if (!vr.Sys.IsTrackedDeviceConnected(i)) continue;
+            if (!vr.DeviceConnected[i]) continue;          // (the poses say it: 64 calls a second saved)
             var cls = vr.Sys.GetTrackedDeviceClass(i);
             if (cls != ETrackedDeviceClass.HMD && cls != ETrackedDeviceClass.Controller && cls != ETrackedDeviceClass.GenericTracker) continue;
             if (!vr.BoolProp(i, ETrackedDeviceProperty.Prop_DeviceProvidesBatteryStatus_Bool)) continue;

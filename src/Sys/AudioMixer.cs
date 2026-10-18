@@ -33,6 +33,7 @@ namespace Orbit;
 // mixer is a made-up one (MixerFake) unless the app hands it this one (WristPanel.UseRealAudio).
 public sealed class AudioMixer : IDisposable
 {
+    public static int DefaultChanges;       // the default output device changed (counted by the device's Follow: the key clicks reopen then)
     public static string Mode = "auto";            // General.VolumeToApps: auto | on | off (the app sets it every frame)
 
     // Does this device ignore its own volume (so the apps must follow it)? See WHICH DEVICES above.
@@ -682,6 +683,7 @@ sealed class CoreAudioDevice : IMixerDevice
             }
             if (id == _id && (_vol != null || id == null)) return false;
             Acquire();
+            AudioMixer.DefaultChanges++;
             return true;
         }
         catch (Exception e)

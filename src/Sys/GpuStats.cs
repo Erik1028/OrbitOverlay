@@ -10,6 +10,7 @@ public sealed class GpuStats : IDisposable
 {
     public volatile float Load3D = -1;          // percent
     public volatile float VramUsedGB = -1;
+    public volatile bool Active = true;         // off: no samples (the wildcard query costs a few ms) - OrbitApp: while the watch shows
     readonly Thread _t;
     volatile bool _stop;
 
@@ -30,6 +31,7 @@ public sealed class GpuStats : IDisposable
             while (!_stop)
             {
                 Thread.Sleep(1000);
+                if (!Active) continue;
                 if (Native.PdhCollectQueryData(q) != 0) continue;
                 double load = Sum(engine, out _);
                 Sum(mem, out double maxMem);

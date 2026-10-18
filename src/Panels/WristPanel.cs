@@ -53,6 +53,7 @@ public sealed partial class WristPanel : IPointerTarget, IDisposable
     public readonly Surface Surf;
     public VrOverlay Ov { get; private set; }
     public Action<string> OnAction;
+    double _shownAt = -1e9;              // the last frame the watch showed (its intro: not on a glance back)
     public float Alpha;
     bool _dirty = true, _grabbing;
     int _themeVersion = -1;
@@ -128,8 +129,11 @@ public sealed partial class WristPanel : IPointerTarget, IDisposable
         if (!Ov.Visible)
         {
             _dirty = true;
-            if ((C.Face == "custom" || Theme.Cyber) && !Theme.Classic) Intro();      // the widgets cascade in (Cyber: every face boots)
+            // the widgets cascade in (Cyber: every face boots) - not again on a glance back within 20 s: the watch is simply there
+            // (a 1.2 s cascade on every raise made a look at the time slow; Erik 10-18: "very responsive")
+            if ((C.Face == "custom" || Theme.Cyber) && !Theme.Classic && now - _shownAt > 20) Intro();
         }
+        _shownAt = now;
         Ov.Show();
         if (_themeVersion != Theme.Version) { _themeVersion = Theme.Version; _dirty = true; }
         // Hexpad's keys / knobs changed (its animations, a knob turned): drawn as they come (up to its 20 a second), not on the
