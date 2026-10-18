@@ -102,7 +102,7 @@ public sealed class Laser : IDisposable
     // way the hand points), every hand's trigger clicks there, the hands' own lasers never hover a screen (the keyboard, the watch, the
     // settings, a bar: as usual); off once the hand points at another panel (OtherPanelHold) or the eyes are off the screens (EyeAway) -
     // never while a button is held (a drag). Eye tracking lost: the hands' lasers on the screens again.
-    public const float EyeAway = 0.4f, OtherPanelHold = 0.12f;
+    public const float EyeAway = 0.4f, OtherPanelHold = 0.12f, EdgeSnap = 3 * MathF.PI / 180;
     double _eyeSeenAt, _offWantSince = -1;
     IPointerTarget _handScreen;
     Vector2 _handPx;
@@ -451,7 +451,27 @@ public sealed class Laser : IDisposable
                 screen = t.WarpTarget;           // (the settings, the keyboard, a bar in front of a monitor: not a screen)
             }
         }
-        return screen;
+        if (screen || nearest < float.MaxValue) return screen;
+        // just past a screen's edge - the eyes' own error, and the top row (tabs, title bars) lies on the very edge (Erik 10-19's log: the
+        // look a degree above the top, the cursor waiting): onto the nearest edge, up to EdgeSnap away
+        float best = EdgeSnap;
+        bool snapped = false;
+        for (int i = 0; i < targets.Count; i++)
+        {
+            var t = targets[i];
+            if (t == null || !t.WarpTarget || !t.Interactive || t.Overlay == null) continue;
+            if (!t.Overlay.ProjectLocal(vr, vr.GazeOrigin, vr.Gaze, out _, out _, out var pt, out _)) continue;
+            var to = pt - vr.GazeOrigin;
+            if (to.LengthSquared() < 1e-6f) continue;
+            float ang = EyeSpot.Angle(vr.Gaze, Vector3.Normalize(to));
+            if (ang < best)
+            {
+                best = ang;
+                at = pt;
+                snapped = true;
+            }
+        }
+        return snapped;
     }
 
     // what the hand's own ray is on: 1 a monitor / window, 2 another panel (the keyboard, the watch, the settings, a bar), 0 nothing
