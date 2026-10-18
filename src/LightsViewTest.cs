@@ -12,7 +12,8 @@ namespace Orbit;
 //  - the data (once): the Lumos link on a made-up Lumos (its answers in Lumos's own shape, nothing on the network: the link's HTTP is
 //    replaced) - read, toggle, brightness, a white, a colour, never /api/config, Lumos not running, no bulb set, Lumos's error; the
 //    Prisma link through a REAL named pipe of the tool's own (another name than Prisma's) with a made-up settings.json - the commands as
-//    Prisma's pipe gets them, the state read back, Prisma not running, its settings file never written.
+//    Prisma's pipe gets them, the state read back, Prisma not running, its settings file never written; the bulb straight (TapoDirect)
+//    on a made-up KLAP bulb of the tool's own on 127.0.0.1 (TapoDirectTest.cs).
 //  - each style: a tap on a 1x1 switches it, a tap on a 2x1's card opens it, no garbage at rest; pictures wrist_lights_<case><tag>.png.
 static class LightsViewTools
 {
@@ -46,7 +47,7 @@ static class LightsViewTools
     public static void DataChecks(WristPanel wrist, PanelData data, string dir)
     {
         var keep = (data.Lamp, data.Rgb);
-        try { LumosChecks(wrist, data); PrismaChecks(wrist, data, dir); }
+        try { LumosChecks(wrist, data); PrismaChecks(wrist, data, dir); TapoChecks.Run(); }
         finally { (data.Lamp, data.Rgb) = keep; }
     }
 
