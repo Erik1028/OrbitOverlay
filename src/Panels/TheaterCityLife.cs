@@ -74,7 +74,8 @@ public sealed partial class Theater
 
     // ---- city life ----
     bool _lifeOn, _lifeDirty;                // live now / a lamp in the texture is not as the city was drawn
-    int _lifeState;                          // the band under the lamps: 0 not yet, 1 being copied, 3 being read out, 2 here
+    int _lifeState;                          // the band under the lamps: 0 not yet, 1 being copied, 3 being read out, 2 here, 4 never
+                                             // (reading it out failed: the lamps stay as drawn - zeros would be holes in the city)
     Surface _lifeBare, _lifeSky;             // the band drawn without its lamps (until read back) / the band the lamps' levels are in
     ID3D11Texture2D _lifeStage;
     bool _lifeMapped;
@@ -263,7 +264,7 @@ public sealed partial class Theater
     bool LifeBase()
     {
         if (_lifeState == 2) return true;
-        if (_lamps.Length == 0) return false;
+        if (_lamps.Length == 0 || _lifeState == 4) return false;
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
         if (_lifeState == 0)
         {
@@ -303,8 +304,10 @@ public sealed partial class Theater
             LifeBuildMs += System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds;
             return false;
         }
-        if (System.Threading.Volatile.Read(ref _lifeCopied) == 0) { _lifeWaits++; return false; }
+        int copied = System.Threading.Volatile.Read(ref _lifeCopied);
+        if (copied == 0) { _lifeWaits++; return false; }
         LifeFree();
+        if (copied != 1) { _lifeState = 4; return false; }       // (LampsReadJob logged why; the cars still fly)
         _lifeState = 2;
         LifeBuildMs += System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds;
         Log.Info($"theater: the night city's {_lamps.Length} lamps ready ({_wins.Length} windows, {_signs.Length} signs, {_ants.Length} antennas, " +
@@ -319,9 +322,10 @@ public sealed partial class Theater
         _lifeCopied = 0;
         _lifeJob = new System.Threading.Thread(() =>
         {
+            int done = 1;                    // 1 read, 2 failed
             try { LampsRead(lamps, bse, drawn, y0, rows, data, pitch); }
-            catch (Exception e) { Log.Error("theater city life: " + e); }
-            System.Threading.Volatile.Write(ref _lifeCopied, 1);
+            catch (Exception e) { Log.Error("theater city life: " + e); done = 2; }
+            System.Threading.Volatile.Write(ref _lifeCopied, done);
         }) { IsBackground = true, Name = "theater city lamps" };
         _lifeJob.Start();
     }
