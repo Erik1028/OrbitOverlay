@@ -145,6 +145,7 @@ static partial class Tools
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "mediabar") return MediaBarOnly(cfg, painter, gpu, dir);     // theater bar's media console (MediaBarTest.cs)
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "focus") return FocusOnly(wrist, data, cfg, painter, gpu, dir);     // gaze focus (GazeFocusTest.cs)
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "theaterperf") return TheaterPerfOnly(cfg, painter, gpu, dir);  // a theater frame's cost, 20 s of it (ToolsTheaterPerf.cs)
+        if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "cyfloor") return CyberFloorOnly(cfg, painter, gpu, dir);        // Cyber theater's floor grid, the headset views (CyberFloorTest.cs)
         if (everything)
         {
             var sw0 = System.Diagnostics.Stopwatch.StartNew();

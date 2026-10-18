@@ -69,17 +69,20 @@ static partial class Tools
                 Func<float, float, (float r, float g, float b, float a)> band = null;
                 if (k == Theater.Backdrop.None)
                 {
-                    // Cyber: its city on the wall and its skyline band 0.15 m nearer (its alpha a little over the dim's), as it is
-                    px = th.GridForTest(0).ReadPixels(gpu);
+                    // Cyber: its city on the wall, its floor grid in front (overlays of its own, TheaterFloor.cs) and its skyline band 0.15 m
+                    // nearer (its alpha a little over the dim's), as it is
+                    px = Theater.CityAsBackdrop(th.GridForTest(0).ReadPixels(gpu));
                     var sky = th.SkylineForTest();
                     var spx = sky.ReadPixels(gpu);
+                    var floorAt = FloorSampler(th, gpu, dim);
                     int sw = sky.W, sh = sky.H;
                     float ba = Math.Min(1, dim * 1.3f);
                     band = (az, el) =>
                     {
+                        var fl = floorAt(az, el);
                         float row = MathF.Tan(el * MathF.PI / 180) / (MathF.PI / 8);       // TheaterCyber.BandRow
                         int by = (int)MathF.Floor(sh / 2f - row * sh / 2f);
-                        if (by < 0 || by >= sh) return (0, 0, 0, 0);
+                        if (by < 0 || by >= sh) return fl;
                         // the band has 4 texels to the wall's one: their average
                         int bx = (int)((az / 360 + 0.5f) * sw);
                         float r = 0, g = 0, b = 0, a = 0;
@@ -89,7 +92,7 @@ static partial class Tools
                             a += p >> 24; r += (p >> 16) & 0xFF; g += (p >> 8) & 0xFF; b += p & 0xFF;
                         }
                         float k = ba / (4 * 255f);
-                        return (r * k, g * k, b * k, a * k);
+                        return (r * k + fl.r * (1 - a * k), g * k + fl.g * (1 - a * k), b * k + fl.b * (1 - a * k), a * k + fl.a * (1 - a * k));
                     };
                     int horizonA = 255;
                     for (int x = 0; x < W; x++) horizonA = Math.Min(horizonA, (int)(px[H / 2 * W + x] >> 24));

@@ -557,7 +557,10 @@ static partial class Tools
                 SaveCrop(wall, gpu, Path.Combine(qa, "cyberui_wall_000.png"), new RectangleF(0, 0, wall.W, wall.H), keepAlpha: true);
                 var sky = th.SkylineForTest();
                 SaveCrop(sky, gpu, Path.Combine(qa, "cyberui_skyline.png"), new RectangleF(0, 0, sky.W, sky.H), keepAlpha: true);
-                index.AppendLine("wall|the theater wall: the night city (sky, neon horizon, floor grid) and its skyline band|cyberui_wall_000.png,cyberui_skyline.png");
+                var fl = th.FloorForTest();                   // the floor grid in front, its three pieces (TheaterFloor.cs)
+                for (int k = 0; k < fl.Length; k++) SaveCrop(fl[k], gpu, Path.Combine(qa, $"cyberui_floor_{k}.png"), new RectangleF(0, 0, fl[k].W, fl[k].H), keepAlpha: true);
+                index.AppendLine("wall|the theater wall: the night city (sky, stars, neon horizon's glow), its floor grid in front (three pieces) and its skyline band|" +
+                                 "cyberui_wall_000.png,cyberui_floor_0.png,cyberui_floor_1.png,cyberui_floor_2.png,cyberui_skyline.png");
             }
             {
                 // the city's frame: level whatever way the head and the screen are tilted, facing the screen, at the head

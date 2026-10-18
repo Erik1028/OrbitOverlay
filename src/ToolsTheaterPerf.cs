@@ -399,7 +399,8 @@ static partial class Tools
         }
         using (var th = new Theater(gpu, painter) { LifeSeed = 1018 })
         {
-            Once("the city wall 1024 x 2048 (DrawCity)", () => th.GridForTest(0));
+            Once($"the city wall 1024 x {Theater.CityH} (CityRows: the sky, the dim, the stars)", () => th.GridForTest(0));
+            Once($"the floor grid's three {Theater.FloorTexW} x {Theater.FloorTexH} (worked out, uploaded)", () => th.FloorDrawForTest());
             Once("the skyline band 4096 x 512 (DrawSkyline, its lamps recorded)", () => th.SkylineForTest());
             Log.Info($"theaterperf once: of the band's draw, the lamps' list {th.LampsEndMs:0.0} ms ({th.LampCount} lamps)");
             Once("the band without its lamps (city life's base)", () => th.SkylineDrawMsForTest(true));
