@@ -79,19 +79,12 @@ public sealed partial class KeyboardPanel
         bool closing = Ov != null && !(C.Visible && C.Place.M != null);
         bool shift = _mods["shift"] > 0, altgr = _mods["altgr"] > 0;
         _cyCaps = Caps;
-        _flashKeys.Clear();
-        _flashKeys.AddRange(_flash.Keys);
-        foreach (var key in _flashKeys)
-        {
-            if (Array.IndexOf(_down, key) >= 0) continue;
-            float f = Motion.Any ? _flash[key] - _lastDt / 0.25f : 0;
-            if (f <= 0) _flash.Remove(key); else _flash[key] = f;
-        }
+        FadeGlow();
         for (int s = 0; s < _hover.Length; s++)
             if (_cyHoverKey[s] != _hover[s]) { _cyHoverKey[s] = _hover[s]; _cyHoverAt[s] = now; }
         // the picture at rest, kept: made again only when it has changed; the opening / closing and the --snapshot's text checks draw
         // all of it, as before
-        bool live = CyberReveal.Running(shownAt, vis, closing) || _p.FitSpy != null || Painter.FitAll != null || _p.TextSpy != null || _p.NoText;
+        bool live = CyberReveal.Running(shownAt, vis, closing) || DrawsAll;
         if (!live)
         {
             int sig = CyBaseSig(shift, altgr);
@@ -119,7 +112,8 @@ public sealed partial class KeyboardPanel
     // The frame, the header and every key as it looks with nothing on it, in a texture of its own: made again when that picture
     // changes (a modifier, Caps, the layout, Chatbox, the look, the language). A frame is that texture, the Chatbox line and only the
     // keys doing something over it - under a laser, held, fading out, latching: ~0.2 ms instead of ~2.5 (Erik, 10-16: "better
-    // performance overall"; the settings' Keyboard tab draws the keyboard in every frame of its own).
+    // performance overall"; the settings' Keyboard tab draws the keyboard in every frame of its own). The modern keyboard keeps its
+    // picture in the same texture, under the same signature (KeyboardPanel.Draw, 10-18).
     Surface _cyBase;
     int _cyBaseSig;
     bool _cyBaseOk, _cyCaps;
@@ -417,6 +411,14 @@ public sealed partial class KeyboardPanel
 
     // --animshot: where key i is (texture px)
     public RectangleF KeyRectForTest(int i) => i >= 0 && i < _keys.Count ? _keys[i].R : RectangleF.Empty;
+
+    // the perf tool: key i's glow held at a value (0: none) - Draw fades it by the last Update's step, which is none here
+    public void GlowForTest(int i, float glow)
+    {
+        if (i < 0 || i >= _keys.Count) return;
+        if (glow > 0) _flash[_keys[i]] = glow; else _flash.Remove(_keys[i]);
+        _lastDt = 0;
+    }
 
     // --animshot: key i held down / let go - only its look (nothing is sent to Windows: the tool must not type)
     public void HoldForTest(int i, bool down)

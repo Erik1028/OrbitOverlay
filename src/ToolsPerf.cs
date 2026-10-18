@@ -46,6 +46,7 @@ static partial class Tools
 
         PanelCornersCheck(panelView, ui, surf, ptr, painter, gpu, cfg);
         PixelTextCheck(view, ui, surf, ptr, painter, gpu, cfg, kb, data);
+        KeyboardBaseCheck(kb, gpu, cfg);
 
         // the watch: your own face, on a copy of your config
         string real = Path.Combine(Log.Dir, "config.json"), copy = Path.Combine(dir, "perf_config.json");
@@ -270,6 +271,50 @@ static partial class Tools
         cfg.Data.Appearance.Style = style0;
         Theme.Apply(cfg.Data.Appearance);
         Log.Info($"perf: the retro styles' pixel text from kept layouts against DrawText, {shots} pictures: {diff} pixels differ (want 0)");
+    }
+
+    // the modern keyboard's kept picture (KeyboardPanel.Draw: the frame and the keys at rest kept, only the keys doing something drawn
+    // over it) against the whole picture drawn, in the states a frame can be in - at rest, a key under the laser, held, let go (its
+    // glow half-way), a one-shot Shift under the laser, Chatbox on with a line typed: the pixels that differ (want 0)
+    static void KeyboardBaseCheck(KeyboardPanel kb, Gpu gpu, ConfigStore cfg)
+    {
+        string style0 = cfg.Data.Appearance.Style;
+        cfg.Data.Appearance.Style = null;
+        Theme.Apply(cfg.Data.Appearance);
+        kb.Draw();
+        int diff = 0, shots = 0;
+        uint[] Shot(bool all)
+        {
+            kb.DrawAllForTest = all;
+            kb.Draw();
+            kb.DrawAllForTest = false;
+            return kb.Surf.ReadPixels(gpu);
+        }
+        void Pair()
+        {
+            var a = Shot(true);
+            var b = Shot(false);
+            shots++;
+            for (int i = 0; i < a.Length; i++) if (a[i] != b[i]) diff++;
+        }
+        const int key = 30;                                           // a letter key (the typing case's)
+        var kr = kb.KeyRectForTest(key);
+        var mid = new System.Numerics.Vector2(kr.X + kr.Width / 2, kr.Y + kr.Height / 2);
+        Pair();                                                       // at rest
+        kb.SetHover(2, mid); Pair();                                  // under the laser
+        kb.HoldForTest(key, true); Pair();                            // held
+        kb.HoldForTest(key, false); kb.GlowForTest(key, 0.6f); Pair();   // let go: the glow
+        kb.GlowForTest(key, 0); kb.SetHover(2, null);
+        int shift = kb.KeyIndexForTest("shift");
+        var sr = kb.KeyRectForTest(shift);
+        kb.ModForTest("shift", 1); kb.SetHover(2, new System.Numerics.Vector2(sr.X + sr.Width / 2, sr.Y + sr.Height / 2)); Pair();    // a one-shot Shift under the laser
+        kb.ModForTest("shift", 0); kb.SetHover(2, null);
+        kb.PreviewChat("Szia! Mindjárt jövök"); Pair();              // Chatbox on, a line typed
+        kb.PreviewChat("");
+        typeof(KeyboardPanel).GetField("_chat", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.SetValue(kb, false);
+        cfg.Data.Appearance.Style = style0;
+        Theme.Apply(cfg.Data.Appearance);
+        Log.Info($"perf: the modern keyboard's kept picture against the whole picture drawn, {shots} states: {diff} pixels differ (want 0)");
     }
 
     // the VR settings panel's corners cut after drawing (Painter.CutCorners) against the clip layer they replaced, every tab: the

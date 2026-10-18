@@ -383,12 +383,51 @@ public sealed partial class KeyboardPanel : IPointerTarget, IDisposable
         }
         if (Theme.Classic) { Draw95(); return; }
         if (Theme.Cyber) { DrawCyber(); return; }        // the HUD keyboard (KeyboardCyber.cs)
-        _p.Begin(Surf.Bitmap, 0x00000000);
-        _p.Fill(new RectangleF(0, 0, TW, TH), Theme.OverlayBg, 26);
-        if (Theme.Classic) _p.Bevel(new RectangleF(0, 0, TW, TH), Painter.Edge.Window);
-        else _p.Stroke(new RectangleF(1, 1, TW - 2, TH - 2), 0x40FFFFFF, 2, 25);
         bool shift = _mods["shift"] > 0, altgr = _mods["altgr"] > 0, caps = Caps;      // Caps asks Windows: once a frame, not per key
-        // press glow fades out after the key is let go
+        FadeGlow();
+        // The picture at rest, kept (the Cyber keyboard's way, in the same texture: KeyboardCyber.cs): the frame and every key with
+        // nothing on it, made again only when that picture changes (a modifier, Caps, the layout, Chatbox, the look). A frame is that
+        // picture, the Chatbox line and only the keys doing something - under a laser, held, glowing - each drawn over the frame put
+        // back under it (Uncover), so every pixel comes out as the whole picture drawn would have it. ~0.1 ms instead of ~0.8, and a
+        // key let go was ~23 frames of it (Erik 10-18: "it must be optimized, get the maximum out of it"). --snapshot's text checks
+        // (and DrawAllForTest) draw all of it, as before.
+        _cyCaps = caps;
+        bool live = DrawsAll;
+        if (!live)
+        {
+            int sig = CyBaseSig(shift, altgr);
+            if (_cyBase == null || !_cyBaseOk || sig != _cyBaseSig) DrawBase(shift, altgr, caps, sig);
+        }
+        _p.Begin(Surf.Bitmap, 0x00000000);
+        if (live) Frame();
+        else _p.Image(_cyBase.Bitmap, new RectangleF(0, 0, TW, TH));
+        if (_chat) ChatField();
+        var bar = _chat ? _barChat : _barNormal;        // the keys, then the top bar (no list made for them every frame)
+        for (int ki = 0; ki < _keys.Count + bar.Count; ki++)
+        {
+            var k = ki < _keys.Count ? _keys[ki] : bar[ki - _keys.Count];
+            bool hover = Array.IndexOf(_hover, k) >= 0;
+            bool down = Array.IndexOf(_down, k) >= 0;
+            _flash.TryGetValue(k, out float glow);
+            if (!live)
+            {
+                if (!hover && !down && glow <= 0) continue;          // as the kept picture has it
+                Uncover(k.R);
+            }
+            DrawKey(k, shift, altgr, caps, hover, down, glow);
+        }
+        _p.End();
+    }
+
+    // --snapshot's text checks read every text as it is drawn: the whole picture then, nothing kept (Cyber's keyboard too)
+    bool DrawsAll => _p.FitSpy != null || Painter.FitAll != null || _p.TextSpy != null || _p.NoText || DrawAllForTest;
+
+    // the perf tool: the whole picture drawn, to hold against the kept one
+    public bool DrawAllForTest;
+
+    // the press glow fades out after the key is let go (every style's frame)
+    void FadeGlow()
+    {
         _flashKeys.Clear();
         _flashKeys.AddRange(_flash.Keys);
         foreach (var key in _flashKeys)
@@ -397,96 +436,102 @@ public sealed partial class KeyboardPanel : IPointerTarget, IDisposable
             float f = Motion.Any ? _flash[key] - _lastDt / 0.25f : 0;       // Look > Motion off: gone at once
             if (f <= 0) _flash.Remove(key); else _flash[key] = f;
         }
-        if (_chat)
-        {
-            var f = _chatField;
-            if (Theme.Classic)
-            {
-                _p.Fill(f, Theme.W95Window);              // a 95 text box
-                _p.Bevel(f, Painter.Edge.Sunken);
-            }
-            else
-            {
-                _p.Fill(f, Theme.Mix(Theme.Panel, 0xFF000000, 0.25f), 12);
-                _p.Stroke(f, Theme.Accent, 2, 12);
-            }
-            string text = _chatText.ToString();
-            var tr = new RectangleF(f.X + 18, f.Y, f.Width - 130, f.Height);
-            if (text.Length == 0)
-                _p.Text("Type a message for the VRChat chatbox, Enter sends", tr, Theme.Faint, 22);
-            else
-            {
-                // keep the end of a long line in view
-                string shown = text;
-                while (shown.Length > 1 && _p.MeasureWidth(shown, 26) > tr.Width - 20) shown = shown[1..];
-                if (shown.Length < text.Length) shown = "…" + shown;
-                _p.Text(shown, tr, Theme.Text, 26);
-                if (_blink == 0)
-                {
-                    float cx = tr.X + _p.MeasureWidth(shown, 26) + 3;
-                    _p.Fill(new RectangleF(cx, f.Y + 16, 3, f.Height - 32), Theme.Accent);
-                }
-            }
-            _p.Text($"{text.Length}/{ChatMax}", new RectangleF(f.Right - 110, f.Y, 96, f.Height), Theme.Dim, 18,
-                FontWeight.Normal, TextAlignment.Trailing);
-        }
-        var bar = _chat ? _barChat : _barNormal;        // the keys, then the top bar (no list made for them every frame)
-        for (int ki = 0; ki < _keys.Count + bar.Count; ki++)
-        {
-            var k = ki < _keys.Count ? _keys[ki] : bar[ki - _keys.Count];
-            bool hover = Array.IndexOf(_hover, k) >= 0;
-            bool down = Array.IndexOf(_down, k) >= 0;
-            _flash.TryGetValue(k, out float glow);
-            int modState = k.Kind == Kind.Modifier ? _mods[k.Mod] : k.Kind == Kind.Caps && caps ? 2
-                         : k.Action == "chat" && _chat ? 2 : 0;
-            RectangleF kr;
-            uint fg;
-            if (Theme.Classic)
-            {
-                // 95 keys: raised; held down (and locked modifiers) pushed in; a one-shot modifier gets a black frame
-                bool inKey = down || modState == 2;
-                kr = inKey ? new RectangleF(k.R.X + _p.Px, k.R.Y + _p.Px, k.R.Width, k.R.Height) : k.R;
-                _p.Fill(k.R, modState == 2 && !down ? Theme.W95Light : Theme.W95Face);
-                _p.Bevel(k.R, inKey ? Painter.Edge.Pressed : Painter.Edge.Raised);
-                if (modState == 1) _p.Stroke(RectangleF.Inflate(k.R, -5, -5), Theme.W95Dark, 1.5f);
-                fg = Theme.W95Dark;
-            }
-            else
-            {
-                uint bg = down || modState == 2 ? Theme.Accent : hover ? Theme.Panel3 : Theme.Panel2;
-                if (!down && glow > 0) bg = Theme.Mix(bg, Theme.Accent, glow);
-                kr = down ? RectangleF.Inflate(k.R, -3, -3) : k.R;     // pressed keys sink a little
-                _p.Fill(kr, bg, 12);
-                if (modState == 1) _p.Stroke(kr, Theme.Accent, 3, 12);
-                fg = down || modState == 2 ? Theme.OnAccent : Theme.Text;
-            }
-            if (k.Kind == Kind.Action)
-            {
-                // icon + label, centred
-                float tw = _p.MeasureWidth(k.Fixed, 22, FontWeight.SemiBold);
-                float x0 = k.R.X + (k.R.Width - (28 + 10 + tw)) / 2;
-                _p.Icon(k.Icon, new RectangleF(x0, k.R.Y, 28, k.R.Height), fg, 24);
-                _p.Text(k.Fixed, new RectangleF(x0 + 38, k.R.Y, tw + 6, k.R.Height), fg, 22, FontWeight.SemiBold);
-            }
-            else if (k.Icon != null)
-                _p.Icon(k.Icon, k.R, fg, 30);
-            else if (k.Fixed != null)
-                _p.Text(k.Fixed, k.R, fg, 24, FontWeight.SemiBold, TextAlignment.Center);
-            else
-            {
-                string main = altgr && k.AltGr != null ? k.AltGr : shift ? k.Shifted ?? k.Normal : k.Normal;
-                if (main != null && main.Length == 1 && char.IsLetter(main[0]) && caps && !altgr)
-                    main = shift ? main.ToLowerInvariant() : main.ToUpperInvariant();
-                _p.Text(main, k.R, fg, 38, FontWeight.Normal, TextAlignment.Center);
-                // small hints: shifted symbol (for non-letters) top-left, AltGr symbol bottom-right
-                if (!shift && k.Shifted != null && k.Normal != null && !char.IsLetter(k.Normal[0]))
-                    _p.Text(k.Shifted, new RectangleF(k.R.X + 8, k.R.Y + 4, 30, 28), down ? fg : Theme.Dim, 18);
-                if (!altgr && k.AltGr != null)
-                    _p.Text(k.AltGr, new RectangleF(k.R.Right - 34, k.R.Bottom - 32, 28, 28), down ? fg : Theme.WithAlpha(Theme.Accent, 0.9f), 18,
-                        FontWeight.Normal, TextAlignment.Trailing);
-            }
-        }
+    }
+
+    // the modern frame: the panel's fill and its outline
+    void Frame()
+    {
+        _p.Fill(new RectangleF(0, 0, TW, TH), Theme.OverlayBg, 26);
+        _p.Stroke(new RectangleF(1, 1, TW - 2, TH - 2), 0x40FFFFFF, 2, 25);
+    }
+
+    // the modern picture at rest into the kept texture: the frame and every key with nothing on it
+    void DrawBase(bool shift, bool altgr, bool caps, int sig)
+    {
+        _cyBase ??= new Surface(_p.Gpu, TW, TH);
+        _p.Begin(_cyBase.Bitmap, 0x00000000);
+        Frame();
+        foreach (var k in _keys) DrawKey(k, shift, altgr, caps, false, false, 0);
+        foreach (var k in _chat ? _barChat : _barNormal) DrawKey(k, shift, altgr, caps, false, false, 0);
         _p.End();
+        _cyBaseSig = sig;
+        _cyBaseOk = true;
+    }
+
+    // The kept picture under a key made see-through again and the frame put back there, on whole pixels a little past the key: its
+    // edge's smoothing and a one-shot modifier's outline fall inside, never a neighbour (the keys sit 8 px apart). Nothing but the
+    // frame's fill lies under a key (its outline runs round the edge, the keys start 24 px in), so the key then draws over exactly
+    // what the whole picture has under it - a held key's sunken cap shows the frame round it, as before.
+    void Uncover(RectangleF r)
+    {
+        var u = RectangleF.FromLTRB(MathF.Floor(r.X - 2), MathF.Floor(r.Y - 2), MathF.Ceiling(r.Right + 2), MathF.Ceiling(r.Bottom + 2));
+        _p.ClearRect(u);
+        _p.Fill(u, Theme.OverlayBg);
+    }
+
+    // the modern Chatbox line: a dark field with the accent's edge, the text's end kept in view, a blinking caret, the count
+    void ChatField()
+    {
+        var f = _chatField;
+        _p.Fill(f, Theme.Mix(Theme.Panel, 0xFF000000, 0.25f), 12);
+        _p.Stroke(f, Theme.Accent, 2, 12);
+        string text = _chatText.ToString();
+        var tr = new RectangleF(f.X + 18, f.Y, f.Width - 130, f.Height);
+        if (text.Length == 0)
+            _p.Text("Type a message for the VRChat chatbox, Enter sends", tr, Theme.Faint, 22);
+        else
+        {
+            // keep the end of a long line in view
+            string shown = text;
+            while (shown.Length > 1 && _p.MeasureWidth(shown, 26) > tr.Width - 20) shown = shown[1..];
+            if (shown.Length < text.Length) shown = "…" + shown;
+            _p.Text(shown, tr, Theme.Text, 26);
+            if (_blink == 0)
+            {
+                float cx = tr.X + _p.MeasureWidth(shown, 26) + 3;
+                _p.Fill(new RectangleF(cx, f.Y + 16, 3, f.Height - 32), Theme.Accent);
+            }
+        }
+        _p.Text($"{text.Length}/{ChatMax}", new RectangleF(f.Right - 110, f.Y, 96, f.Height), Theme.Dim, 18,
+            FontWeight.Normal, TextAlignment.Trailing);
+    }
+
+    // one modern key as it is now: hover / held / glowing / a modifier's state, then its legend
+    void DrawKey(Key k, bool shift, bool altgr, bool caps, bool hover, bool down, float glow)
+    {
+        int modState = k.Kind == Kind.Modifier ? _mods[k.Mod] : k.Kind == Kind.Caps && caps ? 2
+                     : k.Action == "chat" && _chat ? 2 : 0;
+        uint bg = down || modState == 2 ? Theme.Accent : hover ? Theme.Panel3 : Theme.Panel2;
+        if (!down && glow > 0) bg = Theme.Mix(bg, Theme.Accent, glow);
+        var kr = down ? RectangleF.Inflate(k.R, -3, -3) : k.R;     // pressed keys sink a little
+        _p.Fill(kr, bg, 12);
+        if (modState == 1) _p.Stroke(kr, Theme.Accent, 3, 12);
+        uint fg = down || modState == 2 ? Theme.OnAccent : Theme.Text;
+        if (k.Kind == Kind.Action)
+        {
+            // icon + label, centred
+            float tw = _p.MeasureWidth(k.Fixed, 22, FontWeight.SemiBold);
+            float x0 = k.R.X + (k.R.Width - (28 + 10 + tw)) / 2;
+            _p.Icon(k.Icon, new RectangleF(x0, k.R.Y, 28, k.R.Height), fg, 24);
+            _p.Text(k.Fixed, new RectangleF(x0 + 38, k.R.Y, tw + 6, k.R.Height), fg, 22, FontWeight.SemiBold);
+        }
+        else if (k.Icon != null)
+            _p.Icon(k.Icon, k.R, fg, 30);
+        else if (k.Fixed != null)
+            _p.Text(k.Fixed, k.R, fg, 24, FontWeight.SemiBold, TextAlignment.Center);
+        else
+        {
+            string main = altgr && k.AltGr != null ? k.AltGr : shift ? k.Shifted ?? k.Normal : k.Normal;
+            if (main != null && main.Length == 1 && char.IsLetter(main[0]) && caps && !altgr)
+                main = shift ? main.ToLowerInvariant() : main.ToUpperInvariant();
+            _p.Text(main, k.R, fg, 38, FontWeight.Normal, TextAlignment.Center);
+            // small hints: shifted symbol (for non-letters) top-left, AltGr symbol bottom-right
+            if (!shift && k.Shifted != null && k.Normal != null && !char.IsLetter(k.Normal[0]))
+                _p.Text(k.Shifted, new RectangleF(k.R.X + 8, k.R.Y + 4, 30, 28), down ? fg : Theme.Dim, 18);
+            if (!altgr && k.AltGr != null)
+                _p.Text(k.AltGr, new RectangleF(k.R.Right - 34, k.R.Bottom - 32, 28, 28), down ? fg : Theme.WithAlpha(Theme.Accent, 0.9f), 18,
+                    FontWeight.Normal, TextAlignment.Trailing);
+        }
     }
 
     Key HitKey(Vector2 px)
