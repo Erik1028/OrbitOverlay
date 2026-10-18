@@ -55,6 +55,10 @@ public sealed class VrSession : IDisposable
     // for an Orbit nobody saw (Erik 10-18: "above all while it is off"); the first frame anything shows reads everything again.
     public bool Idle;
     int _idleTick;
+    // where you look this frame (OrbitApp sets it after Update): your eyes' look in the world while eye tracking has them
+    // (Sys/EyeGaze.cs), else the head's forward - gaze focus, smart capture, the watch's glance and the dim go by it
+    public Vector3 Gaze = -Vector3.UnitZ, GazeOrigin;
+    public bool EyesValid;
     readonly ulong[] _handSource = new ulong[2];
     readonly VRActiveActionSet_t[] _handSets = new VRActiveActionSet_t[2];
     bool _perHandFailed;

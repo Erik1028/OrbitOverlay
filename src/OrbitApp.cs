@@ -27,6 +27,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
     Painter _painter;
     readonly PanelData _data = new();
     readonly GpuStats _gpuStats = new();
+    readonly EyeGaze _eyes = new();                  // Virtual Desktop's eye tracking (Sys/EyeGaze.cs)
     readonly MediaInfo _media = new();
     readonly AudioMixer _mixer = new();              // the output device's apps; the Windows volume in VR (Sys/AudioMixer.cs)
     readonly NotificationHistory _notes = new();     // the watch's notifications widget
@@ -519,6 +520,11 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             _allocMark = GC.GetAllocatedBytesForCurrentThread();
             _vr.Idle = VrOverlay.ShownCount == 0 && !_vr.Suppress[0] && !_vr.Suppress[1];     // nothing of Orbit's in view (VrSession.Idle)
             _vr.Update();
+            // the look: the eyes while they are tracked, else the head (VrSession.Gaze)
+            _eyes.Update(now, C.General.EyeTracking && _vr.HmdValid);
+            _vr.EyesValid = _eyes.Valid && _vr.HmdValid;
+            _vr.Gaze = _vr.EyesValid ? _eyes.WorldDir(_vr.Hmd) : MathUtil.Forward(_vr.Hmd);
+            _vr.GazeOrigin = _vr.EyesValid ? _eyes.WorldOrigin(_vr.Hmd) : _vr.Hmd.Translation;
             bool watched = (_wrist?.Alpha ?? 0) > 0.02f;
             _data.Vr.Watched = watched;                 // the batteries every second while the watch shows, else every 5 s
             _gpuStats.Active = watched;                 // the GPU counters (a few ms a sample) only while the watch can show them
@@ -576,8 +582,9 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
                 bool busy = _theater.On;
                 if (!busy) foreach (var d in _desktops) if (d.Theater != null) { busy = true; break; }
                 _gazeFocus.Update(_vr, now, dt, C.Focus, busy, _mouse.Held, _lasers[0].Hovered, _lasers[1].Hovered);
-                foreach (var d in _desktops) { d.SmartCapture = C.General.SmartCapture; d.Update(_vr, now, C.General.DesktopsVisible, C.General.CaptureFps); }
-                foreach (var w in _windowPanels) w.Update(_vr, now, C.General.DesktopsVisible, C.General.CaptureFps, C.General.SmartCapture);
+                bool dimLook = C.General.DimUnlooked && _vr.EyesValid;
+                foreach (var d in _desktops) { d.SmartCapture = C.General.SmartCapture; d.DimUnlooked = dimLook; d.Update(_vr, now, C.General.DesktopsVisible, C.General.CaptureFps); }
+                foreach (var w in _windowPanels) { w.DimUnlooked = dimLook; w.Update(_vr, now, C.General.DesktopsVisible, C.General.CaptureFps, C.General.SmartCapture); }
                 if (now >= _nextWindowScan) { _nextWindowScan = now + 2; ScanWindows(); }
             }
             Perf(5, ref t);
@@ -1978,6 +1985,14 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         }
     }
 
+    // the settings' eye tracking line: is Virtual Desktop's there, are the eyes tracked now
+    public string EyeStatus =>
+        !C.General.EyeTracking ? Lang.T("off: the head's direction")
+        : !_vr.Connected ? Lang.T("Virtual Desktop's, while SteamVR runs")
+        : _vr.EyesValid ? Lang.T("your eyes are tracked")
+        : _eyes.Present ? Lang.T("Virtual Desktop found, the eyes not tracked now")
+        : Lang.T("not found: Virtual Desktop, 'Forward tracking data' on");
+
     public string RoomStatus
     {
         get
@@ -2020,6 +2035,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         _weather.Dispose();
         _lumos.Dispose();
         _dxgi?.Dispose();
+        _eyes.Dispose();
         _prisma.Dispose();
         AvatarDispose();
         _pacer.Dispose();

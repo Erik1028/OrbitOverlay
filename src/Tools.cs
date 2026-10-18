@@ -51,6 +51,7 @@ static partial class Tools
         public string NotificationStatus => Lang.F("listening on UDP {0}", 42069);
         public string StatusLinePreview => "\U0001F3B5 Midnight City \u2013 M83";
         public string RoomStatus => Lang.F("{0} in {1}", 12, "Midnight Rooftop") + Lang.F(" · VRCX: {0} friends", 120);
+        public string EyeStatus => Lang.T("your eyes are tracked");
         public void ToggleRoom() { }
         public void TheaterEdited() { }
         public IReadOnlyList<WhatsNew.Entry> WhatsNewList { get; set; } = Array.Empty<WhatsNew.Entry>();

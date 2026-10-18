@@ -635,6 +635,13 @@ public sealed partial class SettingsView
         ui.Text95(string.IsNullOrEmpty(prev) ? "(nothing - the chatbox stays empty)" : prev, new RectangleF(box.X + 4, box.Y + 3, box.Width - 8, box.Height - 6),
             string.IsNullOrEmpty(prev) ? 0xFF808080 : K95, false, TextAlignment.Leading, true, true);
 
+        // eye tracking (Sys/EyeGaze.cs)
+        ui.Group95(new RectangleF(376, 230, 358, 84), "Eye tracking");        // (right, under Who is in the room)
+        bool eb = C.General.EyeTracking;
+        if (ui.Check95("vc95.eyes", 388, 250, "Use &eye tracking (Virtual Desktop's)", ref eb)) C.General.EyeTracking = eb;
+        Hint(ui, 407, 268, 316, _h.EyeStatus, 16);
+        eb = C.General.DimUnlooked;
+        if (ui.Check95("vc95.dim", 388, 288, "&Dim the monitors you don't look at", ref eb, C.General.EyeTracking)) C.General.DimUnlooked = eb;
         ui.Group95(new RectangleF(16, 270, 350, 64), "Controllers");
         b = g.BlockGameInput;
         ui.Check95("vc95.block", 28, 290, "&Keep clicks from the game", ref b);

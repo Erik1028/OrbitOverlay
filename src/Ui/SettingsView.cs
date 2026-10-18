@@ -41,6 +41,7 @@ public interface IOrbitHost
     string NotificationStatus { get; }
     string StatusLinePreview { get; }      // what the chatbox status line would say now
     string RoomStatus { get; }             // VRChat log / VRCX found?
+    string EyeStatus { get; }              // Virtual Desktop's eye tracking: found, tracking?
     void ToggleRoom();
     void TheaterEdited();          // theater settings changed in the window: a screen that plays follows at once
     IReadOnlyList<WhatsNew.Entry> WhatsNewList { get; }    // after an update until OK: what changed (empty = nothing)
@@ -1127,6 +1128,15 @@ public sealed partial class SettingsView
             g.BlockGameInput = b;
         DrawGesture(ui, lx, cw, 496);     // B / Y twice (SettingsView.Extras.cs)
         DrawControlsHelp(ui, rx + 10, 392);
+        // eye tracking (Sys/EyeGaze.cs), under the controls: the look from Virtual Desktop's - gaze focus, smart capture, the watch's
+        // glance and the dim go by it; its state on the line under the two switches
+        var ge = C.General;
+        ui.Section(new RectangleF(rx + 10, 544, rw, 20), "Eye tracking");
+        bool eb = ge.EyeTracking;
+        if (ui.Toggle("vc.eyes", new RectangleF(rx, 566, rw / 2 - 4, 44), "Use eye tracking", ref eb)) ge.EyeTracking = eb;
+        eb = ge.DimUnlooked;
+        if (ui.Toggle("vc.dim", new RectangleF(rx + rw / 2 + 4, 566, rw / 2 - 4, 44), "Dim the rest", ref eb, null, ge.EyeTracking)) ge.DimUnlooked = eb;
+        ui.P.Text(_h.EyeStatus, new RectangleF(rx + 10, 612, rw - 10, 20), Theme.Dim, 12);
 
         ui.Section(new RectangleF(rx + 10, 84, rw, 22), "Who is in the room");
         b = rm.Enabled;

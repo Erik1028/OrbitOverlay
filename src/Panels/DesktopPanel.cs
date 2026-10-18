@@ -96,7 +96,11 @@ public sealed class DesktopPanel : ITheaterScreen, IDisposable
                 Ov.SetCurvature(th?.Curvature ?? fv?.Curvature ?? Cfg.Curvature);
                 _opacity = th?.Opacity ?? Cfg.Opacity;
             }
-            Ov.SetAlpha(_opacity * (1 - MathF.Pow(1 - _vis, 3)));
+            // the dim (eye tracking, VRChat > Eye tracking): looked at or pointed at - as it is; else a little darker
+            bool looked = !DimUnlooked || th != null || _hovering[0] || _hovering[1]
+                || LookedAt(vr, WorldTransform, th?.Width ?? fv?.Width ?? Cfg.Width, th?.Curvature ?? fv?.Curvature ?? Cfg.Curvature, TextureSize);
+            _lookA = LookDim(_lookA, looked, dt);
+            Ov.SetAlpha(_opacity * (1 - MathF.Pow(1 - _vis, 3)) * _lookA);
             Ov.Show();
         }
         if (Theme.Cyber || _cyFx != null) (_cyFx ??= new CyberScreenFx(_g, Ov.Key)).Update(Ov, _vis, want, th != null, TextureSize, now);   // Cyber's unfold and HUD frame
@@ -124,6 +128,23 @@ public sealed class DesktopPanel : ITheaterScreen, IDisposable
     }
 
     public bool SmartCapture = true;
+
+    // The dim of what you are not looking at (Erik 10-18: eye tracking): OrbitApp sets DimUnlooked while it is on and the eyes are
+    // tracked; a monitor your eyes are not on (nor a laser) eases to DimTo in ~0.15 s and back as soon as you look at it.
+    public bool DimUnlooked;
+    public const float DimTo = 0.6f;
+    float _lookA = 1;
+
+    public static bool LookedAt(VrSession vr, in Matrix4x4 world, float width, float curvature, System.Numerics.Vector2 tex) =>
+        vr.EyesValid && LocalRaycast.Intersect(world, width, curvature, tex.X, tex.Y, vr.GazeOrigin, vr.Gaze, out _, out _, out _, out _);
+
+    public static float LookDim(float a, bool looked, float dt)
+    {
+        float want = looked ? 1 : DimTo;
+        if (!Motion.Any) return want;
+        a += (want - a) * (1 - MathF.Exp(-dt * 14));
+        return MathF.Abs(want - a) < 0.004f ? want : a;
+    }
 
     // the capture ended (monitor dropped out for a moment, or a capture error): the app rebuilds it
     public bool CaptureDead => _cap != null && _cap.Closed;
@@ -161,7 +182,7 @@ public sealed class DesktopPanel : ITheaterScreen, IDisposable
         if (hovered || !vr.HmdValid) return focus;
         var to = w.Translation - vr.Hmd.Translation;
         if (to.LengthSquared() < 1e-6f) return fps;
-        float cos = Vector3.Dot(Vector3.Normalize(to), Vector3.Normalize(MathUtil.Forward(vr.Hmd)));
+        float cos = Vector3.Dot(Vector3.Normalize(to), vr.Gaze);           // (your eyes' look when tracked, else the head's: VrSession.Gaze)
         // the panel's half-width widens the "looked at" cone for big / close monitors
         float half = MathF.Atan2(width / 2, to.Length());
         float ang = MathF.Acos(Math.Clamp(cos, -1f, 1f)) - half;

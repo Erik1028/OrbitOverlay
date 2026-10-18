@@ -222,6 +222,8 @@ public sealed class GeneralConfig
     public bool RunAsAdmin { get; set; } = true;      // lets the VR mouse/keyboard reach admin windows
     public bool Notifications { get; set; } = true;   // XSOverlay-format notifications on UDP 42069
     public bool SmartCapture { get; set; } = true;    // full frame rate only for monitors you look / point at
+    public bool EyeTracking { get; set; } = true;     // the look from Virtual Desktop's eye tracking when it is there (Sys/EyeGaze.cs)
+    public bool DimUnlooked { get; set; }             // the monitors you are not looking at (eye tracking) a little dimmer
     public bool PauseWhenOff { get; set; } = true;    // headset taken off: stop capturing and drawing
     public bool HeadsetPacing { get; set; } = true;   // the loop on its own clock at the headset's rate (off: once per game frame)
     public bool HighGpuPriority { get; set; } = true; // Orbit's small GPU jobs go ahead of the game's frames (admin)

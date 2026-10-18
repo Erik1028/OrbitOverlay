@@ -41,7 +41,7 @@ static class Program
         bool has(string a) => args.Contains(a);
         if (has("--tempstest")) { Log.Init("orbit-tool.log"); return TempSensors.Probe(); }      // the real temperature sources read twice, read only (Sys/Temps.cs)
         if (has("--avatartest")) { Log.Init("orbit-tool.log"); return AvatarProbe.Run(); }      // VRChat's real OSC configs read, only counts logged (AvatarViewTest.cs)
-        bool tool = has("--snapshot") || has("--animstrip") || has("--faceshot") || has("--clockshot") || has("--selftest") || has("--scene") || has("--osctest") || has("--tasktest") || has("--filtertest") || has("--focustest") || has("--leaktest") || has("--raytest") || has("--updatetest") || has("--wintest") || has("--docktest") || has("--roomtest") || has("--theatertest") || has("--perfbench") || has("--ovdump") || has("--pacetest") || has("--pacertest") || has("--capturetest") || has("--voltest") || has("--mixertest") || has("--tapotest");
+        bool tool = has("--snapshot") || has("--animstrip") || has("--faceshot") || has("--clockshot") || has("--selftest") || has("--scene") || has("--osctest") || has("--tasktest") || has("--filtertest") || has("--focustest") || has("--leaktest") || has("--raytest") || has("--updatetest") || has("--wintest") || has("--docktest") || has("--roomtest") || has("--theatertest") || has("--perfbench") || has("--ovdump") || has("--pacetest") || has("--pacertest") || has("--capturetest") || has("--voltest") || has("--mixertest") || has("--tapotest") || has("--eyetest");
         if (tool) return RunTool(args);
 
         // install / uninstall (the same exe: named "OrbitSetup.exe" it is the installer)
@@ -118,6 +118,39 @@ static class Program
             MessageBox.Show(e.Message, Lang.T("OrbitOverlay crashed"), MessageBoxButtons.OK, MessageBoxIcon.Error);
             return 1;
         }
+    }
+
+    // dev: Virtual Desktop's eye tracking, READ ONLY (Sys/EyeGaze.cs) - 8 s of what the map says, 5 lines a second: look around (ahead, left,
+    // right, up, down) and blink while it runs; nothing is written anywhere
+    static int EyeProbe()
+    {
+        using var g = new EyeGaze();
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        int lines = 0, valid = 0;
+        while (sw.Elapsed.TotalSeconds < 8)
+        {
+            double now = sw.Elapsed.TotalSeconds;
+            g.Update(now, true);
+            if (now * 5 >= lines)
+            {
+                lines++;
+                var s = g.Last;
+                if (!g.Present) { Log.Info("eyes: no VirtualDesktop.BodyState map (the streamer, 'Forward tracking data' on?)"); }
+                else
+                {
+                    var d = g.HeadDir;
+                    float yaw = MathF.Atan2(d.X, -d.Z) * 180 / MathF.PI, pitch = MathF.Asin(Math.Clamp(d.Y, -1, 1)) * 180 / MathF.PI;
+                    var ql = s.LeftEyePose.Orientation; var qr = s.RightEyePose.Orientation;
+                    if (g.Valid) valid++;
+                    Log.Info($"eyes: {(g.Valid ? "valid" : "-----")} look {yaw,6:0.0} right {pitch,6:0.0} up | L valid {s.LeftEyeIsValid} conf {s.LeftEyeConfidence:0.00} |q| {ql.Length():0.000} " +
+                             $"at {s.LeftEyePose.Position.X:0.000},{s.LeftEyePose.Position.Y:0.000},{s.LeftEyePose.Position.Z:0.000} | R valid {s.RightEyeIsValid} conf {s.RightEyeConfidence:0.00} " +
+                             $"|q| {qr.Length():0.000} | flags {s.FaceFlags} follow {s.EyeFollowingBlendshapesValid}");
+                }
+            }
+            System.Threading.Thread.Sleep(10);
+        }
+        Log.Info($"eyes: {valid} of {lines} readings valid");
+        return g.Present ? 0 : 1;
     }
 
     // dev: the bulb straight (TapoDirect), READ ONLY - its state with the key from Hexpad's / Lumos's account (made in memory, not kept),
@@ -206,6 +239,8 @@ static class Program
                 return VolTest(args.Contains("dip"));
             if (args.Contains("--mixertest"))
                 return MixerViewTools.Probe();
+            if (args.Contains("--eyetest"))
+                return EyeProbe();
             if (args.Contains("--tapotest"))
             {
                 int i = Array.IndexOf(args, "--tapotest");

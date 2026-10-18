@@ -366,6 +366,7 @@ public sealed class GazeFocus
     void LookAhead(VrSession vr, float dt)
     {
         if (!vr.HmdValid) { _prevOk = false; return; }
+        if (vr.EyesValid) { _lookDir = vr.Gaze; _prevOk = false; return; }       // the eyes: where you look already (Sys/EyeGaze.cs)
         var f = MathUtil.Forward(vr.Hmd);
         if (_prevOk && dt > 1e-4f) _turn = Vector3.Lerp(_turn, (f - _prevFwd) / dt, 0.35f);
         else _turn = Vector3.Zero;
@@ -383,7 +384,7 @@ public sealed class GazeFocus
         float u = 0, best = float.MaxValue;
         if (vr.HmdValid)
         {
-            var o = vr.Hmd.Translation;
+            var o = vr.EyesValid ? vr.GazeOrigin : vr.Hmd.Translation;
             var d = _lookDir;
             for (int i = 0; i < row.Members.Count; i++)
             {

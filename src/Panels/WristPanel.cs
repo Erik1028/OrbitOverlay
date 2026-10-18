@@ -115,6 +115,7 @@ public sealed partial class WristPanel : IPointerTarget, IDisposable
             Vector3 toEye = Vector3.Normalize(vr.Hmd.Translation - world.Translation);
             float facing = Vector3.Dot(n, toEye);
             float look = Vector3.Dot(Vector3.Normalize(MathUtil.Forward(vr.Hmd)), -toEye);
+            if (vr.EyesValid) look = MathF.Max(look, Vector3.Dot(vr.Gaze, -toEye));     // a glance at it (eye tracking: VrSession.Gaze)
             target = MathUtil.Smoothstep(0.45f, 0.75f, facing) * MathUtil.Smoothstep(0.55f, 0.8f, look);
         }
         if (_dismissReq) { _dismissReq = false; _dismissed = true; _dismissUntil = now + (C.AlwaysVisible ? 8 : 30); }

@@ -1587,6 +1587,17 @@ static class Hu
         ("A&uto theater when a video goes full screen", "Au&tomatikus mozi teljes képernyős videónál"),
         // ---- Gaze focus (Desktops, Panels/GazeFocus.cs) ----
         ("Focus the monitor you look at", "A nézett monitor fókuszban"),
+        // ---- eye tracking (Sys/EyeGaze.cs) ----
+        ("Eye tracking", "Szemkövetés"),
+        ("Use eye tracking", "Szemkövetés"),
+        ("Dim the rest", "Halványítás"),
+        ("Use &eye tracking (Virtual Desktop's)", "&Szemkövetés (a Virtual Desktopé)"),
+        ("&Dim the monitors you don't look at", "A nem &nézett monitorok halványabbak"),
+        ("off: the head's direction", "ki: a fej iránya számít"),
+        ("Virtual Desktop's, while SteamVR runs", "a Virtual Desktopé, amíg a SteamVR fut"),
+        ("your eyes are tracked", "a szemed követve"),
+        ("Virtual Desktop found, the eyes not tracked now", "Virtual Desktop megvan, a szem most nincs követve"),
+        ("not found: Virtual Desktop, 'Forward tracking data' on", "nincs meg: Virtual Desktop, „Forward tracking data” be"),
         ("look at one and the others shrink beside it", "amelyikre nézel, az nagy, a többi kicsi mellette"),
         ("Others", "A többi"),
         ("Focus the monitor you &look at (the others shrink)", "A nézett monitor &fókuszban (a többi összemegy)"),

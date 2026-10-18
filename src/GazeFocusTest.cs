@@ -45,6 +45,7 @@ static class GazeFocusTools
         public double T;
         public bool Theater, Hold;
         public DesktopPanel Laser;
+        public float? EyeYaw;                         // eye tracking: where the eyes look (null: not tracked - the head counts)
         public float Yaw, Pitch;                      // where the head looks; the row line is 12 cm under the eyes (JoinAll), so a small monitor
                                                       // of a narrow one wants a look a little down, as in VR you look AT it
         public float MaxMove, MaxGrow, MaxMoveGrab;
@@ -83,6 +84,9 @@ static class GazeFocusTools
         public void Step()
         {
             Vr.Device[0] = Head(Yaw, Pitch);
+            Vr.EyesValid = EyeYaw.HasValue;                                    // (OrbitApp's part: VrSession.Gaze from the eyes or the head)
+            Vr.Gaze = EyeYaw is { } ey ? MathUtil.Forward(Head(ey, Pitch)) : MathUtil.Forward(Vr.Hmd);
+            Vr.GazeOrigin = Vr.Hmd.Translation;
             long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
             Focus.Update(Vr, T, Dt, Cfg, Theater, Hold, Laser, null);
             Ticks += System.Diagnostics.Stopwatch.GetTimestamp() - t0;
@@ -543,6 +547,68 @@ static class GazeFocusTools
                 Want($"focus cost: 2000 frames at rest {restUs:0.00} us per frame, {restAlloc} bytes allocated (want 0), views changed {changes} times (want 0: the " +
                      $"overlays get nothing); 2000 frames switching ({r.Focus.Switches - sw1} switches, always moving) {moveUs:0.00} us per frame, {moveAlloc} bytes " +
                      $"(want 0)", restAlloc == 0 && changes == 0 && moveAlloc == 0 && r.Focus.Switches - sw1 > 50);
+            }
+
+            // ---- eye tracking (Sys/EyeGaze.cs): the eyes' look with the head still - the focus, smart capture, the dim ----
+            {
+                var er = new Rig(gpu, dir, 3);
+                er.Run(0.5);
+                er.EyeYaw = 30; er.Run(0.3);                      // the head ahead, the eyes on the right monitor
+                bool eyesTake = er.FocusName == "Right";
+                er.EyeYaw = 0; er.Run(0.6);
+                bool eyesBack = er.FocusName == "Middle";
+                er.EyeYaw = 30; er.Run(0.06);
+                bool eyeGlance = er.FocusName == "Middle";
+                er.EyeYaw = null; er.Run(0.6);                    // the eyes lost: the head (ahead) counts again
+                bool headAgain = er.FocusName == "Middle";
+                var emid = r["Middle"];
+                var (mw, mwidth, mcurv) = Drawn(emid);
+                er.EyeYaw = 0; er.Step();
+                float fpsLooked = DesktopPanel.SmartFps(er.Vr, mw, mwidth, false, 60);
+                bool eLooked = DesktopPanel.LookedAt(er.Vr, mw, mwidth, mcurv, emid.TextureSize);
+                er.EyeYaw = 100; er.Step();                       // the head still ahead, the eyes far right
+                float fpsAway = DesktopPanel.SmartFps(er.Vr, mw, mwidth, false, 60);
+                bool notLooked = !DesktopPanel.LookedAt(er.Vr, mw, mwidth, mcurv, emid.TextureSize);
+                float a = 1;
+                for (int i = 0; i < 27; i++) a = DesktopPanel.LookDim(a, false, 1 / 90f);       // 0.3 s looking away
+                float dimmed = a;
+                for (int i = 0; i < 27; i++) a = DesktopPanel.LookDim(a, true, 1 / 90f);        // 0.3 s back on it
+                Want($"focus eyes: the eyes on the right one (the head ahead) take it {eyesTake} (want True), back on the middle {eyesBack} (want True), " +
+                     $"a 0.06 s glance keeps it {eyeGlance} (want True), the eyes lost - the head again {headAgain} (want True); smart capture by the eyes: " +
+                     $"the middle looked at {fpsLooked:0} fps, the eyes 100 deg away {fpsAway:0} fps (want the full rate / 4); the gaze ray on it {eLooked} " +
+                     $"(want True), off it {notLooked} (want True); the dim 0.3 s away {dimmed:0.00} (want {DesktopPanel.DimTo:0.00}), back {a:0.00} (want 0.99 or more)",
+                    eyesTake && eyesBack && eyeGlance && headAgain && fpsLooked >= 60 && fpsAway <= 4 && eLooked && notLooked &&
+                    MathF.Abs(dimmed - DesktopPanel.DimTo) < 0.01f && a > 0.99f);
+            }
+
+            // ---- Virtual Desktop's reading (EyeGaze.Take / Feed): the layout, both eyes, one eye, nothing sure, a blink's hold ----
+            {
+                static EyeGaze.FaceState Face(bool l, bool rt, float yawDeg, float conf, Quaternion? q = null)
+                {
+                    var s = new EyeGaze.FaceState { LeftEyeIsValid = (byte)(l ? 1 : 0), RightEyeIsValid = (byte)(rt ? 1 : 0), LeftEyeConfidence = conf, RightEyeConfidence = conf };
+                    var o = q ?? Quaternion.CreateFromAxisAngle(Vector3.UnitY, -yawDeg * MathF.PI / 180);
+                    s.LeftEyePose = new EyeGaze.Pose { Orientation = o, Position = new Vector3(-0.032f, 0, -0.02f) };
+                    s.RightEyePose = new EyeGaze.Pose { Orientation = o, Position = new Vector3(0.032f, 0, -0.02f) };
+                    return s;
+                }
+                static float YawOf(Vector3 d) => MathF.Atan2(d.X, -d.Z) * 180 / MathF.PI;
+                bool both = EyeGaze.Take(Face(true, true, 10, 0.9f), out var d2, out var o2, out _);
+                bool one = EyeGaze.Take(Face(false, true, -20, 0.9f), out var d1, out _, out _);
+                bool none = !EyeGaze.Take(Face(false, false, 10, 0.9f), out _, out _, out _);
+                bool unsure = !EyeGaze.Take(Face(true, true, 10, 0.1f), out _, out _, out _);
+                bool garbage = !EyeGaze.Take(Face(true, true, 0, 0.9f, new Quaternion(0, 0, 0, 0)), out _, out _, out _);
+                var g = new EyeGaze();
+                g.Feed(Face(true, true, 5, 0.9f), 0);
+                bool v0 = g.Valid;
+                g.Feed(Face(false, false, 0, 0), 0.1);
+                bool eHeld = g.Valid && MathF.Abs(YawOf(g.HeadDir) - 5) < 0.5f;
+                g.Feed(Face(false, false, 0, 0), 0.4);
+                bool eLetGo = !g.Valid;
+                Want($"focus eyes reading: FaceState {EyeGaze.Size} bytes (want 360); both eyes 10 deg right -> {YawOf(d2):0.0} deg {both} (want 10.0 True), " +
+                     $"between the eyes {o2.X:0.000} (want 0.000); one eye 20 deg left -> {YawOf(d1):0.0} {one} (want -20.0 True); neither valid / unsure / " +
+                     $"no pose: nothing {none} / {unsure} / {garbage} (want True); a blink held 0.1 s {v0 && eHeld} (want True), let go after 0.4 s {eLetGo} (want True)",
+                    EyeGaze.Size == 360 && both && MathF.Abs(YawOf(d2) - 10) < 0.1f && MathF.Abs(o2.X) < 1e-4f && one && MathF.Abs(YawOf(d1) + 20) < 0.1f &&
+                    none && unsure && garbage && v0 && eHeld && eLetGo);
             }
 
             // ---- the setting: off writes nothing (a config saves as before), on is written ----
