@@ -1133,8 +1133,10 @@ public sealed partial class SettingsView
         if (ui.Toggle("vc.block", new RectangleF(lx, 436, cw, 54), "Keep clicks from the game", ref b, "while a laser is on an OrbitOverlay panel"))
             g.BlockGameInput = b;
         DrawGesture(ui, lx, cw, 496);     // B / Y twice (SettingsView.Extras.cs)
-        b = g.EyeWarp;                    // a press where you don't look: the laser jumps to your look (Vr/Laser.cs, eye tracking)
-        if (ui.Toggle("vc.warp", new RectangleF(lx, 594, cw, 42), "Laser jumps to where you look", ref b, null, g.EyeTracking)) g.EyeWarp = b;
+        // the eye cursor (Vr/Laser.cs, eye tracking): off / a press where you don't look turns the beam there / the beam follows your eyes
+        int eci = Math.Max(0, Array.IndexOf(EyeCursorIds, g.EyeCursor ?? "follow"));
+        ui.Label(new RectangleF(lx + 10, 594, 128, 40), "Eye cursor", g.EyeTracking ? Theme.Text : Theme.Dim, 15);
+        if (ui.Segmented("vc.eyec", new RectangleF(lx + 140, 596, cw - 150, 38), EyeCursorNames, ref eci, g.EyeTracking)) g.EyeCursor = EyeCursorIds[eci];
         DrawControlsHelp(ui, rx + 10, 392);
         // eye tracking (Sys/EyeGaze.cs), under the controls: the look from Virtual Desktop's - gaze focus, smart capture, the watch's
         // glance and the dim go by it; its state on the line under the two switches
@@ -1169,6 +1171,8 @@ public sealed partial class SettingsView
     static readonly string[] LanguageNames = Lang.Names();
 
     // the choices' words, made once (an array a frame each before; the painter translates them where they are drawn)
+    static readonly string[] EyeCursorIds = { "off", "click", "follow" }, EyeCursorNames = { "Off", "On click", "Follow" },
+        EyeCursor95 = { "Off", "On a click", "Follows your eyes" };
     static readonly string[] LaserHands = { "Both hands", "Left", "Right" }, SmoothingNames = { "Off", "Low", "Med", "High" },
         HandNames = { "Left", "Right" }, FaceNames = { "Full", "Analog", "Minimal", "Time", "Custom" }, PerfNames = { "Numbers", "Graph" };
     string[] _soundNames;

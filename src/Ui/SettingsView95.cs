@@ -640,14 +640,14 @@ public sealed partial class SettingsView
             string.IsNullOrEmpty(prev) ? 0xFF808080 : K95, false, TextAlignment.Leading, true, true);
 
         // eye tracking (Sys/EyeGaze.cs)
-        ui.Group95(new RectangleF(376, 230, 358, 104), "Eye tracking");       // (right, under Who is in the room)
+        ui.Group95(new RectangleF(376, 230, 358, 110), "Eye tracking");       // (right, under Who is in the room)
         bool eb = C.General.EyeTracking;
         if (ui.Check95("vc95.eyes", 388, 250, "Use &eye tracking (Virtual Desktop's)", ref eb)) C.General.EyeTracking = eb;
         Hint(ui, 407, 268, 316, _h.EyeStatus, 16);
         eb = C.General.DimUnlooked;
         if (ui.Check95("vc95.dim", 388, 288, "&Dim the monitors you don't look at", ref eb, C.General.EyeTracking)) C.General.DimUnlooked = eb;
-        eb = C.General.EyeWarp;
-        if (ui.Check95("vc95.warp", 388, 308, "Laser &jumps to where you look", ref eb, C.General.EyeTracking)) C.General.EyeWarp = eb;
+        int eci = Math.Max(0, Array.IndexOf(EyeCursorIds, C.General.EyeCursor ?? "follow"));
+        if (ComboRow(ui, "vc95.eyec", 388, 306, 500, 170, "Eye &cursor:", EyeCursor95, ref eci, C.General.EyeTracking)) C.General.EyeCursor = EyeCursorIds[eci];
         ui.Group95(new RectangleF(16, 270, 350, 64), "Controllers");
         b = g.BlockGameInput;
         ui.Check95("vc95.block", 28, 290, "&Keep clicks from the game", ref b);

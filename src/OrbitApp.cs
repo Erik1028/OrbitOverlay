@@ -562,7 +562,9 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             string lh = C.General.LaserHand;
             _lasers[0].Smoothing = _lasers[1].Smoothing = C.General.LaserSmoothing;
             Laser.RaycastMode = C.General.Raycast is "steamvr" or "local" ? C.General.Raycast : "shadow";
-            Laser.EyeWarp = C.General.EyeWarp && C.General.EyeTracking;      // the laser jumps to your look (Vr/Laser.cs)
+            string eyeCursor = C.General.EyeTracking ? C.General.EyeCursor : "off";       // the eye cursor (Vr/Laser.cs)
+            Laser.EyeWarp = eyeCursor == "click";
+            Laser.EyeFollow = eyeCursor == "follow";
             Laser.PopOut = _popOut ??= PopOutWindow;                         // a window pulled off a monitor (OrbitApp.PopOut.cs)
             RestoreDueWindow(now);
             foreach (var la in _lasers)

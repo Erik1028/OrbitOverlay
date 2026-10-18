@@ -226,7 +226,9 @@ public sealed class GeneralConfig
     public bool SmartCapture { get; set; } = true;    // full frame rate only for monitors you look / point at
     public bool EyeTracking { get; set; } = true;     // the look from Virtual Desktop's eye tracking when it is there (Sys/EyeGaze.cs)
     public bool DimUnlooked { get; set; }             // the monitors you are not looking at (eye tracking) a little dimmer
-    public bool EyeWarp { get; set; } = true;         // a press on a monitor while you look elsewhere on one: the laser jumps there (Vr/Laser.cs)
+    // the eye cursor (Vr/Laser.cs, with eye tracking): "follow" = the beam goes where your eyes are, the hand fine-tunes; "click" = a press on
+    // a monitor while you look elsewhere on one turns the beam there; "off"
+    public string EyeCursor { get; set; } = "follow";
     public bool PopOut { get; set; } = true;          // a window dragged off a monitor into the air becomes a panel of its own (OrbitApp.PopOut.cs)
     public bool PauseWhenOff { get; set; } = true;    // headset taken off: stop capturing and drawing
     public bool HeadsetPacing { get; set; } = true;   // the loop on its own clock at the headset's rate (off: once per game frame)

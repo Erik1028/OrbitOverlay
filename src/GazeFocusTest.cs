@@ -639,8 +639,87 @@ static class GazeFocusTools
         }
         finally { Motion.Level = motion0; }
         WarpChecks(gpu, dir, Want);
+        EyeCursorChecks(gpu, dir, Want);
         Log.Info($"focus: {(problems == 0 ? "every check as wanted" : $"{problems} checks NOT as wanted")}");
         return problems;
+    }
+
+    // The eye cursor's smoothing (Vr/EyeSpot.cs, Erik 10-19), on the made-up row at 90 fps: the eyes on the middle monitor trembling 0.35 deg
+    // - the spot stays; the look moving 2.5 deg in a second (reading) - followed to within the dead zone; a look at the right monitor -
+    // part way at 0.035 s, there by 0.08 s; the hand turned 2 deg - tuned: a small look away moves nothing, the beam turned 2 deg with
+    // the hand; the trigger held - a look at the left monitor moves nothing
+    static void EyeCursorChecks(Gpu gpu, string dir, Action<string, bool> Want)
+    {
+        var r = new Rig(gpu, dir, 3, on: false);
+        r.Step();
+        Vector3 eye = HeadPos, origin = HeadPos + new Vector3(0.2f, -0.45f, -0.3f);
+        bool Look(Vector3 d, out Vector3 at)
+        {
+            foreach (var p in r.Panels)
+            {
+                var (w, width, curv) = Drawn(p);
+                if (LocalRaycast.Intersect(w, width, curv, p.Mon.W, p.Mon.H, eye, d, out _, out _, out at, out _)) return true;
+            }
+            at = default;
+            return false;
+        }
+        static Quaternion Yaw(float deg) => Quaternion.CreateFromAxisAngle(Vector3.UnitY, -deg * MathF.PI / 180);
+        static float Deg(Vector3 a, Vector3 b) => EyeSpot.Angle(Vector3.Normalize(a), Vector3.Normalize(b)) * 180 / MathF.PI;
+        var midDir = Vector3.Normalize(Drawn(r["Middle"]).world.Translation - eye);
+        Look(midDir, out var mid);
+        var hand = Vector3.Normalize(mid - origin);
+        var es = new EyeSpot();
+        es.Start(mid, hand);
+        double clock = 0;
+        const float dt = 1 / 90f;
+        void Frame(Vector3 lookDir, Vector3 h, bool held = false)
+        {
+            clock += dt;
+            bool seen = Look(Vector3.Normalize(lookDir), out var at);
+            es.Step(at, seen, eye, h, held, clock, dt);
+        }
+        // 1. still eyes, trembling
+        var rng = new Random(7);
+        float tremble = 0;
+        for (int i = 0; i < 90; i++)
+        {
+            var axis = Vector3.Normalize(new Vector3((float)rng.NextDouble() - 0.5f, (float)rng.NextDouble() - 0.5f, (float)rng.NextDouble() - 0.5f));
+            Frame(Vector3.Transform(midDir, Quaternion.CreateFromAxisAngle(axis, (float)rng.NextDouble() * 0.35f * MathF.PI / 180)), hand);
+            tremble = MathF.Max(tremble, Vector3.Distance(es.Spot(clock), mid) * 1000);
+        }
+        // 2. reading: 2.5 deg to the right in a second, then 0.5 s still
+        for (int i = 1; i <= 90; i++) Frame(Vector3.Transform(midDir, Yaw(2.5f * i / 90)), hand);
+        for (int i = 0; i < 45; i++) Frame(Vector3.Transform(midDir, Yaw(2.5f)), hand);
+        Look(Vector3.Transform(midDir, Yaw(2.5f)), out var read);
+        float behind = Deg(es.Spot(clock) - eye, read - eye);
+        // 3. a look at the right monitor
+        var rightDir = Vector3.Normalize(Drawn(r["Right"]).world.Translation - eye);
+        Look(rightDir, out var right);
+        var before = es.Spot(clock);
+        for (int i = 0; i < 3; i++) Frame(rightDir, hand);                  // ~0.033 s
+        float partWay = Vector3.Distance(es.Spot(clock), before) / Math.Max(1e-6f, Vector3.Distance(right, before));
+        for (int i = 0; i < 5; i++) Frame(rightDir, hand);                  // ~0.089 s
+        float there = Vector3.Distance(es.Spot(clock), right) * 1000;
+        // 4. the hand turns 2 deg: tuned - a small look away (2 deg) moves nothing, the beam turned with the hand
+        var hand2 = Vector3.Transform(hand, Yaw(2));
+        Frame(rightDir, hand2);
+        var spot = es.Spot(clock);
+        for (int i = 0; i < 45; i++) Frame(Vector3.Transform(rightDir, Yaw(-2)), hand2);
+        float tunedMove = Vector3.Distance(es.Spot(clock), spot) * 1000;
+        float beamTurn = Deg(es.Beam(origin, hand2, clock), es.Beam(origin, Vector3.Transform(hand2, Yaw(-2)), clock));
+        float handTurn = Deg(hand2, Vector3.Transform(hand2, Yaw(-2)));       // (a 2 deg turn about the vertical: less on a hand pointing down)
+        // 5. held: a look at the left monitor moves nothing
+        var leftDir = Vector3.Normalize(Drawn(r["Left"]).world.Translation - eye);
+        spot = es.Spot(clock);
+        for (int i = 0; i < 20; i++) Frame(leftDir, hand2, held: true);
+        float heldMove = Vector3.Distance(es.Spot(clock), spot) * 1000;
+        Want($"eye cursor: trembling eyes move the spot {tremble:0.00} mm (want under 0.5); reading 2.5 deg: {behind:0.00} deg behind the look " +
+             $"(want under {EyeSpot.Dead * 180 / MathF.PI + 0.15f:0.00}); a look at the right monitor: {partWay * 100:0}% there after 0.033 s (want 30-95), " +
+             $"{there:0.00} mm off after 0.089 s (want under 1); the hand turned 2 deg: tuned {es.Tuned} (want True), a small look away moves it " +
+             $"{tunedMove:0.00} mm (want under 0.5), the beam turned {beamTurn:0.00} deg with the hand's {handTurn:0.00} (want within 0.15); held: a look at the left monitor moves it {heldMove:0.00} mm (want under 0.5)",
+            tremble < 0.5f && behind < EyeSpot.Dead * 180 / MathF.PI + 0.15f && partWay > 0.3f && partWay < 0.95f && there < 1 && es.Tuned
+            && tunedMove < 0.5f && MathF.Abs(beamTurn - handTurn) < 0.15f && heldMove < 0.5f);
+        foreach (var p in r.Panels) p.Dispose();
     }
 
     // The eye warp's geometry (Vr/Laser.cs, Erik 10-18): the controller at the hip points at the middle monitor, the eyes at the right

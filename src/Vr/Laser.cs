@@ -82,12 +82,24 @@ public sealed class Laser : IDisposable
     // them - does not click: the beam turns to where you look and the next press clicks. The turn is kept in the controller's own frame
     // (the hand's moves stay one to one, the beam a straight line from it); it goes once the beam has been off every panel for a moment,
     // on a panel it does not jump to (the watch, the keyboard), on a grab, or with the setting off.
-    public static bool EyeWarp;                      // General.EyeWarp with eye tracking on (OrbitApp, every frame)
+    public static bool EyeWarp;                      // Eye cursor "On click", eye tracking on (OrbitApp, every frame)
     public const float WarpAngle = 7 * MathF.PI / 180;
     Vector3 _warpLocal;                              // the beam's direction in the controller's frame while warped
     bool _warped;
     double _offSince = -1;
     public bool Warped => _warped;
+
+    // ---- the eye cursor (Erik 10-19: "not only on a click - a cursor that moves with the eye tracking, smoothed") ----
+    // While the hand points roughly at the screens (its own ray on a monitor / window, or within EyeReach of the beam's spot), the beam
+    // goes from the controller to the spot your eyes are on, and the cursor with it. Smoothed (Vr/EyeSpot.cs): the eyes' tremble moves
+    // nothing, a small move of the look (reading along a line) is followed softly, a look elsewhere glides there. The hand fine-tunes on
+    // top, one to one: once it has turned a little the spot stays where the hand puts it until you look elsewhere. While the trigger or the grip is held (a click, a drag) only the hand moves it. The hand turned away from the
+    // screens: the laser as usual.
+    public static bool EyeFollow;                    // Eye cursor "Follow", eye tracking on (OrbitApp, every frame)
+    public const float EyeReach = 35 * MathF.PI / 180;
+    bool _eyeOn;
+    EyeSpot _eye;                                    // the spot and its smoothing (Vr/EyeSpot.cs)
+    public bool EyeCursorOn => _eyeOn;
 
     // ---- a window pulled out of a monitor (OrbitApp.PopOut.cs, Erik 10-18) ----
     // While the trigger drags a window on a monitor and the beam leaves it into the air (PopAngle past its edge), the app makes the window a
@@ -155,7 +167,10 @@ public sealed class Laser : IDisposable
         }
         _rawO = hs.Aim.Translation;
         if (_warped && !EyeWarp) ClearWarp();
-        _rawD = _warped ? Vector3.Normalize(Vector3.TransformNormal(_warpLocal, hs.Aim)) : Vector3.Normalize(MathUtil.Forward(hs.Aim));
+        var handDir = Vector3.Normalize(MathUtil.Forward(hs.Aim));
+        if (EyeFollow) FollowEyes(vr, targets, handDir, hs.Click || hs.Grab, dt);
+        else if (_eyeOn) EyeOff();
+        _rawD = _eyeOn ? EyeBeam(handDir) : _warped ? Vector3.Normalize(Vector3.TransformNormal(_warpLocal, hs.Aim)) : handDir;
         var (o, d) = _filter.Filter(_rawO, _rawD, dt, Smoothing);
 
         // Releases are handled before anything else: the grab / two-hand branches below return
@@ -331,6 +346,7 @@ public sealed class Laser : IDisposable
                 if (Other == null || Other._grab != _hover)
                 {
                     ClearWarp();
+                    if (_eyeOn) EyeOff();
                     _grab = _hover;
                     _hover.PointerLeave(_hand);        // a grabbed monitor gives the mouse back
                     _hover = null;
@@ -373,20 +389,8 @@ public sealed class Laser : IDisposable
     // the press on a monitor: your eyes on another spot of a monitor / window, far enough from the laser's point - the beam turns there
     bool TryWarp(VrSession vr, IReadOnlyList<IPointerTarget> targets, Vector3 laserPoint, in Matrix4x4 aim)
     {
-        if (!EyeWarp || !vr.EyesValid || _hover == null || !_hover.WarpTarget) return false;
-        float nearest = float.MaxValue;
-        Vector3 at = default;
-        for (int i = 0; i < targets.Count; i++)
-        {
-            var t = targets[i];
-            if (t == null || !t.WarpTarget || !t.Interactive || t.Overlay == null) continue;
-            if (t.Overlay.RaycastLocal(vr, vr.GazeOrigin, vr.Gaze, out float dist, out _, out var pt, out _) && dist < nearest && dist < 8f)
-            {
-                nearest = dist;
-                at = pt;
-            }
-        }
-        if (nearest == float.MaxValue || !WarpLocal(laserPoint, vr.GazeOrigin, at, aim, out var local)) return false;
+        if (!EyeWarp || _hover == null || !_hover.WarpTarget) return false;
+        if (!GazeSpot(vr, targets, out var at) || !WarpLocal(laserPoint, vr.GazeOrigin, at, aim, out var local)) return false;
         _warpLocal = local;
         _warped = true;
         _filter.Reset();
@@ -406,6 +410,72 @@ public sealed class Laser : IDisposable
         if (l.LengthSquared() < 1e-6f) return false;
         local = Vector3.Normalize(l);
         return true;
+    }
+
+    // the spot your eyes are on: the nearest monitor / window along the look
+    static bool GazeSpot(VrSession vr, IReadOnlyList<IPointerTarget> targets, out Vector3 at)
+    {
+        at = default;
+        if (!vr.EyesValid) return false;
+        float nearest = float.MaxValue;
+        for (int i = 0; i < targets.Count; i++)
+        {
+            var t = targets[i];
+            if (t == null || !t.WarpTarget || !t.Interactive || t.Overlay == null) continue;
+            if (t.Overlay.RaycastLocal(vr, vr.GazeOrigin, vr.Gaze, out float dist, out _, out var pt, out _) && dist < nearest && dist < 8f)
+            {
+                nearest = dist;
+                at = pt;
+            }
+        }
+        return nearest < float.MaxValue;
+    }
+
+    // what the hand's own ray is on: 1 a monitor / window, 2 another panel (the keyboard, the watch, the settings, a bar), 0 nothing
+    static int HandOn(VrSession vr, IReadOnlyList<IPointerTarget> targets, Vector3 o, Vector3 d)
+    {
+        float nearest = float.MaxValue;
+        int what = 0;
+        for (int i = 0; i < targets.Count; i++)
+        {
+            var t = targets[i];
+            if (t == null || !t.Interactive || t.Overlay == null) continue;
+            if (t.Overlay.RaycastLocal(vr, o, d, out float dist, out _, out _, out _) && dist < nearest && dist < 8f)
+            {
+                nearest = dist;
+                what = t.WarpTarget ? 1 : 2;
+            }
+        }
+        return what;
+    }
+
+    // the eye cursor, a frame: on / off, where its spot is (EyeFollow)
+    void FollowEyes(VrSession vr, IReadOnlyList<IPointerTarget> targets, Vector3 hand, bool held, float dt)
+    {
+        bool seen = GazeSpot(vr, targets, out var look);
+        int on = HandOn(vr, targets, _rawO, hand);
+        bool handOn = on == 1;
+        if (on == 2) { if (_eyeOn) EyeOff(); return; }      // the hand on the keyboard, the watch, a bar: the laser as usual
+        if (!_eyeOn)
+        {
+            if (!handOn || !seen || held) return;
+            _eyeOn = true;                               // the hand towards the screens, the eyes on one: the beam to the eyes' spot
+            _eye.Start(look, hand);
+            ClearWarp();
+            _filter.Reset();
+            return;
+        }
+        if (!handOn && EyeSpot.Angle(hand, Vector3.Normalize(_eye.Spot(_clock) - _rawO)) > EyeReach) { EyeOff(); return; }   // turned away
+        _eye.Step(look, seen, vr.GazeOrigin, hand, held, _clock, dt);
+    }
+
+    // the beam: from the controller to the spot, turned by the hand's fine-tune
+    Vector3 EyeBeam(Vector3 hand) => _eye.Beam(_rawO, hand, _clock);
+
+    void EyeOff()
+    {
+        _eyeOn = false;
+        _filter.Reset();
     }
 
     void ClearWarp()
@@ -558,6 +628,7 @@ public sealed class Laser : IDisposable
         _snapShown = false;
         _grabByTrigger = false;
         _warped = false;
+        _eyeOn = false;
         HideBeam();
     }
 
