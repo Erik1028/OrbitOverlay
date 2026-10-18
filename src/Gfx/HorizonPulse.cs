@@ -119,25 +119,38 @@ public sealed class HorizonPulse
     public const int SparkW = 512, SparkH = 128;
     public const float SparkDeg = 16;
 
+    // its layers, outer to inner: colour, strength, width and height (sigma, degrees), how far under the horizon
+    static readonly (uint rgb, float a, float sx, float sy, float dy)[] SparkLayers =
+    {
+        (0xFF2A6D, 0.45f, 3f, 1.0f, 0), (0xFFC2D8, 0.85f, 6f, 0.07f, 0), (0x48E5F0, 0.40f, 3.5f, 0.06f, 0.26f), (0xFF8AB5, 0.85f, 1.1f, 0.55f, 0),
+        (0xFFFFFF, 1f, 0.32f, 0.22f, 0),
+    };
+
     public static uint[] SparkPixels()
     {
-        var px = new uint[SparkW * SparkH];
+        // every layer is a column's curve times a row's (the edges' fade in them too): worked out once each, not per texel (~3 ms once, not 12)
+        int n = SparkLayers.Length;
         float hw = SparkDeg / 2, hh = SparkDeg * SparkH / SparkW / 2;
+        var gx = new float[n * SparkW];
+        var gy = new float[n * SparkH];
+        for (int x = 0; x < SparkW; x++)
+        {
+            float ax = ((x + 0.5f) / SparkW - 0.5f) * 2 * hw, wx = 1 - Smooth01((MathF.Abs(ax) - 0.8f * hw) / (0.2f * hw));
+            for (int k = 0; k < n; k++) gx[k * SparkW + x] = wx * G(ax, SparkLayers[k].sx);
+        }
         for (int y = 0; y < SparkH; y++)
         {
             float ay = (0.5f - (y + 0.5f) / SparkH) * 2 * hh, wy = 1 - Smooth01((MathF.Abs(ay) - 0.75f * hh) / (0.25f * hh));
+            for (int k = 0; k < n; k++) gy[k * SparkH + y] = wy * SparkLayers[k].a * G(ay + SparkLayers[k].dy, SparkLayers[k].sy);
+        }
+        var px = new uint[SparkW * SparkH];
+        for (int y = 0; y < SparkH; y++)
             for (int x = 0; x < SparkW; x++)
             {
-                float ax = ((x + 0.5f) / SparkW - 0.5f) * 2 * hw, w = wy * (1 - Smooth01((MathF.Abs(ax) - 0.8f * hw) / (0.2f * hw)));
                 float r = 0, g = 0, b = 0, a = 0;
-                Layer(ref r, ref g, ref b, ref a, 0xFF2A6D, 0.45f * w * G(ax, 3f) * G(ay, 1.0f));
-                Layer(ref r, ref g, ref b, ref a, 0xFFC2D8, 0.85f * w * G(ax, 6f) * G(ay, 0.07f));
-                Layer(ref r, ref g, ref b, ref a, 0x48E5F0, 0.40f * w * G(ax, 3.5f) * G(ay + 0.26f, 0.06f));
-                Layer(ref r, ref g, ref b, ref a, 0xFF8AB5, 0.85f * w * G(ax, 1.1f) * G(ay, 0.55f));
-                Layer(ref r, ref g, ref b, ref a, 0xFFFFFF, w * G(ax, 0.32f) * G(ay, 0.22f));
+                for (int k = 0; k < n; k++) Layer(ref r, ref g, ref b, ref a, SparkLayers[k].rgb, gx[k * SparkW + x] * gy[k * SparkH + y]);
                 px[y * SparkW + x] = Pack(r, g, b, a);
             }
-        }
         return px;
     }
 
