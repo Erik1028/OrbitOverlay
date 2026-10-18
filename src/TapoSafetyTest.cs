@@ -18,7 +18,8 @@ namespace Orbit;
 //  - never follow a redirect off the bulb's address (a second listener of the tool's own counts what reaches it);
 //  - never take more than 64 KB of an answer (a flood of 16 MB with no length said: what it allocated, what went out before it let go);
 //  - an odd answer (a number too big or not whole, a list or a string for the answer) read as far as it goes, else "could not be read" -
-//    never .NET's own words on the watch.
+//    never .NET's own words on the watch;
+//  - LumosLink lets the bulb's link a new key replaced go (on its own thread, no call in flight), and its last one at the end.
 static class TapoSafetyTools
 {
     // the bulb's side of KLAP (the account's key made up): handshake1, handshake2, then the requests, each answered by Answer - and when
@@ -216,5 +217,31 @@ static class TapoSafetyTools
         bulb.Answer = m => m == "get_device_info" ? DeviceInfo : "{\"error_code\":0}";
         Log.Info($"lights direct: odd answers - a brightness of 50.5 '{half}', of 1e12 '{huge}' (want read read), an error code of 1e12 '{code}', a list '{list}', " +
                  $"a string '{text}' (want {Unreadable} each): {half == "read" && huge == "read" && code == Unreadable && list == Unreadable && text == Unreadable} (want True)");
+
+        // the link through a kept key (DPAPI, in memory only): a new key replaces the bulb's link - the old one let go, the light still read;
+        // the link closed: its last one let go too
+        static bool Wait(Func<bool> ok, int ms = 3000)
+        {
+            for (int i = 0; i < ms / 20 && !ok(); i++) Thread.Sleep(20);
+            return ok();
+        }
+        TapoDirect d1, d2;
+        bool first, swapped, kept;
+        using (var l = new LumosLink { Poll = 0.2, Retry = 0.2, Slow = 0.2 })
+        {
+            l.SetKey(TapoAccount.Protect(key));
+            l.SetBulb(bulb.Host);
+            l.Active = true;
+            l.Watched = true;
+            first = Wait(() => l.State.Ready);
+            d1 = l.DirectForTest;
+            l.SetKey(TapoAccount.Protect(key));             // (the same key protected again: another kept text, so a change)
+            d2 = l.DirectForTest;
+            l.Watched = false; l.Watched = true;
+            swapped = d2 != d1 && Wait(() => d1.Disposed) && Wait(() => l.State.Ready);
+            kept = !d2.Disposed;
+        }
+        Log.Info($"lights direct: through a kept key the link read the made-up bulb {first} (want True); a new key - the old link let go, the light still read " +
+                 $"{swapped} (want True), the new one kept {kept} (want True); the link closed - its last one let go {d2.Disposed} (want True)");
     }
 }

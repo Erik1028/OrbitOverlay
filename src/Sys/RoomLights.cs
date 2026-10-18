@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -76,6 +77,7 @@ public sealed class LumosLink : IDisposable
     volatile string _bulb = "";
     volatile LampState _pub = new() { Status = LinkStatus.Off };
     volatile TapoDirect _direct;            // a key kept: straight to the bulb (null: through Lumos)
+    readonly ConcurrentQueue<TapoDirect> _replaced = new();     // the ones a new key replaced: let go on the thread, between two steps
     string _keyKept;
     int _version;
     HttpClient _http;
@@ -135,7 +137,9 @@ public sealed class LumosLink : IDisposable
         if (kept == _keyKept) return;
         _keyKept = kept;
         var key = TapoAccount.Unprotect(kept);
+        var old = _direct;
         _direct = key == null ? null : new TapoDirect(key);
+        if (old != null) _replaced.Enqueue(old);        // (not disposed here: the thread may be in a call with it)
         Log.Info("lights: " + (key != null ? "straight to the bulb (the Tapo key kept)" : kept != null ? "the kept Tapo key is not this Windows user's: through Lumos" : "through Lumos"));
         _said = LinkStatus.Off;
         _due = DateTime.MinValue;
@@ -218,6 +222,9 @@ public sealed class LumosLink : IDisposable
 
     void Step()
     {
+        // the bulb's links a new key replaced: their HttpClient and connection go here, where no call is in flight (each call takes
+        // _direct anew, so the one a call had when the key changed is done with by the next step)
+        while (_replaced.TryDequeue(out var gone)) gone.Dispose();
         string bulb = _bulb;
         if (bulb.Length == 0)
         {
@@ -377,7 +384,11 @@ public sealed class LumosLink : IDisposable
         _wake.Set();
         _thread?.Join(500);
         _http?.Dispose();
+        _direct?.Dispose();
+        while (_replaced.TryDequeue(out var gone)) gone.Dispose();
     }
+
+    internal TapoDirect DirectForTest => _direct;       // --snapshot: the one asked now (TapoSafetyTest.cs)
 }
 
 // What the RGB is (a new object for every change)

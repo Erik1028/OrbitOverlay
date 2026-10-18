@@ -16,7 +16,7 @@ namespace Orbit;
 // key is all OrbitOverlay keeps: made once from Hexpad's or Lumos's own settings (TapoAccount.Import, read only - the e-mail and the
 // password are dropped at once) and kept DPAPI-protected for this Windows user in Config.Lights.Key. It cannot sign in to TP-Link.
 // It answers in Lumos's words (the same paths and JSON), so LumosLink's commands, coalescing and reading stay as they are.
-public sealed class TapoDirect
+public sealed class TapoDirect : IDisposable
 {
     readonly byte[] _auth;
     // only ever the bulb's own address: a redirect is not followed (whatever answers there must not send the handshake on to another
@@ -40,6 +40,10 @@ public sealed class TapoDirect
     sealed class BulbException(string m) : Exception(m) { }
 
     public TapoDirect(byte[] key) { _auth = key; }
+
+    // its HttpClient and the connection to the bulb it keeps (LumosLink lets one go when a new key replaces it, and at the end)
+    public void Dispose() { Disposed = true; _http.Dispose(); }
+    public bool Disposed { get; private set; }
 
     // a LumosLink call ("GET /api/state?host=..", "POST /api/power {host, on}" ..): the bulb's state as Lumos would give it
     public (int code, string body) Handle(string method, string path, string json)
