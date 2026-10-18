@@ -1,6 +1,7 @@
 using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Net.Http;
 using System.Net.Sockets;
@@ -113,7 +114,7 @@ public sealed class TapoDirect : IDisposable
             };
             if (args != null) req["params"] = args;
             int seq = ++s.Seq;
-            using var msg = new HttpRequestMessage(HttpMethod.Post, $"http://{host}/app/request?seq={seq}")
+            using var msg = new HttpRequestMessage(HttpMethod.Post, "http://" + host + "/app/request?seq=" + seq.ToString(CultureInfo.InvariantCulture))   // not the culture's minus: hu-HU's is U+2212
                 { Content = new ByteArrayContent(Encrypt(s, seq, JsonSerializer.SerializeToUtf8Bytes(req))) };
             msg.Headers.Add("Cookie", s.Cookie);
             using var res = _http.Send(msg);

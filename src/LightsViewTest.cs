@@ -195,10 +195,10 @@ static class LightsViewTools
             bool off = Wait(() => effect == "Off" && l.State.Off && !l.State.Pending) && Last() == "--toggle";
             l.SetColor(0xFF0050FF);
             bool col = Wait(() => Got() == n + 2) && Last() == "--color 0050FF";
-            Tools.Want($"lights prisma: read from a made-up settings.json {read}, the watch shows '{shown0}' (want Breathing); a rainbow picked shows at once {atOnce} " +
+            Tools.Want($"lights prisma: read from a made-up settings.json {read}, the watch shows '{shown0}' (want {Lang.C("rgb", "Breathing")}); a rainbow picked shows at once {atOnce} " +
                        $"and Prisma's pipe got '--effect rainbow' {fx}; a slider dragged sent '--brightness 55' last {br} in {n - 1} command(s) " +
                        $"(want fewer than 8); a tap's '--toggle' {off}; a colour '--color 0050FF' {col} -",
-                       read && shown0 == "Breathing" && atOnce && fx && br && n - 1 < 8 && off && col);
+                       read && shown0 == Lang.C("rgb", "Breathing") && atOnce && fx && br && n - 1 < 8 && off && col);
         }
         finally
         {
