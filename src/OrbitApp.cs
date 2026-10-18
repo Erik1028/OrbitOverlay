@@ -731,7 +731,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
                 _vr.Suppress[h] = true;
                 var t = _lasers[h].Hovered;
                 if (t != null) _blockOn[h] = t;
-                _blockUntil[h] = now + (_blockOn[h] is DesktopPanel or WindowPanel ? 1.5 : 0.3);
+                _blockUntil[h] = now + (_blockOn[h] is DesktopPanel or WindowPanel && !_lasers[h].EyeCursorOn ? 1.5 : 0.3);   // (the eye cursor: soon)
             }
             else if (_blockOn[h] is { } last && !last.Interactive) { _blockUntil[h] = Math.Min(_blockUntil[h], now); _blockOn[h] = null; }
             else if (_vr.Suppress[h] && (!on || !C.General.BlockGameInput || now >= _blockUntil[h]) && !(hs.Click || hs.Grab || hs.Secondary))

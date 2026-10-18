@@ -96,11 +96,13 @@ public sealed class Laser : IDisposable
     // eye tracking only (Erik 10-19): the cursor is the eyes alone - the ray goes from the eyes to the smoothed spot, no beam, no dot, the
     // hand never fine-tunes. The hand says on / off: on while it is held towards the screens and not on another panel (the keyboard, the
     // watch, a bar: the laser as usual there); off too once the eyes have been off the screens for EyeAway (the world: the game's trigger)
-    // The diagnostics of 10-19 01:42 (Erik "még nem jó"): the bar under a monitor opened by the eyes took the cursor, and the eye cursor
-    // flipped on / off every few frames at a monitor's edge. Now: the hand counts as "towards the screens" by how near its ray passes
-    // them (on within NearEngage, off past NearRelease), a change off lasts AwayHold / OtherPanelHold first, the eyes never hover or open
-    // anything but a monitor / window (the bar opens from the hand's ray: HandScreen)
-    public const float NearEngage = 8 * MathF.PI / 180, NearRelease = 25 * MathF.PI / 180, EyeAway = 0.4f, AwayHold = 0.3f, OtherPanelHold = 0.12f;
+    // The diagnostics of 10-19 (Erik "még nem jó", "a kijelző ilyenkor legyen eye tracking only"): the bar under a monitor opened by the
+    // eyes took the cursor, the eye cursor flipped at a monitor's edge, then it let go whenever the hand turned while the eyes were on a
+    // monitor. Now the screens are the eyes' alone while eye tracking works: on whenever the eyes are on a monitor / window (whichever
+    // way the hand points), every hand's trigger clicks there, the hands' own lasers never hover a screen (the keyboard, the watch, the
+    // settings, a bar: as usual); off once the hand points at another panel (OtherPanelHold) or the eyes are off the screens (EyeAway) -
+    // never while a button is held (a drag). Eye tracking lost: the hands' lasers on the screens again.
+    public const float EyeAway = 0.4f, OtherPanelHold = 0.12f;
     double _eyeSeenAt, _offWantSince = -1;
     IPointerTarget _handScreen;
     Vector2 _handPx;
@@ -178,7 +180,7 @@ public sealed class Laser : IDisposable
         _rawO = _handO = hs.Aim.Translation;
         if (_warped && !EyeWarp) ClearWarp();
         var handDir = _handD = Vector3.Normalize(MathUtil.Forward(hs.Aim));
-        if (EyeFollow) FollowEyes(vr, targets, handDir, dt);
+        if (EyeFollow) FollowEyes(vr, targets, handDir, hs.Click || hs.Grab, dt);
         else if (_eyeOn) EyeOff();
         if (_eyeOn)
         {
@@ -270,7 +272,8 @@ public sealed class Laser : IDisposable
         for (int ti = 0; ti < targets.Count; ti++)
         {
             var t = targets[ti];
-            if (t == null || !t.Interactive || !t.AcceptsFrom(_hand) || (_eyeOn && !t.WarpTarget)) continue;
+            if (t == null || !t.Interactive || !t.AcceptsFrom(_hand)) continue;
+            if (_eyeOn ? !t.WarpTarget : EyeFollow && vr.EyesValid && t.WarpTarget && _press != t) continue;      // (the screens: the eyes')
             if (Hit(vr, t.Overlay, o, d, out float dist, out Vector2 uv, out var pt, out var nrm) && dist < bestDist && dist < 8f)
             {
                 best = t; bestDist = dist; bestUv = uv; bestPoint = pt; bestNormal = nrm;
@@ -473,39 +476,22 @@ public sealed class Laser : IDisposable
         return what;
     }
 
-    // how near the hand's ray passes the screens: the angle to the nearest point of a monitor / window (0: on one)
-    static float NearScreens(VrSession vr, IReadOnlyList<IPointerTarget> targets, Vector3 o, Vector3 d)
-    {
-        float best = MathF.PI;
-        for (int i = 0; i < targets.Count; i++)
-        {
-            var t = targets[i];
-            if (t == null || !t.WarpTarget || !t.Interactive || t.Overlay == null) continue;
-            if (!t.Overlay.ProjectLocal(vr, o, d, out _, out _, out var pt, out _)) continue;
-            var to = pt - o;
-            if (to.LengthSquared() < 1e-6f) continue;
-            best = MathF.Min(best, EyeSpot.Angle(d, Vector3.Normalize(to)));
-        }
-        return best;
-    }
-
     // the eye cursor, a frame: on / off, where its spot is (EyeFollow)
-    void FollowEyes(VrSession vr, IReadOnlyList<IPointerTarget> targets, Vector3 hand, float dt)
+    void FollowEyes(VrSession vr, IReadOnlyList<IPointerTarget> targets, Vector3 hand, bool held, float dt)
     {
         bool seen = GazeSpot(vr, targets, out var look);
         int on = HandOn(vr, targets, _handO, hand, out _handScreen, out _handPx);
-        float near = on == 1 ? 0 : NearScreens(vr, targets, _handO, hand);
         if (!_eyeOn)
         {
-            if (!seen || on == 2 || near > NearEngage) return;
-            _eyeOn = true;                               // the hand towards the screens, the eyes on one: the cursor where the eyes are
+            if (!seen || on == 2 || (held && _press != null)) return;
+            _eyeOn = true;                               // the eyes on a screen: the cursor where they are
             _eye.Start(look, hand);
             _eyeSeenAt = _clock;
             _eyeLostAt = -1;
             _offWantSince = -1;
             ClearWarp();
             _filter.Reset();
-            EyeDiag(vr, targets, on == 1 ? "on - the hand on a monitor" : "on - the hand near the monitors");
+            EyeDiag(vr, targets, "on - the eyes on a screen");
             return;
         }
         if (seen)
@@ -520,15 +506,14 @@ public sealed class Laser : IDisposable
             if (_eyeLostAt < 0) _eyeLostAt = _clock;
             if (!_eyeLostLogged && _clock - _eyeLostAt > 0.12) { _eyeLostLogged = true; EyeDiag(vr, targets, "the look left the screens - the cursor waits"); }
         }
-        // let go - only once it has lasted (a monitor's edge, a frame on a bar must not flip it)
-        string why = on == 2 ? "the hand on another panel (keyboard / watch / bar)"
-            : near > NearRelease ? "the hand turned away from the screens"
+        // let go (never in the middle of a drag): the hand on another panel a moment, or the eyes off the screens
+        string why = held ? null
+            : on == 2 ? "the hand on another panel (keyboard / watch / bar)"
             : _clock - _eyeSeenAt > EyeAway ? $"the look off the screens for {EyeAway:0.0} s" : null;
         if (why != null)
         {
             if (_offWantSince < 0) _offWantSince = _clock;
-            float hold = on == 2 ? OtherPanelHold : near > NearRelease ? AwayHold : 0;
-            if (_clock - _offWantSince >= hold)
+            if (_clock - _offWantSince >= (on == 2 ? OtherPanelHold : 0))
             {
                 EyeDiag(vr, targets, "off - " + why);
                 EyeOff();                                // the laser / the game again
