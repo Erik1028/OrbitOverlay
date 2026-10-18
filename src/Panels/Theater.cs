@@ -131,6 +131,7 @@ public sealed partial class Theater : IDisposable
         DestroyCityLife();                  // (the flying cars' overlays, TheaterCityLife.cs)
         DestroyBackdrop();
         DestroyAmbilight();
+        DestroyHorizon();
     }
 
     public ITheaterScreen Screen => On ? _screen : null;
@@ -322,6 +323,7 @@ public sealed partial class Theater : IDisposable
         }
         UpdateCityLife(dt);                     // Cyber's night city alive: its lamps, its flying cars (TheaterCityLife.cs)
         UpdateAmbilight(dt);                    // the glow round the screen (TheaterAmbilight.cs)
+        UpdateHorizon(dt, dim);                 // Cyber: the neon horizon's breathing and its sweep (TheaterHorizon.cs)
         // once it is in: how the screen is doing (if it does not show up, the log says why)
         if (On && _screen != null && _t >= 1 && !_checked)
         {
@@ -373,5 +375,6 @@ public sealed partial class Theater : IDisposable
         DisposeCyber();
         DisposeBackdrop();
         DisposeAmbilight();
+        DisposeHorizon();
     }
 }

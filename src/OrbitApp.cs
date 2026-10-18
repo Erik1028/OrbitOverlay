@@ -126,6 +126,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         _roomPanel = new RoomPanel(_gpu, _painter, _cfg);
         _whatsNewPanel = new WhatsNewPanel(_gpu, _painter) { OnOk = DismissWhatsNew };
         _theater = new Theater(_gpu, _painter);
+        _theater.SoundLevel = _mixer.OutputPeak;             // Cyber's horizon breathes with what plays (Panels/TheaterHorizon.cs)
         _theaterBar = new TheaterBar(_gpu, _painter, _cfg)
         {
             OnSwitch = s => _theater.Switch(s),

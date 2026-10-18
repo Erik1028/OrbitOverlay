@@ -308,6 +308,10 @@ public sealed class AudioMixer : IDisposable
         return ra == 0 && a.Loud > b.Loud + 0.06f;
     }
 
+    // What the device plays now, every app together (its own meter), 0..1; -1: no device / no meter. Theater's Cyber horizon breathes
+    // with it (TheaterHorizon.cs): one COM call, asked once a frame only while that shows - the device is the one Tick follows anyway.
+    public float OutputPeak() => _dev.Peak();
+
     public void Dispose() => _dev.Dispose();
 }
 
@@ -366,6 +370,7 @@ public interface IMixerDevice : IDisposable
     void Read(bool peaks);              // their levels, mutes and states now (and meters)
     bool Write(MixerSession s, float level, bool mute);
     MixerIdentity Identify(MixerSession s);         // which app: its key, name and icons (they may come a moment later)
+    float Peak() => -1;                 // what it plays now, every app together (its own meter), 0..1; -1: none (the tools' made-up one)
 }
 
 public readonly record struct MixerIdentity(string Key, string Name, uint[] Icon32, uint[] Icon16);
@@ -633,6 +638,8 @@ sealed class CoreAudioDevice : IMixerDevice
     CoreAudio.IMMDevice _dev;
     CoreAudio.IAudioEndpointVolume _vol;
     CoreAudio.IAudioSessionManager2 _mgr;
+    CoreAudio.IAudioMeterInformation _meter;     // the device's own meter: made the first time it is asked for (Peak)
+    bool _meterTried;
     Callback _cb;
     string _id;
     bool _warned;
@@ -723,6 +730,39 @@ sealed class CoreAudioDevice : IMixerDevice
             return true;
         }
         catch (Exception e) { Warn(e.Message); level = -1; return false; }
+    }
+
+    // The device's peak now (all its apps mixed). Its meter is made on the first ask - only theater's Cyber horizon asks, so nobody
+    // else ever has one - and again after the device changes (Release); one that cannot be made is not tried again until then.
+    public float Peak()
+    {
+        if (_dev == null) return -1;
+        try
+        {
+            if (_meter == null)
+            {
+                if (_meterTried) return -1;
+                _meterTried = true;
+                var pid = typeof(CoreAudio.IAudioMeterInformation).GUID;
+                if (_dev.Activate(ref pid, CLSCTX_ALL, IntPtr.Zero, out object o) != 0 || o == null) return -1;
+                _meter = o as CoreAudio.IAudioMeterInformation;
+                if (_meter == null) { Marshal.ReleaseComObject(o); return -1; }
+            }
+            return _meter.GetPeakValue(out float pk) == 0 ? Math.Clamp(pk, 0, 1) : -1;
+        }
+        catch (Exception e)
+        {
+            Warn("meter: " + e.Message);
+            ReleaseMeter();
+            _meterTried = true;
+            return -1;
+        }
+    }
+
+    void ReleaseMeter()
+    {
+        if (_meter != null) { try { Marshal.ReleaseComObject(_meter); } catch { } _meter = null; }
+        _meterTried = false;
     }
 
     public bool WriteMaster(float level, bool mute)
@@ -865,6 +905,7 @@ sealed class CoreAudioDevice : IMixerDevice
         Clear();
         if (_cb != null && _vol != null) { try { _vol.UnregisterControlChangeNotify(_cb); } catch { } }
         _cb = null;
+        ReleaseMeter();
         if (_mgr != null) { try { Marshal.ReleaseComObject(_mgr); } catch { } _mgr = null; }
         if (_vol != null) { try { Marshal.ReleaseComObject(_vol); } catch { } _vol = null; }
         if (_dev != null) { try { Marshal.ReleaseComObject(_dev); } catch { } _dev = null; }
