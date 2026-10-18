@@ -15,6 +15,7 @@ namespace Orbit;
 //   every monitor and window to switch to (left to right as on your desk, then the windows), the same settings, live,
 //   and Exit.
 // - Both: a keyboard button (lit while the keyboard is shown).
+// - Cyber, theater mode: what plays as a media console after the screens - NOW PLAYING //, play / pause, -10 s / +10 s (TheaterBarMedia.cs).
 // It fades away when you are not using it, so nothing sits under the picture. Turned off: Settings > Monitors.
 public sealed partial class TheaterBar : IPointerTarget, IDisposable
 {
@@ -80,6 +81,7 @@ public sealed partial class TheaterBar : IPointerTarget, IDisposable
     public void Update(VrSession vr, double now, float dt, Theater theater, List<ITheaterScreen> choices,
         ITheaterScreen pointed, bool lower, bool onBar)
     {
+        CyberScreenFx.BarSelect = 0;          // (the big screen's "selected" brackets: set below while the bar is up in theater mode)
         if (Ov == null) return;
         _view = theater.View;
         bool th = theater.On && _view != null && theater.Screen != null;
@@ -125,6 +127,7 @@ public sealed partial class TheaterBar : IPointerTarget, IDisposable
             return;
         }
 
+        if (th) MediaTick(now);          // theater mode: what plays, for the Cyber bar's media part (TheaterBarMedia.cs)
         // held (a slider dragged) or just stepped with the stick: the bar keeps its place and layout
         bool held = (_ptr.Down || now < _holdUntil) && _owner != null;
         if (th && !held && (!Same(choices) || _current != theater.Screen))
@@ -134,7 +137,7 @@ public sealed partial class TheaterBar : IPointerTarget, IDisposable
             _current = theater.Screen;
             _dirty = true;
         }
-        int key = (th ? 1000 + _choices.Count * 8 : 0) + (int)Theme.Retro + 100000 * Lang.Version;      // another style or language: another width
+        int key = (th ? 1000 + _choices.Count * 8 : 0) + (int)Theme.Retro + 100000 * Lang.Version + MediaKey;     // another style or language: another width
         if (key != _layoutKey && !held) Relayout(key);
         // changed elsewhere (grabbing the big screen, the settings window): the sliders follow
         if (SizeNow != _lastSize || C.Dim != _drawnDim || C.Curved != _drawnCurved || KbOn != _drawnKb) _dirty = true;
@@ -145,6 +148,7 @@ public sealed partial class TheaterBar : IPointerTarget, IDisposable
         // Held, it stays where it is: a new size moves the screen's bottom edge, and the bar must not slide out from
         // under the laser. Fading out under a panel it stays where it was too (the panel may be on its way out).
         float e = 1 - MathF.Pow(1 - _vis, 3);
+        if (th) CyberScreenFx.BarSelect = e;
         if (!held && (th || show))
         {
             Matrix4x4 sw;
@@ -171,6 +175,7 @@ public sealed partial class TheaterBar : IPointerTarget, IDisposable
             _dirty = _ui.Interacting || _ui.Changed;
             _wake = AnimWake.Take();
         }
+        else if (MediaPartUpdate()) Ov.SetTexture(_surf.Tex);      // only the media readout moved on (TheaterBarMedia.cs)
         Ov.Show();
     }
 
@@ -202,8 +207,8 @@ public sealed partial class TheaterBar : IPointerTarget, IDisposable
         }
         else
         {
-            _tw = Pad + (_theater ? n * (ChipW + Gap) : GoW + Gap) + SliderW + Gap + SliderW + Gap + CurveW + Gap + (H - 2 * Pad) +
-                  (_theater ? Gap + (H - 2 * Pad) : 0) + Pad;
+            _tw = Pad + (_theater ? n * (ChipW + Gap) : GoW + Gap) + MediaW + SliderW + Gap + SliderW + Gap + CurveW + Gap + (H - 2 * Pad) +
+                  (_theater ? Gap + (H - 2 * Pad) : 0) + Pad;      // MediaW: Cyber's media part in theater mode (TheaterBarMedia.cs), else 0
             _th = H;
         }
         _retired?.Dispose();
@@ -509,7 +514,7 @@ public sealed partial class TheaterBar : IPointerTarget, IDisposable
         _choices.Clear();
         _choices.AddRange(choices);
         _current = current;
-        int key = (_theater ? 1000 + _choices.Count * 2 : 0) + (Theme.Classic ? 1 : 0);
+        int key = (_theater ? 1000 + _choices.Count * 2 : 0) + (Theme.Classic ? 1 : 0) + MediaKey;
         if (key != _layoutKey) Relayout(key);
         Draw();
         return _surf;
@@ -521,5 +526,7 @@ public sealed partial class TheaterBar : IPointerTarget, IDisposable
         _surf?.Dispose();
         _retired?.Dispose();
         _canvas95?.Dispose();
+        _read?.Dispose();
+        _line?.Dispose();
     }
 }

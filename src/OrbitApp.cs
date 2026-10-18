@@ -135,6 +135,10 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             OnSettings = () => { _theater.Apply(C.Theater); _cfg.MarkDirty(); _win.Dirty = true; },
             OnKeyboard = ToggleKeyboard,
             KeyboardShown = () => C.Keyboard.Visible,
+            // Cyber's media console in theater mode (Panels/TheaterBarMedia.cs): the Media widget's reader and its very commands
+            ReadMedia = () => TheaterBar.Read(_media),
+            OnMedia = WristAction,
+            OnSeekTo = s => _media.SeekTo(s),
         };
         _status = new StatusLine(_osc);
         _data.Dock = _dockSnap;
