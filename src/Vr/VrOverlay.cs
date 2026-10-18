@@ -54,6 +54,7 @@ public sealed class VrOverlay : IDisposable
     IntPtr _lastTex;
 
     public bool Visible => _visible;
+    public IntPtr TextureForTest => _lastTex;        // (the checks: the texture it was given last)
 
     // Night mode: every overlay Orbit shows in VR is multiplied by this (1 = normal brightness).
     // The SteamVR dashboard tab is left alone (it is not created through the public constructor).

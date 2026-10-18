@@ -114,6 +114,10 @@ public sealed partial class Theater
         if (_city != null || _sky != null)
         {
             _band?.Hide();
+            // the wall still has the city on it (a Cyber theater played): the black wall back on it before the city's texture goes.
+            // CyberWall did this, but only with theater on; with the style changed while it is off (TheaterWarm.cs lets the city go
+            // here, on an idle frame) the next theater would have shown SteamVR a texture that is gone.
+            if (_cityOn && _dim != null) { _dim.SetTexture(_black.Tex); _ringR = -1; }
             _city?.Dispose(); _city = null;
             _sky?.Dispose(); _sky = null;
             _cityOn = false;
@@ -243,6 +247,9 @@ public sealed partial class Theater
 
     public bool CityHeldForTest => _city != null || _sky != null;
     public bool BackdropHeldForTest => _backTex != null;
+    // what the wall's overlay was given last (a fake SteamVR): the black wall / the city
+    public bool WallIsBlackForTest => _dim != null && _dim.TextureForTest == _black.Tex.NativePointer;
+    public bool WallIsCityForTest => _dim != null && _city != null && _dim.TextureForTest == _city.Tex.NativePointer;
     public void CyberForTest() => BackdropOff();        // what a frame in Cyber does to the picture's texture
 
     // ---- drawing: any thread (no painter, no Theme) - plain numbers into premultiplied BGRA ----

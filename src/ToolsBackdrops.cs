@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
+using System.Numerics;
 
 namespace Orbit;
 
@@ -21,7 +22,8 @@ namespace Orbit;
 //  - nothing past the fade: every texel past 79.5° up or down clear (the cylinder's edge is at 81°);
 //  - its alpha smooth: no step between two neighbouring texels (the seam behind you too) over 2 levels - dithered, no bands;
 //  - premultiplied: no colour over its alpha;
-//  - one texture at a time: the city's let go when a backdrop is made, the backdrop's when Cyber's city is on;
+//  - one texture at a time: the city's let go when a backdrop is made, the backdrop's when Cyber's city is on - and in VR (a fake
+//    SteamVR) with the style changed while theater is off, the wall's overlay never keeps a texture that is gone (TheaterWarm.cs);
 //  - the motion: Terminal's slow warm-up only with Motion Full; the picture comes up after the dim (Full).
 static partial class Tools
 {
@@ -122,6 +124,48 @@ static partial class Tools
             th.CyberForTest();
             Log.Info($"backdrops: the city held in Cyber {city0} (want True), let go when a backdrop is made {cityGone} (want True), the backdrop held " +
                      $"{backHeld} (want True) and let go in Cyber {!th.BackdropHeldForTest} (want True)");
+
+            // in VR (a fake SteamVR), the style changed with theater off: TheaterWarm.cs makes the new style's textures on idle frames and
+            // lets the old style's go - the wall's overlay must not keep a texture that is gone. After a Cyber theater, a Modern one starts
+            // on the black wall; after a Modern one, a Cyber one on the city.
+            bool fake0 = VrOverlay.Fake;
+            VrOverlay.Fake = true;
+            try
+            {
+                var vr = new VrSession();
+                vr.Device[0] = Matrix4x4.CreateTranslation(0, 1.6f, 0);
+                vr.DeviceValid[0] = true;
+                var scr = new TheaterTest.FakeScreen { Name = "AOC 24G4X", HomeWorld = Matrix4x4.CreateTranslation(0, 1.4f, -1.1f) };
+                var live = new List<ITheaterScreen> { scr };
+                var tcfg = new TheaterConfig();
+                using var tv = new Theater(gpu, painter);
+                tv.CreateOverlay();
+                void Frames(int n) { for (int i = 0; i < n; i++) tv.Update(vr, 1 / 90f, tcfg.Dim, live); }
+                Theme.Apply(new AppearanceConfig { Style = CyberHud.Id });
+                Frames(10);                                                 // theater off: the city made ready
+                bool cityReady0 = tv.CityHeldForTest, wallBlack0 = tv.WallIsBlackForTest;
+                tv.Start(scr, scr, vr, tcfg); Frames(90);
+                bool cityOn = tv.WallIsCityForTest;
+                tv.Stop(vr, tcfg); Frames(90);
+                Theme.Apply(new AppearanceConfig { Style = "modern" });
+                Frames(2);                                                  // theater off: the city let go, the hall being drawn
+                bool cityGone2 = !tv.CityHeldForTest;
+                tv.Start(scr, scr, vr, tcfg); Frames(1);
+                bool blackBack = tv.WallIsBlackForTest;
+                tv.Stop(vr, tcfg); Frames(90);
+                Theme.Apply(new AppearanceConfig { Style = CyberHud.Id });
+                Frames(10);
+                bool hallGone = !tv.BackdropHeldForTest, cityReady = tv.CityHeldForTest;
+                tv.Start(scr, scr, vr, tcfg); Frames(10);                   // (the wall shows a few frames in: the dim eases up with the screen)
+                bool cityBack = tv.WallIsCityForTest;
+                tv.Stop(null, tcfg);
+                tv.DestroyOverlay();
+                Log.Info($"backdrops in VR, the style changed with theater off: in Cyber the city made ready before theater {cityReady0} (want True) on a black wall " +
+                         $"{wallBlack0} (want True), the city on the wall while it played {cityOn} (want True); to Modern - the city let go {cityGone2} (want True), " +
+                         $"the next theater on the black wall, not the texture that is gone {blackBack} (want True); back to Cyber - the hall let go {hallGone} " +
+                         $"(want True), the city ready {cityReady} (want True) and on the wall as theater starts {cityBack} (want True)");
+            }
+            finally { VrOverlay.Fake = fake0; VrOverlay.Calls.Reset(); }
 
             // the motion: Terminal's phosphor warms up slowly only with Motion Full; the picture comes up after the dim (Full only)
             float tFull = Theater.BackdropLights(Theater.Backdrop.Phosphor, 0.08f, true, true);
