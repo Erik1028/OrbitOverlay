@@ -15,7 +15,8 @@ namespace Orbit;
 // 127.0.0.1 (a port Windows picks, nothing on the network) that speaks the bulb's side of KLAP with a made-up account - never the real
 // bulb, never a real account. What it must do and must not:
 //  - read the made-up bulb as Lumos would answer for it; a wrong key: "Wrong Tapo account";
-//  - never follow a redirect off the bulb's address (a second listener of the tool's own counts what reaches it).
+//  - never follow a redirect off the bulb's address (a second listener of the tool's own counts what reaches it);
+//  - never take more than 64 KB of an answer (a flood of 16 MB with no length said: what it allocated, what went out before it let go).
 static class TapoSafetyTools
 {
     // the bulb's side of KLAP (the account's key made up): handshake1, handshake2, then the requests, each answered by Answer - and when
@@ -29,6 +30,8 @@ static class TapoSafetyTools
         byte[] _local, _remote;
         public volatile int Hits;                 // requests that reached it
         public volatile string Redirect;          // handshake1 answered with a 307 to this URL (null: as a bulb)
+        public volatile int Flood;                // handshake1 answered with this many bytes, no length said (0: as a bulb)
+        public long Sent;                         // of the flood: how much went out before the other side let go
         public Func<string, string> Answer;       // the method asked -> the bulb's answer before it is encrypted
 
         public FakeBulb(byte[] auth)
@@ -90,11 +93,25 @@ static class TapoSafetyTools
             s.Write(body);
         }
 
+        // an answer that goes on until the connection closes, a chunk at a time, until the other side stops taking it
+        void SendFlood(NetworkStream s, int bytes)
+        {
+            Interlocked.Exchange(ref Sent, 0);
+            s.Write("HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n"u8);
+            var chunk = new byte[64 * 1024];
+            try
+            {
+                for (int n = 0; n < bytes; n += chunk.Length) { s.Write(chunk); Interlocked.Add(ref Sent, chunk.Length); }
+            }
+            catch (IOException) { }
+        }
+
         void Reply(NetworkStream s, string path, byte[] body)
         {
             if (path == "/app/handshake1")
             {
                 if (Redirect != null) { Send(s, "307 Temporary Redirect", "Location: " + Redirect + "\r\n", Array.Empty<byte>()); return; }
+                if (Flood > 0) { SendFlood(s, Flood); return; }
                 _local = body;
                 _remote = RandomNumberGenerator.GetBytes(16);
                 Send(s, "200 OK", "Set-Cookie: TP_SESSIONID=MADEUP01;TIMEOUT=86400\r\n", Join(_remote, Sha(_local, _remote, _auth)));
@@ -169,5 +186,18 @@ static class TapoSafetyTools
         bool stayed = away.Hits == awayHits;
         Log.Info($"lights direct: a 307 from the bulb's address - the other host asked {away.Hits - awayHits} time(s), not followed {stayed} (want True), " +
                  $"the watch told '{r.Message}' {r.Status == LinkStatus.Error && r.Message == "Bulb error 307"} (want True)");
+
+        // a flood from the bulb's address (16 MB, no length said): no more than 64 KB of it taken, the answer not read
+        bulb.Flood = 16 << 20;
+        long a0 = GC.GetTotalAllocatedBytes(true);
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var f = State(new TapoDirect(key));
+        double ms = sw.Elapsed.TotalMilliseconds;
+        long took = GC.GetTotalAllocatedBytes(true) - a0;
+        bulb.Flood = 0;
+        Thread.Sleep(100);
+        long sent = Interlocked.Read(ref bulb.Sent);
+        Log.Info($"lights direct: a 16 MB answer - {took / 1024} KB allocated taking it, {sent / 1024} KB of it sent before it was let go - capped " +
+                 $"{took < 4 << 20 && sent < 16 << 20} (want True), in {ms:0} ms; the watch told '{f.Message}' {f.Message == "The bulb's answer could not be read"} (want True)");
     }
 }

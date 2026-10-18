@@ -20,9 +20,11 @@ public sealed class TapoDirect
 {
     readonly byte[] _auth;
     // only ever the bulb's own address: a redirect is not followed (whatever answers there must not send the handshake on to another
-    // host - it is a "Bulb error 3xx" instead)
+    // host - it is a "Bulb error 3xx" instead). An answer is at most 64 KB (the bulb's are under 4 KB; HttpClient would take up to 2 GB
+    // of anything that answers there, every poll): a bigger one is not read ("The bulb's answer could not be read").
     readonly HttpClient _http = new(new SocketsHttpHandler { UseProxy = false, UseCookies = false, AllowAutoRedirect = false, ConnectTimeout = TimeSpan.FromSeconds(3) })
-        { Timeout = TimeSpan.FromSeconds(8) };
+        { Timeout = TimeSpan.FromSeconds(8), MaxResponseContentBufferSize = MaxAnswer };
+    const int MaxAnswer = 64 * 1024;
     readonly string _uuid = Convert.ToBase64String(MD5.HashData(Guid.NewGuid().ToByteArray()));
     Session _s;
 
@@ -72,7 +74,11 @@ public sealed class TapoDirect
         }
         catch (AuthException) { _s = null; return (401, Error("Wrong Tapo account")); }
         catch (BulbException e) { _s = null; return (500, Error(e.Message)); }
-        catch (Exception e) when (e is CryptographicException or JsonException) { _s = null; return (500, Error("The bulb's answer could not be read")); }
+        catch (Exception e) when (e is CryptographicException or JsonException || e is HttpRequestException { HttpRequestError: HttpRequestError.ConfigurationLimitExceeded })
+        {
+            _s = null;          // (the second: an answer over MaxAnswer)
+            return (500, Error("The bulb's answer could not be read"));
+        }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException or TimeoutException or SocketException or IOException)
         {
             _s = null;
