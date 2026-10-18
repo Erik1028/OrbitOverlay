@@ -143,7 +143,7 @@ static partial class Tools
             System.Globalization.CultureInfo.CurrentCulture = culture;
         }
         Log.Info($"pulse: {(fails == 0 ? "all checks True" : fails + " check(s) False")} - pictures in {pd}");
-        return 0;
+        return fails == 0 ? 0 : 1;
     }
 
     // ---- the breathing ----

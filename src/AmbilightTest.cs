@@ -451,7 +451,7 @@ static partial class Tools
         foreach (var s in new[] { picA, picB, picW, picQ, pic4K }) s.Dispose();
         System.Globalization.CultureInfo.CurrentCulture = culture;
         Log.Info($"ambilight: {(fails == 0 ? "all checks True" : fails + " check(s) False")} - pictures in {dir}");
-        return 0;
+        return fails == 0 ? 0 : 1;
     }
 
     static void GpuIdle(Gpu gpu)

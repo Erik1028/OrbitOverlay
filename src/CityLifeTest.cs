@@ -43,7 +43,7 @@ static partial class Tools
             System.Globalization.CultureInfo.CurrentCulture = culture;
         }
         Log.Info($"city life: {(fails == 0 ? "all checks True" : fails + " check(s) False")} - pictures in {Path.Combine(dir, "citylife")}");
-        return 0;
+        return fails == 0 ? 0 : 1;
     }
 
     static int CityLifeRun(Painter painter, Gpu gpu, string od)
