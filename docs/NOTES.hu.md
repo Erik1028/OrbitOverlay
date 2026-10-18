@@ -196,7 +196,7 @@ dotnet publish -c Release -o dist
   és a billentyűzetet számolja; az Orbit saját lebegő beállításpanelje nem (Erik: a DXOverlay
   elindult, amikor csak a beállításokat nyitotta meg).
 
-## 1.15.0 – új widgetek, fókusz mód, mozi minden stílusban (2026-10-18)
+## 1.15.0 – új widgetek, fókusz mód, szemkövetés, mozi minden stílusban (2026-10-18)
 
 - **Új widgetek**: Photo, Weather, Folder (`WatchFolders.cs`), Friends online + Session recap (VRCX, `immutable=1`),
   On this day (`PhotoMemories.cs`), Temperatures (ADL + PawnIO), Light (`RoomLights.cs`: Lumos HTTP 8770, vagy közvetlenül
@@ -213,6 +213,17 @@ dotnet publish -c Release -o dist
   fény 8, képernyők 106+. `ORBIT_SNAP_ONLY=cyfloor` szimulált headset-nézet 16/32/64 oszloppal.
 - **Teljesítmény**: `VrOverlay.Calls` + `PerfTrace` + `ORBIT_SNAP_ONLY=theaterperf` (költségkerettel); Modern billentyűzet
   0,84 → 0,13 ms, beállítások csak változásra (`LiveSig`), belépés a mozi módba 23 → 1,5 ms, 0 B/képkocka a mozi módban.
+- **Szemkövetés** (`Sys/EyeGaze.cs`): a Virtual Desktop „VirtualDesktop.BodyState” megosztott memóriája (FaceState, 360 B,
+  a VRCFT VD-modul elrendezése), csak olvasva; One Euro simítás (1,5 Hz / 0,06), pislogáskor 0,25 s tartás. `VrSession.Gaze`
+  / `EyesValid` / `GazeOrigin`: fókusz mód (szemmel 10 % + 0,2 s), SmartFps (<6° teljes, <35° 30 fps), óra csak rápillantásra
+  (15° be / 28° ki), a nem nézett monitor halványítása (0,35 s után, 0,6). `--eyetest` = 8 s olvasó próba. Élőben ellenőrizve
+  10-18 22:02 (Quest Pro, VD).
+- **Reszponzív + üresjárat** (Erik: „a vrchat fps-ét se csökkentse, főleg ha ki van kapcsolva”): GPU-prioritás 7 csak használat
+  közben; `VrSession.Idle` (semmi sem látszik) → a kontrollerek 30 Hz-en, a szerepek 1 Hz-en; GPU-próba csak textúraküldéskor;
+  akkumulátor 1 s csak nézett órával. Fókusz mód gyorsabb (Dwell 0,12, szél 5 %, fej-előretekintés 0,1 s), „Lézerre is” kapcsoló.
+- **Tüskék** (10-18 este): a lézer kurzorképe alakonként egyszer rajzolódik és megmarad (`SystemCursor`: alakváltás 1,3–5,5 ms
+  → 0,002 ms), csak akkor kérdezve, ha lézer mutat panelre; a napló `spike:` sora (`Sys/Spikes.cs`) megmondja, hova ment a
+  10 s-os ablak leglassabb képkockája (≥3 ms) – az óra VR-ben mért 5–8 ms-os megjelenése a gépi teszten nem jön elő (1,5–2,2 ms).
 - **Javítások** (átnézés 10-18): TapoDirect átirányítás nélkül, 64 KB-os válaszkorlát; `config.backup-<verzió>.json`
   frissítéskor; a Recenter mozi + fókusz módban a mentett helyhez igazít; a cyber fények gyors ki-be kapcsolásnál nem
   villannak; a tesztek tényleg elbuknak hibánál (KLAP álizzó-teszt).

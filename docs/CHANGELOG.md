@@ -3,14 +3,18 @@
 This file is built into the app: after an update, the "What's new" window shows every section newer than the
 version you came from. Format: "## <version> | <title>", then "- " points (an indented line continues a point).
 
-## 1.15.0 | New widgets, gaze focus, a theater for every style
+## 1.15.0 | New widgets, gaze focus, eye tracking, a theater for every style
 - New watch widgets: Photo (your newest VRChat photos), Weather, Folder (widgets grouped behind one card), Friends
   online and Session recap (from VRCX), On this day (a photo from a year ago), Temperatures (CPU and GPU, with a hot
   alert), Light (your Tapo bulb - through Lumos, or straight to the bulb: "Go direct" in the editor), RGB (Prisma)
   and Avatar toggles (the avatar you wear: its toggles, numbers and sliders, sent to VRChat over OSC).
 - The editor's widget list has categories and a search (type in the desktop window).
 - Gaze focus (Desktops > "Focus the monitor you look at"): the monitor you look at is full size, the others tuck in
-  small beside it - a row of three is a lot narrower.
+  small beside it - a row of three is a lot narrower. It follows your look quickly; "Laser too" off = only the look
+  moves it, not the lasers.
+- Eye tracking (VRChat > Eye tracking): with Virtual Desktop's eye tracking ("Forward tracking data" on), your eyes
+  drive gaze focus, show the watch only when you look at it, give the monitor you look at its full frame rate, and can
+  dim the monitors you are not looking at. Without it, everything goes by your head as before.
 - Theater mode: an Ambilight glow round the screen in its picture's colours; a backdrop of its own in every style (a
   dark cinema hall, Windows 95's starfield, an XP night over the hills, 7's glass ribbons, a calm Mac night, green
   phosphor); Auto theater starts it when a video goes full screen (Layouts > Theater mode, off by default).
@@ -21,6 +25,9 @@ version you came from. Format: "## <version> | <title>", then "- " points (an in
 - Recenter puts the keyboard under the bar too, and in theater under the big screen.
 - Faster: the Modern keyboard draws 6 times faster at rest, the settings panel only redraws when something on it
   changes, coming into theater no longer stutters, and the panels make far less garbage.
+- Lighter while nothing shows: with every panel away OrbitOverlay reads the controllers less often, leaves the GPU's
+  high priority to the game and does next to nothing (~0.1 ms a frame); the animations start sooner.
+- The laser's cursor changes shape (arrow, I-beam, hand) without a hitch: each shape is drawn once and kept.
 - Your settings from the version before are kept as config.backup-<version>.json after an update.
 - Fixed: the light widget said "bulb not reachable" when Lumos was not running; Cyber's skyline flickered and moved
   with the screen; the 1x1 analog clock and some small notes were off on coloured cards; Hungarian words cut short.

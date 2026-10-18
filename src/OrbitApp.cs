@@ -394,6 +394,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         string gpuq = _gpuProbes > 0 ? $", gpu late {100.0 * _gpuLate / _gpuProbes:0.0}%" : "";
         _gpuLate = _gpuProbes = 0;
         Log.Info($"perf: {_perfFrames / (now - _perfStart):0} loops/s{CompositorRates(now - _perfStart)}, work {total / _perfFrames:0.00} ms, wait {_perfWaitSum / _perfFrames:0.0} ms{gpuq} | avg/max ms:{sb}");
+        if (Spikes.Take() is { } spike) Log.Info(spike);        // where the window's slowest frame went (Sys/Spikes.cs)
         Array.Clear(_perfSum); Array.Clear(_perfMax);
         _perfFrames = 0; _perfWaitSum = 0; _perfStart = now;
     }
@@ -517,6 +518,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         {
             GpuProbeCheck();
             double t = Clock.Now;
+            Spikes.Begin();
             _allocMark = GC.GetAllocatedBytesForCurrentThread();
             _vr.Idle = VrOverlay.ShownCount == 0 && !_vr.Suppress[0] && !_vr.Suppress[1];     // nothing of Orbit's in view (VrSession.Idle)
             _vr.Update();
@@ -535,7 +537,10 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             bool dash = _vr.Ov.IsDashboardVisible();
             if (C.General.QuickToggle) CheckQuickToggle(now);
             Perf(0, ref t);
-            _sysCursor?.Update(now);
+            Spikes.Mark(Spikes.Vr);
+            // the Windows cursor's shape: only while a laser points at a panel (nothing else shows it; Vr/SystemCursor.cs)
+            if (_lasers[0].Active || _lasers[1].Active) _sysCursor?.Update(now);
+            Spikes.Mark(Spikes.Cursor);
             var targets = Targets();
             string lh = C.General.LaserHand;
             _lasers[0].Smoothing = _lasers[1].Smoothing = C.General.LaserSmoothing;
@@ -548,15 +553,20 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             bool awake = _vr.HeadsetWorn || !C.General.PauseWhenOff;
             _awake = awake;
             _lasers[0].Update(_vr, targets, awake && !dash && lh != "right", dt, C.General.Haptics);
+            Spikes.Mark(Spikes.LaserRest);
             _lasers[1].Update(_vr, targets, awake && !dash && lh != "left", dt, C.General.Haptics);
+            Spikes.Mark(Spikes.LaserRest);
             UpdateExtras(now, awake, dash);     // B / Y twice (before the block moves on), alerts, per-game rules (OrbitApp.Extras.cs)
             BlockGameInput(awake && !dash, now);
             foreach (var la in _lasers) if (la.Hovered is ITheaterScreen sc) _lastScreen = sc;
             Perf(1, ref t);
+            Spikes.Mark(Spikes.Extras);
             _wrist.Update(_vr, now, dt, _data);
             Perf(2, ref t);
+            Spikes.Mark(Spikes.Watch);
             _kb.Update(_vr, now);
             Perf(3, ref t);
+            Spikes.Mark(Spikes.Keyboard);
             _settingsPanel.Update(_vr, now, dt);
             UpdateDock(now, dt);
             UpdateRoom(now, dt);
@@ -564,6 +574,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             _whatsNewPanel.Update(_vr, dt, WhatsNewList, WhatsNewSub,
                 awake && _vr.HeadsetWorn && _data.VrSince is { } since && (DateTime.Now - since).TotalSeconds > 3);
             Perf(4, ref t);
+            Spikes.Mark(Spikes.Settings);
             _screens.Clear();
             foreach (var d in _desktops) _screens.Add(d);           // (AddRange of another element type boxed an enumerator each time)
             foreach (var w in _windowPanels) _screens.Add(w);
@@ -588,6 +599,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
                 if (now >= _nextWindowScan) { _nextWindowScan = now + 2; ScanWindows(); }
             }
             Perf(5, ref t);
+            Spikes.Mark(Spikes.Desktops);
             UpdateDashboard(now, dash);
             _notifyPanel.Update(_notifyIn, now, dt);
             AutoKeyboard(now);
@@ -610,6 +622,8 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             }
             UpdateGpuPriority(now);
             Perf(6, ref t);
+            Spikes.Mark(Spikes.Rest);
+            Spikes.End();
             GpuProbeIssue();
             PerfFrame(now);
         }

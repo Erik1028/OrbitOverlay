@@ -168,8 +168,11 @@ public sealed partial class WristPanel : IPointerTarget, IDisposable
         if (_dirty || now >= _nextDraw || Animating)
         {
             _dirty = false;          // before Draw: a tap inside Draw asks for the next frame itself
+            Spikes.Mark(Spikes.Watch);
             Draw(d);
+            Spikes.Mark(Spikes.WatchDraw);
             Ov.SetTexture(Surf.Tex);
+            Spikes.Mark(Spikes.WatchSend);
             _lastDraw = now;
             bool fast = C.Face == "custom" ? FramesShown || FastWidgets : WantsFrames;
             _nextDraw = now + (fast ? 0.1 : 0.5);

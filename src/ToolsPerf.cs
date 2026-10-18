@@ -31,7 +31,9 @@ static partial class Tools
         void Row(string what, string style, (double ms, long bytes) c, double layouts = -1)
         {
             rows.Add((what, style, c.ms, c.bytes, layouts));
-            Log.Info($"perf: {style,-6} {what,-34} {c.ms,7:0.000} ms {c.bytes,7} B a frame" + (layouts >= 0 ? $", {layouts:0.0} text layouts made" : ""));
+            Log.Info($"perf: {style,-6} {what,-34} {c.ms,7:0.000} ms {c.bytes,7} B a frame" + (layouts >= 0 ? $", {layouts:0.0} text layouts made" : "")
+                     + (_pacedWorst > 0 ? $", worst frame {_pacedWorst:0.000} ms (frame {_pacedWorstAt})" : ""));
+            _pacedWorst = 0;
         }
         // a case's cost, and the text layouts it makes a frame (a layout made is ~50 us: none at rest is the goal)
         (double ms, long bytes) Cost(string what, string style, Action draw, Action start = null, int n = 60, bool paced = false)
@@ -178,6 +180,7 @@ static partial class Tools
         }
 
         PacerCost();
+        CursorCost(gpu);
 
         File.WriteAllLines(Path.Combine(dir, "perf.tsv"), rows.Select(r => $"{r.style}\t{r.what}\t{r.ms:0.000}\t{r.bytes}\t{r.layouts:0.0}"));
         Motion.Still = still;
@@ -185,6 +188,34 @@ static partial class Tools
     }
 
     static int _perfFrames;
+    static double _pacedWorst;          // a paced case's slowest frame (the best round's), and which one it was
+    static int _pacedWorstAt;
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern IntPtr LoadCursor(IntPtr instance, IntPtr name);
+
+    // the laser's Windows cursor (Vr/SystemCursor.cs): a shape's first time (drawn) and again (kept) - the system's own cursors
+    static void CursorCost(Gpu gpu)
+    {
+        int[] ids = { 32512, 32513, 32649, 32644, 32645, 32646, 32642, 32643, 32515 };     // arrow, I-beam, hand, the sizes, cross
+        using var cur = new SystemCursor(gpu);
+        double first = 0, again = 0, worst = 0;
+        long bytes = 0;
+        for (int round = 0; round < 2; round++)
+            foreach (int id in ids)
+            {
+                var h = LoadCursor(IntPtr.Zero, (IntPtr)id);
+                long m0 = GC.GetAllocatedBytesForCurrentThread();
+                long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+                cur.Use(h);
+                gpu.Ctx.Flush();
+                double ms = System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds;
+                if (round == 0) { first += ms; worst = Math.Max(worst, ms); }
+                else { again += ms; bytes += GC.GetAllocatedBytesForCurrentThread() - m0; }
+            }
+        Log.Info($"perf: cursor shape, first time {first / ids.Length:0.000} ms (worst {worst:0.000}), again {again / ids.Length:0.000} ms " +
+                 $"{bytes / ids.Length} B, {cur.Drawn} drawn for {2 * ids.Length} changes");
+        Want($"cursor: {cur.Drawn} shapes drawn for {2 * ids.Length} changes (want {ids.Length}: a shape seen before is not drawn again)", cur.Drawn == ids.Length);
+    }
 
     [System.Runtime.InteropServices.DllImport("kernel32.dll")] static extern IntPtr GetCurrentThread();
     [System.Runtime.InteropServices.DllImport("kernel32.dll")] static extern bool QueryThreadCycleTime(IntPtr thread, out ulong cycles);
@@ -384,12 +415,14 @@ static partial class Tools
     static (double ms, long bytes) PacedCost(Gpu gpu, Action start, Action draw, int n)
     {
         using var query = gpu.Device.CreateQuery(new Vortice.Direct3D11.QueryDescription(Vortice.Direct3D11.QueryType.Event));
-        double best = double.MaxValue;
+        double best = double.MaxValue, bestWorst = 0;
+        int bestWorstAt = 0;
         long bytes = long.MaxValue;
         for (int round = 0; round < 3; round++)
         {
             start?.Invoke();
-            double sum = 0, next = Clock.Now;
+            double sum = 0, next = Clock.Now, worst = 0;
+            int worstAt = 0;
             long alloc = 0;
             for (int i = 0; i < n; i++)
             {
@@ -403,12 +436,16 @@ static partial class Tools
                 long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
                 draw();
                 gpu.Ctx.Flush();
-                sum += System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds;
+                double ms = System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds;
+                sum += ms;
+                if (ms > worst) { worst = ms; worstAt = i; }
                 alloc += GC.GetAllocatedBytesForCurrentThread() - m0;
             }
-            best = Math.Min(best, sum / n);
+            if (sum / n < best) { best = sum / n; bestWorst = worst; bestWorstAt = worstAt; }
             bytes = Math.Min(bytes, alloc / n);
         }
+        _pacedWorst = bestWorst;
+        _pacedWorstAt = bestWorstAt;
         return (best, bytes);
     }
 

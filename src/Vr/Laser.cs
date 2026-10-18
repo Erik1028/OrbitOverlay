@@ -237,6 +237,7 @@ public sealed class Laser : IDisposable
             best = _press; bestDist = cDist; bestUv = cUv; bestPoint = cPoint; bestNormal = cNormal;
         }
 
+        Spikes.Mark(Spikes.Rays);
         if (best != _hover)
         {
             _hover?.PointerLeave(_hand);
@@ -304,6 +305,7 @@ public sealed class Laser : IDisposable
                 float s = Math.Sign(hs.Stick.Y) * (Math.Abs(hs.Stick.Y) - 0.25f) / 0.75f;
                 _hover.PointerScroll(_hand, s * 12f * dt, px);
             }
+            Spikes.Mark(Spikes.Pointer);
             ShowBeam(vr, o, d, bestDist);
             float mpp = _hover?.LaserCursorScale(_hand) ?? 0;
             if (mpp > 0 && Cursor != null)
