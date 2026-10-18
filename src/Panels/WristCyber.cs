@@ -914,9 +914,21 @@ public sealed partial class WristPanel
             CyValue(cx, vb, val, MathF.Min(_big ? 34 : 30, CyFit(val, col - 10, 30)), okv ? CyLevel(lv, CyW) : CyberHud.Faint);
             CyMono(label, cx, lb, col - 6, CyG);
         }
-        Col(x, fps < 0 ? "–" : $"{fps:0}", "FPS", FpsLevel(fps, hz), fps >= 0);
-        Col(x + col, low < 0 ? "–" : $"{low:0}", "1% LOW", low < 0 ? StatLevel.Ok : FpsLevel(low, hz), low >= 0);
-        Col(x + 2 * col, rp < 0 ? "–" : $"{rp:0}%", "REPROJ", ReprojLevel(rp), rp >= 0);
+        Col(x, fps < 0 ? "–" : CyFig(0, fps, "0"), "FPS", FpsLevel(fps, hz), fps >= 0);
+        Col(x + col, low < 0 ? "–" : CyFig(1, low, "0"), "1% LOW", low < 0 ? StatLevel.Ok : FpsLevel(low, hz), low >= 0);
+        Col(x + 2 * col, rp < 0 ? "–" : CyFig(2, rp, "0", "%"), "REPROJ", ReprojLevel(rp), rp >= 0);
+    }
+
+    // a frame number as text, made again only when its value changes (a new string per number per draw before: 460 B a frame); a
+    // slot per place it is shown, so two places never share one
+    readonly (float v, string s)[] _cyFigs = new (float, string)[6];
+    readonly (string s, uint c)[] _cyNoteParts = new (string, uint)[7];
+
+    string CyFig(int slot, float v, string fmt, string suffix = null)
+    {
+        ref var e = ref _cyFigs[slot];
+        if (e.s == null || e.v != v) { e.v = v; e.s = suffix == null ? v.ToString(fmt, CultureInfo.CurrentCulture) : v.ToString(fmt, CultureInfo.CurrentCulture) + suffix; }
+        return e.s;
     }
 
     float _cyBudget = -1;
@@ -936,11 +948,10 @@ public sealed partial class WristPanel
         var fl = FpsLevel(fps, hz);
         var gl = GpuLevel(ms, 1000f / Math.Max(1, hz));
         var rl = ReprojLevel(rp);
-        var parts = new (string s, uint c)[]
-        {
-            ($"{fps:0}", CyLevel(fl, CyW)), (" FPS", CyG), (" · ", CyG), ($"{ms:0.0}", CyLevel(gl, CyW)), (" MS", CyG), (" · ", CyG),
-            ($"{Math.Max(0, rp):0}%", CyLevel(rl, CyW)),
-        };
+        var parts = _cyNoteParts;          // (the array kept, its numbers made again only when they change)
+        parts[0] = (CyFig(3, fps, "0"), CyLevel(fl, CyW)); parts[1] = (" FPS", CyG); parts[2] = (" · ", CyG);
+        parts[3] = (CyFig(4, ms, "0.0"), CyLevel(gl, CyW)); parts[4] = (" MS", CyG); parts[5] = (" · ", CyG);
+        parts[6] = (CyFig(5, Math.Max(0, rp), "0", "%"), CyLevel(rl, CyW));
         int count = parts.Length;
         float Total(int k) { float t = 0; for (int i = 0; i < k; i++) t += CyMonoW(parts[i].s); return t; }
         while (count > 0 && Total(count) > right - left) count = count == 7 ? 5 : count == 5 ? 2 : 0;
@@ -977,6 +988,10 @@ public sealed partial class WristPanel
         _cyRoomFriends = Lang.Upper(RoomPanel.FriendsText(f));
     }
 
+    // "The Black Cat · 1H 05M": made again only when the world or the minute changes (three strings a frame before)
+    string _cyRoomNote;
+    (string world, int min, int lang) _cyRoomNoteFor = (null, -1, -1);
+
     string RoomNote(PanelData d, DateTime now)
     {
         var s = d.Room;
@@ -984,8 +999,11 @@ public sealed partial class WristPanel
         string world = string.IsNullOrEmpty(s.World) ? Lang.T("A world") : s.World;
         if (s.Since == default) return world;
         var t = now - s.Since;
+        int min = (int)Math.Floor(t.TotalMinutes);
+        if (_cyRoomNote != null && ReferenceEquals(world, _cyRoomNoteFor.world) && min == _cyRoomNoteFor.min && Lang.Version == _cyRoomNoteFor.lang) return _cyRoomNote;
+        _cyRoomNoteFor = (world, min, Lang.Version);
         string stay = t.TotalHours >= 1 ? Lang.F("{0}H {1:00}M", (int)t.TotalHours, t.Minutes) : Lang.F("{0}M", Math.Max(0, (int)t.TotalMinutes));
-        return world + " · " + stay;
+        return _cyRoomNote = world + " · " + stay;
     }
 
     void CyberRoom(RectangleF r, WatchWidget w, PanelData d, int id)

@@ -1936,7 +1936,20 @@ public sealed partial class WristPanel
     }
 
     // who is in the VRChat instance: how many, and the friends among them; a tap grows it into the watch's opened view (WristRoom.cs)
-    static (int people, int friends, string names) RoomCount(PanelData d)
+    // who is in the room, counted once per room snapshot (a StringBuilder and its string on every frame before)
+    (int people, int friends, string names) _roomCount;
+    RoomWatcher.Snapshot _roomCountFor;
+    bool _roomCounted;
+
+    (int people, int friends, string names) RoomCount(PanelData d)
+    {
+        if (_roomCounted && ReferenceEquals(d.Room, _roomCountFor)) return _roomCount;
+        _roomCounted = true;
+        _roomCountFor = d.Room;
+        return _roomCount = CountRoom(d);
+    }
+
+    static (int people, int friends, string names) CountRoom(PanelData d)
     {
         var s = d.Room;
         if (s == null || !s.InRoom) return (-1, 0, "");
@@ -1950,6 +1963,21 @@ public sealed partial class WristPanel
         }
         if (f > 2) names.Append($" +{f - 2}");
         return (s.Here.Count, f, names.ToString());
+    }
+
+    // the 95 room window's two lines ("3 people" / "2 friends: Mira, Tobi") and the small one's value, made again only when they change
+    string _room95Head, _room95Line, _room95Value, _room95Cap;
+    (int n, int f, string names, string world, int lang) _room95For = (-2, -1, null, null, -1);
+
+    void Room95Texts(int n, int f, string names, string world)
+    {
+        var key = (n, f, names, world, Lang.Version);
+        if (_room95Head != null && key == _room95For) return;
+        _room95For = key;
+        _room95Head = n < 0 ? "Not in a world" : n == 1 ? "1 person" : Lang.F("{0} people", n);
+        _room95Line = f > 0 ? (f == 1 ? Lang.T("1 friend") : Lang.F("{0} friends", f)) + ": " + names : n < 0 ? "" : world;
+        _room95Value = n < 0 ? "--" : n.ToString();
+        _room95Cap = f > 0 ? (f == 1 ? "1 friend" : Lang.F("{0} friends", f)) : "in room";
     }
 
     const string Person = "\uE77B";
@@ -2012,15 +2040,14 @@ public sealed partial class WristPanel
     {
         if (_ui.Clickable(Ui.Id("wrm", id), r, out _, out _)) OpenDetail(w);
         var (n, f, names) = RoomCount(d);
+        Room95Texts(n, f, names, n < 0 ? null : d.Room.World);
         if (w.W >= 2)
         {
-            _ui.Text95(Fit(n < 0 ? "Not in a world" : n == 1 ? "1 person" : Lang.F("{0} people", n), c.Width - 8, Ui.F95, true),
-                new RectangleF(c.X + 4, c.Y + c.Height / 2 - 14, c.Width - 8, 13), Blk95, true);
-            _ui.Text95(Fit(f > 0 ? (f == 1 ? Lang.T("1 friend") : Lang.F("{0} friends", f)) + ": " + names : n < 0 ? "" : d.Room.World, c.Width - 8),
-                new RectangleF(c.X + 4, c.Y + c.Height / 2 + 1, c.Width - 8, 13), f > 0 ? 0xFF008000 : Gry95);
+            _ui.Text95(Fit(_room95Head, c.Width - 8, Ui.F95, true), new RectangleF(c.X + 4, c.Y + c.Height / 2 - 14, c.Width - 8, 13), Blk95, true);
+            _ui.Text95(Fit(_room95Line, c.Width - 8), new RectangleF(c.X + 4, c.Y + c.Height / 2 + 1, c.Width - 8, 13), f > 0 ? 0xFF008000 : Gry95);
             return;
         }
-        Value95(c, n < 0 ? "--" : n.ToString(), f > 0 ? (f == 1 ? "1 friend" : Lang.F("{0} friends", f)) : "in room", Blk95);
+        Value95(c, _room95Value, _room95Cap, Blk95);
     }
 
     static bool DockShows(PanelData d) =>
@@ -2560,14 +2587,14 @@ public sealed partial class WristPanel
         bool ok = lvl >= 0;
         if (w.W == 1)
         {
-            Value95(c, ok ? (Volume.Muted ? "Mute" : $"{lvl * 100:0}%") : "--", "volume", Blk95);
+            Value95(c, ok ? (Volume.Muted ? "Mute" : Pct(ShownPct(lvl))) : "--", "volume", Blk95);      // (the "0" format's rounding, made once)
             return;
         }
         float v = ok ? lvl : 0;
         if (_ui.Track95(Ui.Id("wvt", id), new RectangleF(c.X + 2, c.Y, c.Width - 4, 28), ref v, 0, 1, ok && !Volume.Muted, 6)) Volume.Set(v);
         bool mute = Volume.Muted;
         if (_ui.Check95(Ui.Id("wvk", id), c.X + 4, c.Bottom - 16, "Mute", ref mute, ok)) Volume.ToggleMute();
-        _ui.Text95(ok ? $"{lvl * 100:0}%" : "--", new RectangleF(c.Right - 36, c.Bottom - 17, 32, 13), Blk95, false, TextAlignment.Trailing);
+        _ui.Text95(ok ? Pct(ShownPct(lvl)) : "--", new RectangleF(c.Right - 36, c.Bottom - 17, 32, 13), Blk95, false, TextAlignment.Trailing);
     }
 
     void Battery95(RectangleF c, PanelData d, WatchWidget w)
@@ -2584,7 +2611,7 @@ public sealed partial class WristPanel
             foreach (var b in bats) if (b.pct < low.pct) low = b;
             float y = MathF.Floor(c.Y + (c.Height - 28) / 2);
             _ui.Text95(Bat(low.label), new RectangleF(c.X, y, c.Width, 13), Blk95, false, TextAlignment.Center);
-            _ui.Text95($"{low.pct * 100:0}%", new RectangleF(c.X, y + 14, c.Width, 15), low.pct > 0.2f ? Blk95 : 0xFF800000, true,
+            _ui.Text95(Pct(ShownPct(low.pct)), new RectangleF(c.X, y + 14, c.Width, 15), low.pct > 0.2f ? Blk95 : 0xFF800000, true,
                 TextAlignment.Center, size: 13);
             return;
         }
@@ -2598,7 +2625,7 @@ public sealed partial class WristPanel
             var bar = new RectangleF(c.X + 36, y + 1, c.Width - 36 - 32, 10);
             bool low = b.pct <= 0.2f && !b.charging;
             if (bar.Width >= 12) _ui.Progress95(bar, b.pct, low ? 0xFF800000 : Theme.W95Navy);
-            _ui.Text95($"{b.pct * 100:0}%", new RectangleF(c.Right - 32, y, 30, 12), low ? 0xFF800000 : Blk95, true, TextAlignment.Trailing);
+            _ui.Text95(Pct(ShownPct(b.pct)), new RectangleF(c.Right - 32, y, 30, 12), low ? 0xFF800000 : Blk95, true, TextAlignment.Trailing);
         }
     }
 
@@ -2624,10 +2651,30 @@ public sealed partial class WristPanel
             var g = DockGrid(new RectangleF(c.X + 3, c.Y + 3, gw, gh), d, 2, 0, true);
             float tx = g.Right + 5, tw = c.Right - 3 - tx;
             _ui.Text95(Fit(DockWhere(s), tw), new RectangleF(tx, c.Y + c.Height / 2 - 14, tw, 13));
-            _ui.Text95(Fit(s.Ambient ? "Idle" : s.InFolder ? "Folder" : Lang.F("{0} of {1}", s.Page + 1, s.Pages), tw), new RectangleF(tx, c.Y + c.Height / 2 + 1, tw, 13), Gry95);
+            _ui.Text95(Fit(s.Ambient ? "Idle" : s.InFolder ? "Folder" : PageOf95(s.Page + 1, s.Pages), tw), new RectangleF(tx, c.Y + c.Height / 2 + 1, tw, 13), Gry95);
             return;
         }
         DockGrid(RectangleF.Inflate(c, -3, -3), d, 2, 0, true);
+    }
+
+    // "2 of 3" (the dock's page), made again only for other numbers
+    string _pageOf;
+    (int page, int pages, int lang) _pageOfFor = (-1, -1, -1);
+
+    string PageOf95(int page, int pages)
+    {
+        if (_pageOf == null || (page, pages, Lang.Version) != _pageOfFor) { _pageOfFor = (page, pages, Lang.Version); _pageOf = Lang.F("{0} of {1}", page, pages); }
+        return _pageOf;
+    }
+
+    // the CD Player's line, "title - artist", made again only when the song changes
+    string _cdLine, _cdTitle, _cdArtist;
+
+    string CdLine95(string title, string artist)
+    {
+        if (string.IsNullOrEmpty(artist)) return title;
+        if (_cdLine == null || !ReferenceEquals(title, _cdTitle) || !ReferenceEquals(artist, _cdArtist)) { _cdTitle = title; _cdArtist = artist; _cdLine = $"{title} - {artist}"; }
+        return _cdLine;
     }
 
     // the CD Player: green on black, |<<  >  >>|, and the cover when the window is tall
@@ -2648,7 +2695,7 @@ public sealed partial class WristPanel
         var lcd = new RectangleF(x, c.Y + 1, c.Right - x - 1, 18);
         _p.Fill(lcd, Blk95);
         _p.Bevel(lcd, Painter.Edge.Sunken);
-        string line = has ? (string.IsNullOrEmpty(artist) ? title : $"{title} - {artist}") : "Nothing playing";
+        string line = has ? CdLine95(title, artist) : "Nothing playing";
         _ui.Text95(Fit(line, lcd.Width - 8), new RectangleF(lcd.X + 4, lcd.Y + 2, lcd.Width - 6, 14), has ? 0xFF00FF00 : 0xFF00A000);
         var ids = MediaIds;
         var glyphs = MediaGlyphs(playing);

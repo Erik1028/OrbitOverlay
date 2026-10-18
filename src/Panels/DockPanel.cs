@@ -289,6 +289,8 @@ public sealed partial class DockPanel : IPointerTarget, IDisposable
     // the knobs' column: the big one first, then the small left and right ones
     const float ColX = 472, RowH = 116, RowGap = 12;
     static readonly string[] Knobs = { "enc1", "enc0", "enc2" };
+    // the keys' and the round buttons' ids as Hexpad names them, made once (a new string per key per frame before)
+    static readonly string[] KeyIds = { "key1", "key2", "key3", "key4", "key5", "key6" }, BtnIds = { "btn7", "btn8", "btn9" };
 
     void DrawModern(double now)
     {
@@ -348,7 +350,7 @@ public sealed partial class DockPanel : IPointerTarget, IDisposable
         // the six keys: the sharp faces when Hexpad sends them, else the device's
         for (int i = 0; i < HexpadLink.Keys; i++)
         {
-            string id = $"key{i + 1}";
+            string id = KeyIds[i];
             var r = new RectangleF(KeyX(i % 3), KeyY(i / 3), Tile, Tile);
             _hit[id] = r;
             bool down = _pressed == id, hov = _hover == id, flash = Flash(id, now);
@@ -369,7 +371,7 @@ public sealed partial class DockPanel : IPointerTarget, IDisposable
         // a round button under each column
         for (int col = 0; col < 3; col++)
         {
-            string id = $"btn{col + 7}";
+            string id = BtnIds[col];
             float cx = KeyX(col) + Tile / 2, cy = KeyY(2) + 18;
             var r = new RectangleF(cx - 24, cy - 24, 48, 48);
             _hit[id] = RectangleF.Inflate(r, 10, 6);
@@ -544,6 +546,7 @@ public sealed partial class DockPanel : IPointerTarget, IDisposable
 
     // ---- Windows 95: a "Hexpad" window, the key faces 1:1 in picture boxes, a trackbar group per knob ----
     const uint Blk95 = 0xFF000000, Wht95 = 0xFFFFFFFF, Navy95 = 0xFF000080;
+    string _title95, _titleProfile;
 
     void Draw95(double now)
     {
@@ -555,8 +558,12 @@ public sealed partial class DockPanel : IPointerTarget, IDisposable
         var win = new RectangleF(0, 0, W95, H95);
         _p.Fill(win, Theme.W95Face);
         _p.Bevel(win, Painter.Edge.Window);
-        string title = string.IsNullOrEmpty(_s.Profile) ? "Hexpad" : $"Hexpad - {_s.Profile}";
-        _ui.Caption95(new RectangleF(3, 3, W95 - 6, 18), title);
+        if (!ReferenceEquals(_s.Profile, _titleProfile) || _title95 == null)        // the caption, made again only for another profile
+        {
+            _titleProfile = _s.Profile;
+            _title95 = string.IsNullOrEmpty(_s.Profile) ? "Hexpad" : $"Hexpad - {_s.Profile}";
+        }
+        _ui.Caption95(new RectangleF(3, 3, W95 - 6, 18), _title95);
         if (_ui.CaptionClose95("dk95.x", W95 - 5 - 16, 5, true, 6)) Toggle();
 
         bool show = Live || _s.State == HexpadLink.LinkState.ScreenOff && _faces.Any;
@@ -573,7 +580,7 @@ public sealed partial class DockPanel : IPointerTarget, IDisposable
         // the six keys: 68 x 68 picture boxes, the dock's own pixels
         for (int i = 0; i < HexpadLink.Keys && show; i++)
         {
-            string id = $"key{i + 1}";
+            string id = KeyIds[i];
             var box = new RectangleF(8 + i % 3 * 78, 26 + i / 3 * 78, 72, 72);
             _hit[id] = Tex(box);
             bool down = _pressed == id;
@@ -587,7 +594,7 @@ public sealed partial class DockPanel : IPointerTarget, IDisposable
         // the round buttons under the columns
         for (int col = 0; col < 3; col++)
         {
-            string id = $"btn{col + 7}";
+            string id = BtnIds[col];
             var r = new RectangleF(8 + col * 78, 182, 72, 22);
             _hit[id] = Tex(r);
             var inner = _p.ButtonFace95(r, false, _pressed == id || Flash(id, now), false);

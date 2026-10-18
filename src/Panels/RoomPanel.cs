@@ -85,7 +85,7 @@ public sealed partial class RoomPanel : IPointerTarget, IDisposable
         float e = 1 - MathF.Pow(1 - _vis, 3);
         Ov.SetAlpha(e);
         Ov.SetWidth(Math.Clamp(C.Width, 0.2f, 1.2f) * (0.92f + 0.08f * e));
-        if (s.Version != _seen) { _seen = s.Version; _s = s; _dirty = true; }
+        if (s.Version != _seen) { _seen = s.Version; _s = s; _dirty = true; _orderDirty = true; }
         // a style's opening / closing shows on every frame of the fade
         if (_dirty || now >= _nextDraw || _ui.Animating || (_vis < 1 && Theme.RetroSkin.AnimatesFade))
         {
@@ -166,14 +166,51 @@ public sealed partial class RoomPanel : IPointerTarget, IDisposable
         if (!C.Starred.Remove(p.Key)) C.Starred.Add(p.Key);
         _cfg.MarkDirty();
         _dirty = true;
+        _orderDirty = true;
     }
 
-    // starred first, then friends, then everyone else; newest first inside each
+    // starred first, then friends, then everyone else; newest first inside each - the one list kept, put in order again only when
+    // the room or a star changes (a new list sorted on every draw before)
+    readonly List<RoomWatcher.Person> _ordered = new();
+    bool _orderDirty = true;
+
+    int _orderStars;
+
     List<RoomWatcher.Person> Ordered()
     {
-        var l = new List<RoomWatcher.Person>(_s.Here);
-        Order(l, C.Starred);
-        return l;
+        var h = new HashCode();                 // the stars as they are (the watch's room view sets them too: WristRoom.cs)
+        foreach (var k in C.Starred) h.Add(k);
+        int stars = h.ToHashCode();
+        if (!_orderDirty && stars == _orderStars) return _ordered;
+        _orderDirty = false;
+        _orderStars = stars;
+        _ordered.Clear();
+        _ordered.AddRange(_s.Here);
+        Order(_ordered, C.Starred);
+        _when.Clear();
+        return _ordered;
+    }
+
+    // how long ago someone came or left, as the rows write it, made again only when the minute it says moves on (a string per row
+    // per draw before, all of them the same)
+    readonly Dictionary<(RoomWatcher.Person p, bool gone, int form), (int min, int lang, string s)> _when = new();
+
+    string When(RoomWatcher.Person p, DateTime now, bool gone, int form)
+    {
+        int min = (int)Math.Floor((now - (gone ? p.Left : p.Joined)).TotalMinutes);
+        var key = (p, gone, form);
+        if (_when.TryGetValue(key, out var e) && e.min == min && e.lang == Lang.Version) return e.s;
+        if (_when.Count > 256) _when.Clear();
+        string s = gone ? LeftText(p.Left, now, form) : Ago(p.Joined, now);
+        _when[key] = (min, Lang.Version, s);
+        return s;
+    }
+
+    int FriendsHere()
+    {
+        int n = 0;
+        foreach (var p in _s.Here) if (p.Friend) n++;      // (FindAll made a list a draw)
+        return n;
     }
 
     // (the watch's opened room view lists them the same way: WristRoom.cs)
@@ -216,7 +253,7 @@ public sealed partial class RoomPanel : IPointerTarget, IDisposable
     internal static string EmptyText(RoomWatcher.Snapshot s) =>
         !s.LogFound ? "No VRChat log found" : !s.InRoom ? "Not in a world" : s.Arriving ? "Arriving..." : "Nobody else is here";
 
-    public void DrawFor(RoomWatcher.Snapshot s, DateTime now) { _s = s; Draw(now); }
+    public void DrawFor(RoomWatcher.Snapshot s, DateTime now) { if (!ReferenceEquals(_s, s)) _orderDirty = true; _s = s; Draw(now); }
 
     public void Draw(DateTime now)
     {
@@ -246,11 +283,10 @@ public sealed partial class RoomPanel : IPointerTarget, IDisposable
         {
         _p.Text("Room", new RectangleF(Pad + 4, 14, 100, 38), Theme.Text, 22, FontWeight.SemiBold);
         float hx = Pad + 4 + _p.MeasureWidth("Room", 22, FontWeight.SemiBold) + 14;
-        int friends = _s.Here.FindAll(p => p.Friend).Count;
+        int friends = FriendsHere();
         if (_s.InRoom)
         {
-            string count = PeopleText(_s.Here.Count);
-            if (friends > 0) count += " · " + FriendsText(friends);
+            string count = CountText(_s.Here.Count, friends, false);
             float cw = _p.MeasureWidth(count, 15, FontWeight.SemiBold) + 26;
             _p.Fill(new RectangleF(hx, 19, cw, 30), Theme.WithAlpha(Theme.Accent, 0.18f), 15);
             _p.Text(count, new RectangleF(hx + 13, 19, cw - 22, 30), Theme.Accent, 15, FontWeight.SemiBold);
@@ -318,7 +354,7 @@ public sealed partial class RoomPanel : IPointerTarget, IDisposable
         if (_ui.Clickable(Ui.Id("rm.s", index), sr, out bool hover, out _)) ToggleStar(p);
         _p.Text(star ? "★" : "☆", sr, star ? Theme.Warn : hover ? Theme.Text : sub, 22, FontWeight.Normal, TextAlignment.Center);
         float x = sr.Right + 4;
-        string when = gone ? LeftText(p.Left, now, 1) : Ago(p.Joined, now);
+        string when = When(p, now, gone, 1);
         float ww = _p.MeasureWidth(when, 14) + 16;
         float nw = r.Right - x - ww - (p.Friend ? 76 : 8);
         _p.Text(Ellipsize(p.Name, nw, 18, FontWeight.SemiBold), new RectangleF(x, r.Y, nw, r.Height), gone ? sub : Theme.Text, 18, FontWeight.SemiBold);
@@ -330,6 +366,20 @@ public sealed partial class RoomPanel : IPointerTarget, IDisposable
             _p.Text("friend", fr, Theme.Good, 12, FontWeight.SemiBold, TextAlignment.Center);
         }
         _p.Text(when, new RectangleF(r.Right - ww - 4, r.Y, ww, r.Height), sub, 14, FontWeight.Normal, TextAlignment.Trailing);
+    }
+
+    // "12 people · 2 friends" (Cyber: in capitals), made again only when the numbers or the language change
+    string _countText;
+    (int n, int friends, bool upper, int lang) _countFor = (-1, -1, false, -1);
+
+    string CountText(int n, int friends, bool upper)
+    {
+        var key = (n, friends, upper, Lang.Version);
+        if (_countText != null && key == _countFor) return _countText;
+        _countFor = key;
+        string count = PeopleText(n);
+        if (friends > 0) count += " · " + FriendsText(friends);
+        return _countText = upper ? count.ToUpperInvariant() : count;
     }
 
     string Ellipsize(string s, float maxW, float size, FontWeight wt = FontWeight.Normal)
@@ -354,6 +404,7 @@ public sealed partial class RoomPanel : IPointerTarget, IDisposable
     // ---- Windows 95: a window with a details list, the star column first ----
     const uint Blk95 = 0xFF000000, Gry95 = 0xFF808080;
     int _sel95 = -1;
+    readonly List<(RoomWatcher.Person p, bool gone)> _lines95 = new();
 
     void Draw95(DateTime now)
     {
@@ -369,7 +420,8 @@ public sealed partial class RoomPanel : IPointerTarget, IDisposable
         if (_ui.CaptionClose95("rm95.x", W95 - 5 - 16, 5, true, 6)) Toggle();
 
         var people = Ordered();
-        var lines = new List<(RoomWatcher.Person p, bool gone)>();
+        var lines = _lines95;              // (the one list, filled again each draw: no garbage)
+        lines.Clear();
         foreach (var p in people) lines.Add((p, false));
         foreach (var p in _s.Gone) lines.Add((p, true));
         // column headers like a 1995 details view
@@ -393,7 +445,7 @@ public sealed partial class RoomPanel : IPointerTarget, IDisposable
                 _ui.Text95(Starred(p) ? "★" : "☆", new RectangleF(r.X + 2, r.Y, 16, r.Height), on ? fg : Starred(p) ? 0xFF808000 : Gry95);
                 string name = p.Name + (p.Friend ? Lang.T("  (friend)") : "");
                 _ui.Text95(Fit95(name, r.Width - 20 - 104), new RectangleF(r.X + 20, r.Y, r.Width - 124, r.Height), fg, p.Friend && !gone);
-                string when = gone ? LeftText(p.Left, now, 0) : Ago(p.Joined, now);
+                string when = When(p, now, gone, 0);
                 _ui.Text95(Fit95(when, 98), new RectangleF(r.Right - 100, r.Y, 98, r.Height), fg);
             });
             if (hit >= 0)
@@ -402,7 +454,7 @@ public sealed partial class RoomPanel : IPointerTarget, IDisposable
                 if (_ui.Mouse.X < box.X + 22) ToggleStar(lines[hit].p);       // a click on the star column
             }
         }
-        int friends = _s.Here.FindAll(p => p.Friend).Count;
+        int friends = FriendsHere();
         _ui.Pane95(new RectangleF(4, 214, 120, 20), _s.InRoom ? PeopleText(people.Count) : "Not in a world");
         _ui.Pane95(new RectangleF(126, 214, 110, 20), FriendsText(friends));
         _ui.Pane95(new RectangleF(238, 214, W95 - 242, 20), Fit95(_s.VrcxFound ? Lang.F("VRCX: {0} friends", _s.Friends) : "VRCX not found", W95 - 256),
