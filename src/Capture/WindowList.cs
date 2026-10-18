@@ -45,7 +45,7 @@ public static class WindowList
         "XamlExplorerHostIslandWindow", "TopLevelWindowForOverflowXamlIsland",
     };
 
-    static string Text(IntPtr h)
+    internal static string Text(IntPtr h)
     {
         int n = GetWindowTextLength(h);
         if (n <= 0) return "";
@@ -156,6 +156,6 @@ public static class WindowList
         if (IsIconic(h)) ShowWindow(h, SW_RESTORE);
         if (IsForeground(h)) return;
         Native.SendMouse(0);
-        if (!SetForegroundWindow(h)) Log.Warn($"could not bring '{Text(h)}' to the front");
+        Native.Front(h);                    // (after the empty event, in order: Sys/InputQueue.cs)
     }
 }

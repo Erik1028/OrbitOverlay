@@ -512,33 +512,91 @@ public sealed class ConfigStore
     }
 
     // Saves once things have been quiet for a second (sliders fire every frame).
+    // The app's (Background): the file is written on a worker (Erik 10-18, the spike line: a save took 13-16 ms on the main loop - the
+    // write, the .bak's replace, the virus scanner looking). The text is made here, from the settings as they are now; the newest text
+    // waiting is written there, never an older one over a newer (each text has its number). A write that fails marks the settings
+    // changed again: the next save tries in a second. force (closing, Apply): written here, after a write in progress. The tools: here.
+    public bool Background;
+    readonly object _fileLock = new(), _slot = new();
+    string _pendingJson;
+    long _pendingSeq, _writtenSeq, _seq;
+    bool _writerRunning;
+    volatile bool _writeFailed;
+
     public void SaveIfDue(bool force = false)
     {
+        if (_writeFailed) { _writeFailed = false; _dirty = true; _dirtySince = _lastChange = Now; }     // (the worker's write failed)
         // grabbing a panel marks dirty every frame: wait for a quiet second, but never longer than 10 s
         if (!(_dirty || (force && _soft)) || (!force && Now - _lastChange < 1.0 && Now - _dirtySince < 10.0)) return;
         if (_readOnly) { _dirty = _soft = false; Log.Warn("config not saved: it could not be read at start"); return; }
         _dirty = _soft = false;
+        string json = JsonSerializer.Serialize(Data, Json);
+        long seq = ++_seq;
+        if (Background && !force)
+        {
+            lock (_slot)
+            {
+                _pendingJson = json;
+                _pendingSeq = seq;
+                if (_writerRunning) return;
+                _writerRunning = true;
+            }
+            System.Threading.ThreadPool.UnsafeQueueUserWorkItem(_ => WriterLoop(), null);
+            return;
+        }
+        lock (_slot) _pendingJson = null;                 // (this one is newer than anything waiting)
+        bool ok;
+        lock (_fileLock) ok = WriteFile(json, seq, force);
+        if (!ok)
+        {
+            // someone has the file open (another Orbit starting, a backup tool): try again in a second
+            _dirty = true;
+            _dirtySince = _lastChange = Now;
+        }
+    }
+
+    void WriterLoop()
+    {
+        while (true)
+        {
+            string json;
+            long seq;
+            lock (_slot)
+            {
+                if (_pendingJson == null) { _writerRunning = false; return; }
+                json = _pendingJson;
+                seq = _pendingSeq;
+                _pendingJson = null;
+            }
+            bool ok;
+            lock (_fileLock) ok = WriteFile(json, seq, false);
+            if (!ok) _writeFailed = true;
+        }
+    }
+
+    // the file written (under _fileLock): true = done, or a newer text was written already; false = it failed (the warning once)
+    bool WriteFile(string json, long seq, bool force)
+    {
+        if (seq <= _writtenSeq) return true;
         for (int attempt = 0; ; attempt++)
         {
             try
             {
                 string tmp = Path + ".tmp";
-                File.WriteAllText(tmp, JsonSerializer.Serialize(Data, Json), new System.Text.UTF8Encoding(false));
+                File.WriteAllText(tmp, json, new System.Text.UTF8Encoding(false));
                 if (File.Exists(Path))
                     File.Replace(tmp, Path, Path + ".bak");
                 else
                     File.Move(tmp, Path);
+                _writtenSeq = seq;
                 _failWarned = false;
-                return;
+                return true;
             }
             catch (IOException) when (force && attempt < 5) { System.Threading.Thread.Sleep(100); }   // closing: try a little longer
             catch (Exception e)
             {
-                // someone has the file open (another Orbit starting, a backup tool): try again in a second
-                _dirty = true;
-                _dirtySince = _lastChange = Now;
                 if (!_failWarned) { _failWarned = true; Log.Warn("config save failed (will retry): " + e.Message); }
-                return;
+                return false;
             }
         }
     }

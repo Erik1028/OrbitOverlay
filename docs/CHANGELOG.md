@@ -3,6 +3,18 @@
 This file is built into the app: after an update, the "What's new" window shows every section newer than the
 version you came from. Format: "## <version> | <title>", then "- " points (an indented line continues a point).
 
+## 1.15.1 | Smoother: nothing holds the overlay up
+- The watch comes into view without a hitch: the volume and the microphone are read in the background (a call to Windows'
+  audio took up to 14 ms of its first frame).
+- The volume mixer works in the background: in VR it no longer held OrbitOverlay up for ~9 ms every second or two.
+- The laser's mouse and the keyboard's keys go to Windows on a thread of their own: an app hooked into the mouse that
+  answers slowly no longer holds the overlay up (4-10 ms a time).
+- Your settings are saved in the background (a save held it up for 13-16 ms, the first one 49 ms).
+- The first look at the watch and the first notification after OrbitOverlay starts no longer stutter: both are drawn
+  once beforehand, with your data.
+- The log's own measuring no longer takes 7-15 ms every 10 s; a "spike:" line in it says where the slowest frame of each
+  10 s went.
+
 ## 1.15.0 | New widgets, gaze focus, eye tracking, a theater for every style
 - New watch widgets: Photo (your newest VRChat photos), Weather, Folder (widgets grouped behind one card), Friends
   online and Session recap (from VRCX), On this day (a photo from a year ago), Temperatures (CPU and GPU, with a hot

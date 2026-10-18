@@ -110,6 +110,8 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
     public OrbitApp(bool startHidden)
     {
         _startHidden = startHidden;
+        _cfg.Background = true;              // the config written on a worker (Config.cs)
+        InputQueue.On = true;                // what goes to Windows, on its own thread (Sys/InputQueue.cs)
         int adapter = -1;
         // If SteamVR already runs, connect first so the GPU device is created on its adapter.
         if (VrSession.RuntimeRunning() && _vr.TryConnect(ActionManifest, out _, AppKey))
@@ -273,9 +275,10 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         try
         {
             IntPtr me = GetCurrentProcess();
-            string priv = GetProcessMemoryInfo(me, out var mc, Marshal.SizeOf<PROCESS_MEMORY_COUNTERS_EX>()) ? $"{(ulong)mc.PrivateUsage / 1048576}" : "?";
+            bool mem = GetProcessMemoryInfo(me, out var mc, Marshal.SizeOf<PROCESS_MEMORY_COUNTERS_EX>());
+            string ws = mem ? $"{(ulong)mc.WorkingSetSize / 1048576}" : "?", priv = mem ? $"{(ulong)mc.PrivateUsage / 1048576}" : "?";
             string handles = GetProcessHandleCount(me, out uint hc) ? $"{hc}" : "?";
-            return $"private {priv} MB, handles {handles}, gdi {GetGuiResources(me, 0)}, user {GetGuiResources(me, 1)}";
+            return $"working set {ws} MB, private {priv} MB, handles {handles}, gdi {GetGuiResources(me, 0)}, user {GetGuiResources(me, 1)}";
         }
         catch { return "counters n/a"; }
     }
@@ -386,7 +389,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
                  $"all threads {(GC.GetTotalAllocatedBytes() - _allocAllMark) / secs / 1024:0.0} KB/s, " +
                  $"GC {GC.CollectionCount(0) - _gcMark[0]}/{GC.CollectionCount(1) - _gcMark[1]}/{GC.CollectionCount(2) - _gcMark[2]} " +
                  $"({(GC.GetTotalPauseDuration() - _gcPauseMark).TotalMilliseconds:0.0} ms pause), heap {GC.GetGCMemoryInfo().HeapSizeBytes / 1048576.0:0.0} MB, " +
-                 $"working set {Environment.WorkingSet / 1048576} MB, {ProcessCounters()} | bytes/loop:{sa}");
+                 $"{ProcessCounters()} | bytes/loop:{sa}");      // (Environment.WorkingSet: no - it may read every process too)
         var gi = GC.GetGCMemoryInfo(GCKind.Any);
         if (gi.Index > 0 && gi.Index != _lastGcLogged)
             Log.Info($"gc: last #{gi.Index} gen{gi.Generation}{(gi.Concurrent ? " background" : "")}{(gi.Compacted ? " compacting" : "")}, " +
@@ -545,6 +548,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             _gpuStats.Active = watched;                 // the GPU counters (a few ms a sample) only while the watch can show them
             _data.Vr.Update(_vr, now);
             FirstUseIfPending();
+            if (_warmAt > 0 && now >= _warmAt) WarmAgain();
             if (_wrist.WantsFrames) _data.Vr.SampleFrame(_vr);
             PlaceMissing();
             bool dash = _vr.Ov.IsDashboardVisible();
@@ -780,6 +784,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         _kb.CreateOverlay(_vr);
         // first draws load fonts (~25 ms each): do it now, not when you first look at the watch / keyboard
         try { _wrist.Draw(_data); _kb.Draw(); _settingsPanel.Warm(); } catch (Exception e) { Log.Warn("warm-up draw: " + e.Message); }
+        _warmAt = Clock.Now + 8;            // and again once the data is in (WarmAgain)
         _settingsPanel.CreateOverlay(_vr);
         _dockPanel.CreateOverlay(_vr);
         _roomPanel.CreateOverlay(_vr);
@@ -2063,6 +2068,27 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         _cfg.MarkDirty();
     }
 
+    // 8 s after connecting, the data in (the weather, the photos, the light): the watch's face drawn once more with it, its intro too,
+    // and a notification card - each one's first frame made its code ready in front of you (Erik 10-18, the spike line: the first look
+    // at the watch 20 ms, the first card 7.8 ms). Only while the watch is away; nothing is shown or sent.
+    double _warmAt = -1;
+
+    void WarmAgain()
+    {
+        _warmAt = -1;
+        if (_wrist.Alpha > 0.02f) return;
+        try
+        {
+            _wrist.Intro();
+            _wrist.Draw(_data);
+            _wrist.Settle();
+            _wrist.Draw(_data);
+            _wrist.Settle();
+            _notifyPanel.Warm();
+        }
+        catch (Exception e) { Log.Warn("warm-up draw: " + e.Message); }
+    }
+
     // previews in the settings screen are separate draws; they must not nest inside its BeginDraw
     void PreparePreviews(SettingsView v)
     {
@@ -2073,6 +2099,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
     public void Dispose()
     {
         try { if (_vr.Connected) DisconnectVr(false); } catch (Exception e) { Log.Warn("shutdown: " + e.Message); }
+        InputQueue.Flush();                  // a button / key let go reaches Windows before OrbitOverlay ends
         _cfg.SaveIfDue(force: true);
         foreach (var d in _desktops) d.Dispose();
         foreach (var w in _windowPanels) w.Dispose();

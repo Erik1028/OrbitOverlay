@@ -206,6 +206,22 @@ public sealed partial class NotificationPanel : IDisposable
         _cards.Clear();
     }
 
+    // a card drawn once while nothing shows (OrbitApp, after connecting): the first real one no longer makes the code ready in its frame
+    // (Erik 10-18, the spike line: 7.8 ms). Nothing is shown or sent.
+    public void Warm()
+    {
+        if (_ov == null || _cards.Count > 0) return;
+        var n = new Notification { Source = "OrbitOverlay", Title = "OrbitOverlay", Content = "Ready.", Vis = 1, Y = 0 };
+        _cards.Add(n);
+        try { Draw(); }
+        finally
+        {
+            _cards.Remove(n);
+            n.Bitmap?.Dispose();
+            _dirty = true;
+        }
+    }
+
     public void Update(NotificationListener src, double now, float dt)
     {
         while (src.Incoming.TryDequeue(out var n))

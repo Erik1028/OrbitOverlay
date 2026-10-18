@@ -196,6 +196,25 @@ dotnet publish -c Release -o dist
   és a billentyűzetet számolja; az Orbit saját lebegő beállításpanelje nem (Erik: a DXOverlay
   elindult, amikor csak a beállításokat nyitotta meg).
 
+## 1.15.1 – simább: semmi sem tartja fel a főciklust (2026-10-18)
+
+Erik: „1 és 2 mehet”, majd „mehet ami hátra van”. A `spike:` napló-sor (`Sys/Spikes.cs`: a 10 s-os ablak leglassabb képkockája
+részenként + a leglassabb darab) Erik élő VR-menetében mutatta meg a tüskéket; mind a főciklusról ment le:
+- **Hangerő / mikrofon** (`SystemVolume` / `SystemMic.Background`): a Core Audio hívások saját szálon, a Sample csak kér; az óra
+  feltűnésekor 7–13 ms volt (gépen 13,7 ms az első olvasás), most 0,3 ms.
+- **Keverő** (`AudioMixer.Pump`): VR-ben (PerApp) másodpercenként minden session felsorolva + olvasva (~45 hívás) = ~9 ms 1–2 s-onként,
+  a perf-szakaszokon KÍVÜL (a `perf:` sor nem is látta). Saját szál, `Gate` alatt Tick; a főszál olvasói `TryApps` / TryEnter.
+- **Bevitel** (`Sys/InputQueue.cs`): SetCursorPos / SendInput 4–10 ms (más alkalmazások low-level hookjai) → saját szál, sorrendtartó
+  sor; a BringToFront üres egéreseménye + SetForegroundWindow is a soron (`Native.Front`). Kilépéskor `InputQueue.Flush`.
+- **Config mentés** (`ConfigStore.Background`): írás + .bak csere 13–16 ms (az első 48,7 ms: a szerializáló bemelegedése → `WarmSave`
+  indításkor háttérben, a fájl másolatán) → háttérszál, sorszámmal (régebbi szöveg sosem írja felül az újabbat); force (kilépés,
+  Apply) a főszálon, a folyamatban lévő írás után. Bench-ellenőrzés: főszál 1,6 ms.
+- **Napló**: `Process.PrivateMemorySize64` / `HandleCount` (és az `Environment.WorkingSet`) a gép ÖSSZES folyamatát olvassa →
+  GetProcessMemoryInfo + GetProcessHandleCount.
+- **Kurzor**: alakonként egy textúra (alakváltás 1,3–5,5 ms → 0,002 ms), csak ha lézer mutat panelre.
+- **Bemelegítés**: kapcsolódás után 8 s-mal az óra (intróval) és egy értesítéskártya egyszer rajzolva, rejtve (az első rápillantás
+  ~20 ms volt, az első kártya 7,8 ms).
+
 ## 1.15.0 – új widgetek, fókusz mód, szemkövetés, mozi minden stílusban (2026-10-18)
 
 - **Új widgetek**: Photo, Weather, Folder (`WatchFolders.cs`), Friends online + Session recap (VRCX, `immutable=1`),

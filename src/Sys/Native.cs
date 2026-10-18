@@ -32,14 +32,39 @@ static class Native
     public static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
 
     [DllImport("user32.dll", EntryPoint = "SetCursorPos")] static extern bool SetCursorPosRaw(int x, int y);
+    [DllImport("user32.dll", EntryPoint = "SetForegroundWindow")] static extern bool SetForegroundWindowRaw(IntPtr hwnd);
 
-    // the laser's cursor into Windows (timed: the spike line's slowest piece - a slow low-level mouse hook of another app shows here)
-    public static bool SetCursorPos(int x, int y)
+    // What goes to Windows goes out on the input thread while the app runs (Sys/InputQueue.cs: SetCursorPos / SendInput held the main
+    // loop 4-10 ms now and then), in the order asked; the tools make the call at once.
+    public static void SetCursorPos(int x, int y)
     {
-        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
-        bool ok = SetCursorPosRaw(x, y);
-        Spikes.Piece("pointer: SetCursorPos", t0);
-        return ok;
+        if (!InputQueue.Post(new InputQueue.Item { Kind = InputQueue.Kind.Cursor, A = x, B = y })) SetCursorPosRaw(x, y);
+    }
+
+    // the window to the front (after an empty mouse event: WindowList.BringToFront), a warning when Windows says no
+    public static void Front(IntPtr h)
+    {
+        if (!InputQueue.Post(new InputQueue.Item { Kind = InputQueue.Kind.Front, Hwnd = h })) FrontNow(h);
+    }
+
+    static void FrontNow(IntPtr h)
+    {
+        if (!SetForegroundWindowRaw(h)) Log.Warn($"could not bring '{WindowList.Text(h)}' to the front");
+    }
+
+    // the input thread: one queued call
+    public static void Send(in InputQueue.Item it)
+    {
+        switch (it.Kind)
+        {
+            case InputQueue.Kind.Cursor: SetCursorPosRaw(it.A, it.B); break;
+            case InputQueue.Kind.Mouse: SendMouseNow(unchecked((uint)it.A), it.B); break;
+            case InputQueue.Kind.Scan: SendScanNow(it.Code, it.Ext, it.Up); break;
+            case InputQueue.Kind.Vk: SendVkNow(it.Code, it.Up); break;
+            case InputQueue.Kind.Unicode: SendUnicodeNow(it.Text); break;
+            case InputQueue.Kind.Ctrl: SendCtrlComboNow(it.Code); break;
+            case InputQueue.Kind.Front: FrontNow(it.Hwnd); break;
+        }
     }
     [DllImport("user32.dll")] public static extern IntPtr SetTimer(IntPtr hWnd, IntPtr id, uint ms, IntPtr proc);
     [DllImport("user32.dll")] public static extern bool KillTimer(IntPtr hWnd, IntPtr id);
@@ -48,16 +73,24 @@ static class Native
 
     public static void SendMouse(uint flags, int data = 0)
     {
+        if (!InputQueue.Post(new InputQueue.Item { Kind = InputQueue.Kind.Mouse, A = unchecked((int)flags), B = data })) SendMouseNow(flags, data);
+    }
+
+    static void SendMouseNow(uint flags, int data)
+    {
         var inp = new INPUT[1];
         inp[0].type = INPUT_MOUSE;
         inp[0].mi.dwFlags = flags;
         inp[0].mi.mouseData = unchecked((uint)data);
-        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
         SendInput(1, inp, Marshal.SizeOf<INPUT>());
-        Spikes.Piece("pointer: SendInput (mouse)", t0);
     }
 
     public static void SendScan(ushort scan, bool extended, bool up)
+    {
+        if (!InputQueue.Post(new InputQueue.Item { Kind = InputQueue.Kind.Scan, Code = scan, Ext = extended, Up = up })) SendScanNow(scan, extended, up);
+    }
+
+    static void SendScanNow(ushort scan, bool extended, bool up)
     {
         var inp = new INPUT[1];
         inp[0].type = INPUT_KEYBOARD;
@@ -68,6 +101,11 @@ static class Native
 
     // types characters directly (no keyboard layout involved) - used by the built-in English layout
     public static void SendUnicode(string text)
+    {
+        if (!InputQueue.Post(new InputQueue.Item { Kind = InputQueue.Kind.Unicode, Text = text })) SendUnicodeNow(text);
+    }
+
+    static void SendUnicodeNow(string text)
     {
         var inp = new INPUT[text.Length * 2];
         for (int i = 0; i < text.Length; i++)
@@ -84,6 +122,11 @@ static class Native
     }
 
     public static void SendVk(ushort vk, bool up)
+    {
+        if (!InputQueue.Post(new InputQueue.Item { Kind = InputQueue.Kind.Vk, Code = vk, Up = up })) SendVkNow(vk, up);
+    }
+
+    static void SendVkNow(ushort vk, bool up)
     {
         var inp = new INPUT[1];
         inp[0].type = INPUT_KEYBOARD;
@@ -106,6 +149,11 @@ static class Native
     }
 
     public static void SendCtrlCombo(ushort vk)
+    {
+        if (!InputQueue.Post(new InputQueue.Item { Kind = InputQueue.Kind.Ctrl, Code = vk })) SendCtrlComboNow(vk);
+    }
+
+    static void SendCtrlComboNow(ushort vk)
     {
         var inp = new INPUT[4];
         void K(int i, ushort v, bool up)

@@ -182,6 +182,7 @@ static partial class Tools
         PacerCost();
         CursorCost(gpu);
         VolumeCost();
+        ConfigWriterCheck(dir);
 
         File.WriteAllLines(Path.Combine(dir, "perf.tsv"), rows.Select(r => $"{r.style}\t{r.what}\t{r.ms:0.000}\t{r.bytes}\t{r.layouts:0.0}"));
         Motion.Still = still;
@@ -193,6 +194,36 @@ static partial class Tools
     static int _pacedWorstAt;
 
     [System.Runtime.InteropServices.DllImport("user32.dll")] static extern IntPtr LoadCursor(IntPtr instance, IntPtr name);
+
+    // the config written on a worker (Config.cs, the app's way) - on a copy in the snapshot folder: what a save costs the main loop, the
+    // newest settings on disk after a save in the background and a forced one right behind it (never an older text over a newer)
+    static void ConfigWriterCheck(string dir)
+    {
+        string path = Path.Combine(dir, "writer_config.json"), real = Path.Combine(Log.Dir, "config.json");
+        if (File.Exists(real)) File.Copy(real, path, true);
+        var store = new ConfigStore(path) { Background = true };
+        float Read() { try { return new ConfigStore(path).Data.Theater.Width; } catch { return -1; } }
+        store.Data.Theater.Width = 1.11f;
+        store.MarkDirty();
+        Thread.Sleep(1100);                                       // (a quiet second: a save is due)
+        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        store.SaveIfDue();
+        double ms = System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds;
+        store.Data.Theater.Width = 2.22f;                         // a change right behind it, saved by force (closing, Apply)
+        store.MarkDirty();
+        store.SaveIfDue(force: true);
+        Thread.Sleep(300);                                        // (the worker done)
+        float after = Read();
+        store.Data.Theater.Width = 3.33f;                         // and one more through the worker alone
+        store.MarkDirty();
+        Thread.Sleep(1100);
+        store.SaveIfDue();
+        Thread.Sleep(300);
+        float last = Read();
+        Log.Info($"perf: config save on the main loop {ms:0.000} ms (written on its worker)");
+        Want($"config: a save in the background then a forced one: on disk {after:0.00} (want 2.22), then the worker's {last:0.00} (want 3.33), " +
+             $"the main loop's part {ms:0.000} ms (want under 3)", MathF.Abs(after - 2.22f) < 0.001f && MathF.Abs(last - 3.33f) < 0.001f && ms < 3);
+    }
 
     // the watch's volume (Sys/SystemStats.cs): read in the frame (the tools' way) and asked of its worker (the app's) - read only
     static void VolumeCost()
