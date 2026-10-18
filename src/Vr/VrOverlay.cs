@@ -55,7 +55,7 @@ public sealed class VrOverlay : IDisposable
 
     public bool Visible => _visible;
     public IntPtr TextureForTest => _lastTex;        // (the checks: the texture it was given last)
-    public float Alpha => Math.Max(0, _alpha);       // as last set (SteamVR's default is 1; -1 here: never set)
+    public float Alpha => _alpha < 0 ? 1 : _alpha;   // as last set (never set: SteamVR's default, 1 - as Width)
     // (the checks and the headset-view renderer, CyberFloorTest.cs: what SteamVR was told last - sort order, place, part of the texture)
     public uint SortOrderForTest => _sort;
     public Matrix4x4 TransformForTest => _lastM;
