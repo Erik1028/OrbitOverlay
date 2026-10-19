@@ -28,6 +28,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
     readonly PanelData _data = new();
     readonly GpuStats _gpuStats = new();
     readonly EyeGaze _eyes = new();                  // Virtual Desktop's eye tracking (Sys/EyeGaze.cs)
+    readonly MixtapeLink _mixtape = new();           // Mixtape's Remote API: the Mixtape widget (Sys/MixtapeLink.cs)
     readonly MediaInfo _media = new();
     readonly AudioMixer _mixer = new();              // the output device's apps; the Windows volume in VR (Sys/AudioMixer.cs)
     readonly NotificationHistory _notes = new();     // the watch's notifications widget
@@ -133,6 +134,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
 
         _wrist = new WristPanel(_gpu, _painter, _cfg) { OnAction = WristAction };
         _wrist.UseRealAudio(_mixer);                         // the watch's volume and mixer on the real output device (the tools' are made up)
+        _wrist.Mixtape = _mixtape;                           // the Mixtape widget's link (Sys/MixtapeLink.cs)
         _wrist.OnOpenPhoto = PhotoGallery.Open;              // the latest photo's Open in VR Gallery, on a tap (Sys/PhotoWatcher.cs)
         _kb = new KeyboardPanel(_gpu, _painter, _cfg);
         _settingsPanel = new SettingsPanel(_gpu, _painter, _cfg, this, PreparePreviews);
@@ -687,6 +689,10 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         _lumos.Active = C.Wrist.Face == "custom" && WatchPages.Any(C.Wrist, "light");
         _lumos.Watched = _wrist?.Alpha > 0.02f;
         _prisma.Active = C.Wrist.Face == "custom" && WatchPages.Any(C.Wrist, "rgb");
+        // Mixtape: linked while a page has its widget and SteamVR runs (or the settings preview shows it), faster while the watch shows it
+        _mixtape.Active = C.Wrist.Face == "custom" && WatchPages.Any(C.Wrist, "mixtape") && (_vr.Connected || now - _photoPreview < 3);
+        _mixtape.Watched = _wrist?.Alpha > 0.02f;
+        _mixtape.Pump();
         Spikes.Piece("app: light + rgb", ap);
         _data.Lamp = _lumos;
         _data.Rgb = _prisma;
@@ -2154,6 +2160,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         _lumos.Dispose();
         _dxgi?.Dispose();
         _eyes.Dispose();
+        _mixtape.Dispose();
         _prisma.Dispose();
         AvatarDispose();
         _pacer.Dispose();

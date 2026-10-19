@@ -161,6 +161,7 @@ public sealed partial class WristPanel : IPointerTarget, IDisposable
             if (C.Face == "custom" && (HasWidget("dock") || _open?.Type == "dock")) _dirty = true;
         }
         if (MixerChanged()) _dirty = true;           // the mixer's apps: a level moved, an app came or went (WristMixer.cs)
+        if (MixtapeChanged()) _dirty = true;         // Mixtape: what plays, the queue, a cover come, the lyrics (WristMixtape.cs)
         if (PhotoChanged(d)) _dirty = true;          // a new photo, its metadata, a thumbnail made (WristPhoto.cs)
         if (LightsChanged(d)) _dirty = true;         // the light / the RGB answered or were switched (WristLights.cs)
         if (AvatarChanged(d)) _dirty = true;         // VRChat's values, a tap shown, other buttons picked (WristAvatar.cs)
@@ -542,7 +543,7 @@ public sealed partial class WristPanel : IPointerTarget, IDisposable
         if (DockLive) { DockIn.Scroll(px, n); if (DockIn.TakeDirty()) _dirty = true; return; }      // the stick over a knob turns it
         if (MixerScroll(px, n)) return;            // the stick over a mixer's slider moves it, in the opened mixer off them it scrolls
         if (PhotoScroll(n)) return;                // the opened photo: the stick steps through the day's photos (WristPhoto.cs)
-        if (!(DetailIs("room") || DetailIs("notifications") || DetailIs("friends") || DetailIs("recap") || DetailIs("avatar")) || _closing) return;
+        if (!(DetailIs("room") || DetailIs("notifications") || DetailIs("friends") || DetailIs("recap") || DetailIs("avatar") || DetailIs("mixtape")) || _closing) return;
         if (Theme.Classic)
         {
             _wheel95 += n / 3;
@@ -577,5 +578,5 @@ public sealed partial class WristPanel : IPointerTarget, IDisposable
 
     public void GrabEnd() { _grabbing = false; }
 
-    public void Dispose() { DestroyOverlay(); Surf.Dispose(); Canvas95?.Dispose(); Volume.Dispose(); Mic.Dispose(); MixDispose(); PhotoDispose(); }
+    public void Dispose() { DestroyOverlay(); Surf.Dispose(); Canvas95?.Dispose(); Volume.Dispose(); Mic.Dispose(); MixDispose(); PhotoDispose(); MtDispose(); }
 }

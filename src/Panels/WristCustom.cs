@@ -141,6 +141,7 @@ public sealed partial class WristPanel
         if (HasWidget("volume")) Volume.Sample(now);
         if (HasWidget("mic")) Mic.Sample(now);
         if (MixerOn) MixerFrame(now);
+        if (MixtapeOn) MixtapeFrame();              // the Mixtape link's wishes (WristMixtape.cs)
     }
 
     // ---- timer and stopwatch: one of each, shared by their widgets; they keep running while the watch is hidden ----
@@ -663,6 +664,7 @@ public sealed partial class WristPanel
             case "notifications": NotesOrbit(r, w, d, id); break;
             case "buttons": GroupOrbit(r, w, d, id); break;
             case "mixer": MixerOrbit(r, w, id); break;
+            case "mixtape": MixtapeOrbit(r, w, d, id); break;
             case "photo": PhotoOrbit(r, w, d, id); break;
             case "weather": WeatherOrbit(r, w, d, id); break;
             case "folder": FolderOrbit(r, w, d, id); break;          // its widgets' icons; Cyber's too (WristFolder.cs)
@@ -2414,6 +2416,7 @@ public sealed partial class WristPanel
                 case "notifications": Notes95(c, d); break;
                 case "buttons": Group95(c, w, d, id); break;
                 case "mixer": Mixer95(r, c, w, id); break;
+                case "mixtape": Mixtape95(r, c, w, id); break;
                 case "photo": Photo95(r, c, w, d, id); break;
                 case "weather": Weather95(c, d, w); break;
                 case "friends": Friends95(c, w, d); break;
