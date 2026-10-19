@@ -1283,11 +1283,24 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             if (hov is not ITheaterScreen s) continue;
             if (!_theater.On && s != _barAnchor) continue;
             var ts = s.TextureSize;
-            bool low = ts.Y > 0 && hpx.Y / ts.Y > 0.72f;
+            bool low = ts.Y > 0 && hpx.Y / ts.Y > BarLow;
             if (pointed == null || low) { pointed = s; lower = low; }
         }
+        // the bottom of the screen opens the bar only when the laser stays there a moment (BarDwell): passing it on the way down to the
+        // keyboard under the screen popped the bar up between the two, and the beam jumped onto it and back (Erik 10-19, the "laser
+        // flap" log: the screen's bottom, nothing, the bar, nothing, the screen again). Theater mode: as before (the bar is its switcher).
+        if (lower && !_theater.On)
+        {
+            if (_barLowSince < 0) _barLowSince = now;
+            lower = now - _barLowSince >= BarDwell;
+        }
+        else if (!lower) _barLowSince = -1;
         _theaterBar.Update(_vr, now, dt, _theater, _theaterChoices, pointed, lower, onBar);
     }
+
+    const float BarLow = 0.85f;              // the part of the middle screen that opens the bar: its bottom 15 % (it was 28 %)
+    const double BarDwell = 0.4;             // ... the laser kept there this long
+    double _barLowSince = -1;
 
     readonly List<DesktopPanel> _anchorPlaced = new();
 

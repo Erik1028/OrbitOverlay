@@ -8,8 +8,8 @@ using Vortice.DirectWrite;
 namespace Orbit;
 
 // The bar under a screen.
-// - Under the middle monitor (the one Recenter centres on) it shows up when you point at the lower part of it (or at the
-//   bar itself): a Theater button and theater mode's settings - how dark the world gets, the big screen's size, curved
+// - Under the middle monitor (the one Recenter centres on) it shows up when you point at the lower part of it - its bottom 15 %, the
+//   laser kept there 0.4 s (OrbitApp: passing it on the way to the keyboard does not open it) - or at the bar itself: a Theater button and theater mode's settings - how dark the world gets, the big screen's size, curved
 //   or flat. It stays under that monitor: pointing at the others does not move it about.
 // - In theater mode it sits under the big screen while you point at it (and for a moment when it starts): a button for
 //   every monitor and window to switch to (left to right as on your desk, then the windows), the same settings, live,
