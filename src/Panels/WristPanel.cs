@@ -151,9 +151,11 @@ public sealed partial class WristPanel : IPointerTarget, IDisposable
             // ranezek"; WristCyberFx.cs)
             if ((C.Face == "custom" || Theme.Cyber) && !Theme.Classic)
             {
-                if (now - _shownAt > 20) Intro();
-                else if (Theme.Cyber) CyberGlance();
-                Log.Info($"watch: in view - {(now - _shownAt > 20 ? "boot" : Theme.Cyber ? "glance" : "as it was")} (away {Math.Min(now - _shownAt, 999):0.0} s, motion {Motion.Level})");
+                // (away under 1.5 s: the eyes slipped off its edge a moment - it simply stays)
+                double away = now - _shownAt;
+                if (away > 20) Intro();
+                else if (Theme.Cyber && away > 1.5) CyberGlance();
+                Log.Info($"watch: in view - {(away > 20 ? "boot" : Theme.Cyber && away > 1.5 ? "glance" : "as it was")} (away {Math.Min(away, 999):0.0} s, motion {Motion.Level})");
             }
         }
         _shownAt = now;

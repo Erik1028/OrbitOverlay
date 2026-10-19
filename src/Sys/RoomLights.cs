@@ -286,7 +286,7 @@ public sealed class LumosLink : IDisposable
         }
         catch (Exception e)
         {
-            return new LampState { Status = LinkStatus.Error, Message = e is TaskCanceledException or TimeoutException ? "Lumos did not answer" : e.Message };
+            return new LampState { Status = LinkStatus.Error, Message = e is TaskCanceledException or TimeoutException ? (_direct != null ? "The bulb did not answer" : "Lumos did not answer") : e.Message };
         }
         try { return Parse(code, body); }
         catch (Exception) { return new LampState { Status = LinkStatus.Error, Message = "Not Lumos on port 8770" }; }
