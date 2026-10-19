@@ -86,9 +86,9 @@ static class CyberAnimShot
         // held: the watch fading in before its boot - nothing of the face yet
         Fresh(0);
         Save("held", "held for its boot (the watch still fading in)", Watch(new[] { 0.0, 0.2 }, wrist.IntroHoldForTest), WristPanel.TW, WristPanel.TH, all);
-        // the glance: back in view within 20 s - the face at once, brackets and a line card by card, the time glitches once
+        // a look back within 20 s: the same boot, quicker
         Fresh(0);
-        Save("glance", "a glance (back in view within 20 s)", Watch(new[] { 0.0, 0.04, 0.08, 0.12, 0.17, 0.23, 0.3, 0.4, 0.5 }, wrist.CyberGlanceForTest), WristPanel.TW, WristPanel.TH, all);
+        Save("quickboot", "the quick boot (back in view within 20 s)", Watch(new[] { 0.02, 0.06, 0.1, 0.15, 0.2, 0.26, 0.33, 0.4, 0.5 }, wrist.CyberQuickBootForTest), WristPanel.TW, WristPanel.TH, all);
         Fresh(0);
         var seq = Watch(Steps(0, 1.4, 1 / 30.0), wrist.Intro);
         // the minute glitch

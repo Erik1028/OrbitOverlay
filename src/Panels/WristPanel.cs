@@ -53,7 +53,7 @@ public sealed partial class WristPanel : IPointerTarget, IDisposable
     public readonly Surface Surf;
     public VrOverlay Ov { get; private set; }
     public Action<string> OnAction;
-    int _introWant;                      // the watch came into view: 2 its boot, 1 a glance (Cyber) - started once it is really there
+    int _introWant;                      // the watch came into view: 2 its boot, 1 the quick one (Cyber) - started once it is really there
     double _introWantAt;
     bool _eyeOn;                         // eye tracking: your eyes are on it (EyeOn / EyeOff degrees, a hysteresis)
     const float EyeOn = 15, EyeOff = 28;
@@ -149,17 +149,17 @@ public sealed partial class WristPanel : IPointerTarget, IDisposable
             _dirty = true;
             // the widgets cascade in (Cyber: every face boots) - not again on a glance back within 20 s: the watch is simply there
             // (a 1.2 s cascade on every raise made a look at the time slow; Erik 10-18: "very responsive")
-            // Cyber, back within 20 s: no boot, but the HUD answers the look (Erik 10-19: "a wristwatch cyberpunk animacioi nem mukodnek ha
-            // ranezek"; WristCyberFx.cs)
+            // Cyber, back within 20 s: the boot again, quicker (Erik 10-19: "ha elnézek és vissza utána nem [animálódik], csak ha sok ideig
+            // nem nézek rá"; WristCyberFx.cs)
             if ((C.Face == "custom" || Theme.Cyber) && !Theme.Classic)
             {
-                // (away under 1.5 s: the eyes slipped off its edge a moment - it simply stays)
+                // (gone under 0.4 s: the eyes slipped off its edge a moment - it simply stays)
                 double away = now - _shownAt;
-                int want = away > 20 ? 2 : Theme.Cyber && away > 1.5 ? 1 : 0;
-                if (want == 2 && _introWant != 2) IntroHold();           // the face waits for its boot (nothing of it before)
+                int want = away > 20 ? 2 : Theme.Cyber && away > 0.4 ? 1 : 0;
+                if (want > 0 && _introWant == 0) IntroHold();           // the face waits for its boot (nothing of it before)
                 _introWant = Math.Max(_introWant, want);                  // (a boot still held from a look cut short stays)
                 _introWantAt = now;
-                Log.Info($"watch: in view - {(_introWant == 2 ? "boot" : _introWant == 1 ? "glance" : "as it was")} (away {Math.Min(away, 999):0.0} s, motion {Motion.Level})");
+                Log.Info($"watch: in view - {(_introWant == 2 ? "boot" : _introWant == 1 ? "quick boot" : "as it was")} (away {Math.Min(away, 999):0.0} s, motion {Motion.Level})");
             }
         }
         _shownAt = now;
@@ -169,8 +169,8 @@ public sealed partial class WristPanel : IPointerTarget, IDisposable
         // overlay ha ránézek a csuklómra")
         if (_introWant != 0 && (Alpha >= 0.55f || now - _introWantAt > 0.35))
         {
-            if (_introWant == 2) Intro(); else CyberGlance();
-            Log.Info($"watch: {(_introWant == 2 ? "boot" : "glance")} started at {Alpha * 100:0} % shown, {(now - _introWantAt) * 1000:0} ms after it came");
+            if (_introWant == 2) Intro(); else CyberBoot(quick: true);
+            Log.Info($"watch: {(_introWant == 2 ? "boot" : "quick boot")} started at {Alpha * 100:0} % shown, {(now - _introWantAt) * 1000:0} ms after it came");
             _introWant = 0;
         }
         if (_themeVersion != Theme.Version) { _themeVersion = Theme.Version; _dirty = true; }
