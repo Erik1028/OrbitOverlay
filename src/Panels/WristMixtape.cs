@@ -184,7 +184,7 @@ public sealed partial class WristPanel
             }
         }
         var c = new RectangleF(E.X + 24, E.Y + 74, E.Width - 48, E.Height - 92);
-        if (m == null || m.Status != MixtapeStatus.Connected) { MtMessage(c, MtNotRunning, "Start Mixtape 0.23 or newer on the PC (Settings: Remote control on)."); return; }
+        if (m == null || m.Status != MixtapeStatus.Connected) { MtMessage(c, MtNotRunning, "Start Mixtape 0.23 or newer on the PC (Settings › Safety › Control from other apps: on)."); return; }
         switch (_mtTab)
         {
             case MtTab.Playing: MtPlaying(c, m); break;

@@ -585,7 +585,8 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             _vr.GazeOrigin = _vr.EyesValid ? _eyes.WorldOrigin(_vr.Hmd) : _vr.Hmd.Translation;
             bool watched = (_wrist?.Alpha ?? 0) > 0.02f;
             _data.Vr.Watched = watched;                 // the batteries every second while the watch shows, else every 5 s
-            _gpuStats.Active = watched;                 // the GPU counters (a few ms a sample) only while the watch can show them
+            // the GPU counters (a few ms a sample, on their own thread) while the watch can show them - or OSC sends them to the avatar
+            _gpuStats.Active = watched || (C.General.Osc && _vr.Connected);
             _data.Vr.Update(_vr, now);
             FirstUseIfPending();
             if (_warmAt > 0 && now >= _warmAt) WarmAgain();
@@ -2014,8 +2015,34 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             if (v.RightBattery >= 0) { hsum += v.RightBattery; hn++; }
             if (hn > 0) _osc.Param("averageControllerBattery", (float)(hsum / hn));
             if (v.TrackerAverage >= 0) _osc.Param("averageTrackerBattery", v.TrackerAverage);
+            // the avatar's DXOverlay hologram (Erik 10-20, the Lutalis avatar): live frame rate, GPU, VRAM and what plays, scaled to
+            // small floats; -1 = unknown (the hologram then draws nothing). Rounded first to what the hologram shows (fps 1, ms and GB
+            // 0.1, percentages 1 %, the track's place 0.5 %, its time 1 s), so a value goes out only when that changes.
+            _osc.Param("Orbit/Fps", v.AppFps >= 0 ? MathF.Round(v.AppFps) / 1000 : -1);
+            _osc.Param("Orbit/Hz", v.DisplayHz > 0 ? MathF.Round(v.DisplayHz) / 1000 : -1);
+            _osc.Param("Orbit/Reproj", v.ReprojPct >= 0 ? MathF.Round(v.ReprojPct) / 100 : -1);
+            _osc.Param("Orbit/GpuMs", v.GpuMs >= 0 ? MathF.Round(v.GpuMs * 10) / 1000 : -1);
+            float gl = _gpuStats.Load3D, gv = _gpuStats.VramUsedGB, gt = _data.VramTotalGB;
+            _osc.Param("Orbit/GpuLoad", gl >= 0 ? MathF.Round(gl) / 100 : -1);
+            _osc.Param("Orbit/Vram", gv >= 0 ? MathF.Round(gv * 10) / 1000 : -1);
+            _osc.Param("Orbit/VramTotal", gt > 0 ? MathF.Round(gt * 10) / 1000 : -1);
+            var (tok, pos, dur) = _media.Timeline();
+            bool tl = tok && dur > 0;
+            _osc.Param("Orbit/MediaPos", tl ? MathF.Round((float)(pos / dur) * 200) / 200 : -1);
+            _osc.Param("Orbit/MediaTime", tl ? MathF.Round((float)pos) / 10000 : -1);
+            _osc.Param("Orbit/MediaDur", tl ? MathF.Round((float)dur) / 10000 : -1);
+            _osc.Param("Orbit/Playing", _media.Source().playing);
+        }
+        else
+        {
+            // Orbit closing: the hologram's numbers go (not a frozen last value)
+            foreach (var n in HoloParams) _osc.Param(n, -1f);
+            _osc.Param("Orbit/Playing", false);
         }
     }
+
+    static readonly string[] HoloParams =
+        { "Orbit/Fps", "Orbit/Hz", "Orbit/Reproj", "Orbit/GpuMs", "Orbit/GpuLoad", "Orbit/Vram", "Orbit/VramTotal", "Orbit/MediaPos", "Orbit/MediaTime", "Orbit/MediaDur" };
 
     public void OpenConfigFolder()
     {

@@ -1603,7 +1603,7 @@ static class Hu
         ("Eye cursor", "Szemkurzor"),
         // ---- the Mixtape widget (Panels/WristMixtape.cs) ----
         ("Mixtape is not running", "A Mixtape nem fut"),
-        ("Start Mixtape 0.23 or newer on the PC (Settings: Remote control on).", "Indítsd el a Mixtape 0.23-at vagy újabbat a gépen (Beállítások: Távvezérlés be)."),
+        ("Start Mixtape 0.23 or newer on the PC (Settings › Safety › Control from other apps: on).", "Indítsd el a Mixtape 0.23-at vagy újabbat a gépen (Settings › Safety › Control from other apps: be)."),
         ("Playing", "Szól"),
         ("Up next", "Következik"),
         ("Songs", "Dalok"),

@@ -6,8 +6,8 @@ version you came from. Format: "## <version> | <title>", then "- " points (an in
 ## 1.16.0 | Mixtape on the watch, your bulb without Lumos, eye cursor
 - Now playing opens into Mixtape's whole player while Mixtape plays (or is paused with nothing else playing): the queue,
   the song list, albums, playlists and the lyrics, synced; the card's buttons and cover are Mixtape's then. Another
-  player's song: the usual view, with a Mixtape button to open the player anyway. Needs Mixtape 0.23 with Remote
-  control on; a Mixtape widget on your watch turned into Now playing.
+  player's song: the usual view, with a Mixtape button to open the player anyway. Needs Mixtape 0.23 ("Control from
+  other apps" on - Settings › Safety, on by default); a Mixtape widget on your watch turned into Now playing.
 - Your Tapo bulb without Lumos: OrbitOverlay goes straight to the bulb by itself, with the account Hexpad or Lumos
   keeps; with neither, "Go direct" asks for it in the desktop window. Only the bulb's key is kept, never the password.
 - The light by itself (its opened view, Auto): on when SteamVR starts, dimmed while theater mode plays (its brightness
