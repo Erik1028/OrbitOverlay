@@ -157,7 +157,7 @@ static partial class Tools
             {
                 using var cap = new MonitorCapture(gpu, dev, m);
                 for (int i = 0; i < 100 && !cap.Poll(); i++) Thread.Sleep(20);
-                double got = 0, none = 0;
+                double got = 0, none = 0, worst = 0;
                 int nGot = 0, nNone = 0;
                 long alloc = 0;
                 double t0 = Clock.Now, next = t0;
@@ -172,9 +172,10 @@ static partial class Tools
                     double ms = System.Diagnostics.Stopwatch.GetElapsedTime(s0).TotalMilliseconds;
                     alloc += GC.GetAllocatedBytesForCurrentThread() - m0;
                     if (f) { got += ms; nGot++; } else { none += ms; nNone++; }
+                    worst = Math.Max(worst, ms);
                 }
                 Log.Info($"perf: capture {m.Name,-14} {nGot} new frames {(nGot > 0 ? got / nGot : 0):0.000} ms a poll, {nNone} without {(nNone > 0 ? none / nNone : 0):0.000} ms, " +
-                         $"{alloc / Math.Max(1, nGot + nNone)} B a poll");
+                         $"{alloc / Math.Max(1, nGot + nNone)} B a poll, worst {worst:0.000} ms");
             }
             catch (Exception e) { Log.Error($"perf: capture {m}: {e.Message}"); }
         }

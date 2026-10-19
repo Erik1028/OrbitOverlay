@@ -614,7 +614,9 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
                 // on its way in / out, and while a hand holds a mouse button (a drag across screens)
                 bool busy = _theater.On;
                 if (!busy) foreach (var d in _desktops) if (d.Theater != null) { busy = true; break; }
+                long gf = System.Diagnostics.Stopwatch.GetTimestamp();
                 _gazeFocus.Update(_vr, now, dt, C.Focus, busy, _mouse.Held, _lasers[0].Hovered, _lasers[1].Hovered);
+                Spikes.Piece("gaze focus", gf);
                 bool dimLook = C.General.DimUnlooked && _vr.EyesValid;
                 foreach (var d in _desktops) { d.SmartCapture = C.General.SmartCapture; d.DimUnlooked = dimLook; d.Update(_vr, now, C.General.DesktopsVisible, C.General.CaptureFps); }
                 foreach (var w in _windowPanels) { w.DimUnlooked = dimLook; w.Update(_vr, now, C.General.DesktopsVisible, C.General.CaptureFps, C.General.SmartCapture); }
@@ -885,6 +887,14 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         _dashNext = now + 0.5;
         PreparePreviews(_dashView);
         AnimWake.Take();             // the previews' asks are their own panels', not the dashboard's
+        DrawDashboard();
+        _dashNext = Math.Min(_dashNext, AnimWake.Take());       // a style's animation wants its next frame (AnimWake.cs)
+        if (_dashUi.Interacting || _dashUi.Changed || _dashUi.Animating) _dashDirty = true;
+        _dash.SetTexture(_dashSurf.Tex);
+    }
+
+    void DrawDashboard()
+    {
         if (Theme.Classic)
             _dashView.Render95(_dashUi, _dashPtr, _dashSurf.Bitmap, DashW / SettingsView.W95W, 0, 0, Theme.W95Teal);
         else
@@ -896,9 +906,6 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             _painter.End();
             _dashUi.End();
         }
-        _dashNext = Math.Min(_dashNext, AnimWake.Take());       // a style's animation wants its next frame (AnimWake.cs)
-        if (_dashUi.Interacting || _dashUi.Changed || _dashUi.Animating) _dashDirty = true;
-        _dash.SetTexture(_dashSurf.Tex);
     }
 
     void HandleEvent(in VREvent_t ev)
@@ -2117,6 +2124,8 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             _wrist.Draw(_data);
             _wrist.Settle();
             _notifyPanel.Warm();
+            // the SteamVR dashboard's tab: its first draw was 18.8 ms when the dashboard opened (Erik 10-19)
+            if (_dash != null && _dashSurf != null && !_vr.Ov.IsDashboardVisible()) { DrawDashboard(); AnimWake.Take(); _dashDirty = true; }
         }
         catch (Exception e) { Log.Warn("warm-up draw: " + e.Message); }
     }

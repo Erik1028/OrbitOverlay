@@ -103,17 +103,26 @@ public sealed class DesktopPanel : ITheaterScreen, IDisposable
             Ov.SetAlpha(_opacity * (1 - MathF.Pow(1 - _vis, 3)) * _lookA);
             Ov.Show();
         }
+        long f0 = System.Diagnostics.Stopwatch.GetTimestamp();
         if (Theme.Cyber || _cyFx != null) (_cyFx ??= new CyberScreenFx(_g, Ov.Key)).Update(Ov, _vis, want, th != null, TextureSize, now);   // Cyber's unfold and HUD frame
+        Spikes.Piece("monitor: Cyber fx", f0);
+        f0 = System.Diagnostics.Stopwatch.GetTimestamp();
         _cap?.SetCursorCapture(!(want && _mouse.Panel == this && _mouse.Hand != null && Cfg.Mouse));
+        Spikes.Piece("monitor: cursor capture switch", f0);
         // aside in theater mode it is still captured, slowly: switching to it shows what is on it now, not the
         // picture from when it was hidden (that jumped to the new one a moment later)
         bool warm = !want && TheaterHidden && _cap != null && !_cap.Closed;
         if (want && _staleTex && _cap != null && !_cap.Closed) Hand();       // shown again: the picture taken meanwhile, at once
         if (!(want || warm) || !CaptureDue(ref _nextFrame, now, want ? EffectiveFps(vr, fps) : 3)) return;
-        if (_cap.Poll())
+        f0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        bool got = _cap.Poll();
+        Spikes.Piece("monitor: capture poll", f0);
+        if (got)
         {
             // hidden it is only kept fresh: SteamVR gets it once it shows (it copied every one of those 3 a second for nothing)
+            f0 = System.Diagnostics.Stopwatch.GetTimestamp();
             if (want) Hand(); else _staleTex = true;
+            Spikes.Piece("monitor: texture to SteamVR", f0);
         }
     }
 
