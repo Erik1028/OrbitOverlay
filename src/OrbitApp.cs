@@ -685,6 +685,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         _data.Weather = _weather.Report;
         Spikes.Piece("app: weather", ap); ap = System.Diagnostics.Stopwatch.GetTimestamp();
         // the light and the RGB: their apps asked while their widget is on one of the pages (the bulb read again when the watch shows)
+        TapoAuto();
         _lumos.SetKey(C.Lights?.Key);
         _lumos.SetBulb(C.Lights?.Bulb);
         _lumos.Active = C.Wrist.Face == "custom" && WatchPages.Any(C.Wrist, "light");
@@ -1957,6 +1958,33 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
     }
 
     void ShowSettings() => _win.ShowAndFocus();
+
+    // The bulb straight by itself (Erik 10-19: "a tapo izzot is supportalhatna nativan az orbitoverlay, jelenleg lumos nelkul nem megy"):
+    // a light widget on a page, no key yet and "Use Lumos" never picked - the Tapo account Hexpad or Lumos keeps (TapoAccount.Import,
+    // read only; only the bulb's key kept, DPAPI-protected), once a run, on a worker; the bulb's address from Lumos's list when none is
+    // set. No account in either: through Lumos as before ("Go direct" in the watch editor asks for one).
+    System.Threading.Tasks.Task<(string kept, string from, string bulb)> _tapoAuto;
+    bool _tapoAutoDone;
+
+    void TapoAuto()
+    {
+        if (_tapoAutoDone || C.Lights?.Key != null || C.Lights?.ViaLumos == true || !(C.Wrist.Face == "custom" && WatchPages.Any(C.Wrist, "light"))) return;
+        _tapoAuto ??= System.Threading.Tasks.Task.Run(() =>
+        {
+            try { return (TapoAccount.Import(out string from), from, TapoAccount.BulbFromLumos()); }
+            catch (Exception e) { Log.Warn("lights: the Tapo account could not be read (" + e.GetType().Name + ")"); return ((string)null, (string)null, (string)null); }
+        });
+        if (!_tapoAuto.IsCompleted) return;
+        _tapoAutoDone = true;
+        var (kept, from, bulb) = _tapoAuto.Result;
+        if (kept == null) { Log.Info("lights: no Tapo account in Hexpad or Lumos - through Lumos (Go direct in the watch editor asks for one)"); return; }
+        var l = C.Lights ??= new LightsConfig();
+        l.Key = kept;
+        bool addr = l.Bulb == null && bulb != null;
+        if (addr) l.Bulb = bulb;
+        _cfg.MarkDirty();
+        Log.Info($"lights: straight to the bulb - the Tapo account from {from}{(addr ? ", its address from Lumos" : "")}");
+    }
 
     void WristAction(string id)
     {

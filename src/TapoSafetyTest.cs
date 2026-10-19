@@ -277,8 +277,20 @@ static class TapoSafetyTools
                     TapoAccount.KeyFrom(F("c.json", "{\"tapo\": \"made-up\"}"), "tapo", "email") == null &&
                     TapoAccount.KeyFrom(F("d.json", "made-up, not JSON"), "tapo", "email") == null &&
                     TapoAccount.KeyFrom(Path.Combine(td, "none.json"), "tapo", "email") == null;
+        // 10-19: the bulb's address from Lumos's list (the first device's host, an IP address only); the account typed in the dialog
+        string lumosList = F("lumos_list.json", "{\"username\": \"made-up@example.com\", \"password\": \"made-up password\", \"devices\": " +
+                             "[{\"host\": \"10.0.0.98\", \"alias\": \"Made-up lamp\"}, {\"host\": \"10.0.0.97\"}], \"steamvr_on\": true}", true);
+        string addr = TapoAccount.BulbFrom(lumosList);
+        bool noAddr = TapoAccount.BulbFrom(F("e.json", "{\"devices\": []}")) == null && TapoAccount.BulbFrom(F("f.json", "{\"devices\": [{\"host\": \"not an address\"}]}")) == null &&
+                      TapoAccount.BulbFrom(F("g.json", "{\"host\": \"10.0.0.96\"}")) == null && TapoAccount.BulbFrom(Path.Combine(td, "none.json")) == null;
+        char[] tu = " made-up@example.com ".ToCharArray(), tp = "made-up password".ToCharArray();
+        bool typed = Same(TapoAccount.Unprotect(TapoAccount.FromTyped(tu, tp)), want);
+        bool typedNone = TapoAccount.FromTyped("  ".AsSpan(), tp) == null && TapoAccount.FromTyped(tu, ReadOnlySpan<char>.Empty) == null;
         Directory.Delete(td, true);
         Log.Info($"lights account: the key from a settings file - Hexpad's shape {hex} (want True), with a UTF-8 BOM {hexBom} (want True), Lumos's shape with " +
                  $"escapes {esc} (want True), held open by its writer {held} (want True); none where there is none {none} (want True)");
+        Tools.Want($"lights account: the bulb's address from Lumos's list '{addr}' (want '10.0.0.98'), none where there is none {noAddr} (want True); the account typed " +
+                   $"(its e-mail trimmed) the same key {typed} (want True), an empty box none {typedNone} (want True)",
+            addr == "10.0.0.98" && noAddr && typed && typedNone);
     }
 }

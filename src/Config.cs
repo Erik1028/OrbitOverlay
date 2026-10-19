@@ -200,6 +200,8 @@ public sealed class LightsConfig
     public string Bulb { get; set; }                  // the Tapo bulb's IP address as Lumos knows it (null: "Set the bulb")
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string Key { get; set; }                   // the bulb's key, DPAPI-protected (TapoAccount): straight to the bulb; null: through Lumos
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool ViaLumos { get; set; }                // "Use Lumos" picked: the app does not go straight to the bulb by itself (OrbitApp)
 }
 
 // The avatar toggles widget (Sys/AvatarToggles.cs): which of an avatar's parameters its widget shows, by the avatar's id - picked in the

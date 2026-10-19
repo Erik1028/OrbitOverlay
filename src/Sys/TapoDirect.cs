@@ -12,7 +12,8 @@ using System.Threading.Tasks;
 
 namespace Orbit;
 
-// The Tapo bulb without Lumos (Erik 10-17: "Hexpad drives it without Lumos"): Tapo's local protocol - KLAP, as python-kasa speaks it
+// The Tapo bulb without Lumos (Erik 10-17: "Hexpad drives it without Lumos"; 10-19: "a tapo izzot is supportalhatna nativan az
+// orbitoverlay, jelenleg lumos nelkul nem megy" - since then the app goes straight by itself, and the account can be typed in: FromTyped): Tapo's local protocol - KLAP, as python-kasa speaks it
 // to the L630 - straight to the bulb. The bulb checks the TP-Link account by one key, SHA256(SHA1(e-mail) + SHA1(password)), and that
 // key is all OrbitOverlay keeps: made once from Hexpad's or Lumos's own settings (TapoAccount.Import, read only - the e-mail and the
 // password hashed straight from the file's bytes, never made strings, the bytes cleared after) and kept DPAPI-protected for this Windows
@@ -350,6 +351,75 @@ public static class TapoAccount
     }
 
     static void Clear(byte[] b) { if (b != null) CryptographicOperations.ZeroMemory(b); }
+
+    // typed in OrbitOverlay's own Tapo account dialog (Desktop/SettingsWindow.cs): the e-mail and the password as the boxes' chars (read
+    // from their windows into arrays of the dialog's - never strings), UTF-8 encoded into buffers of ours, hashed, every buffer cleared
+    // after. The protected key (null: one of them empty).
+    public static string FromTyped(ReadOnlySpan<char> user, ReadOnlySpan<char> password)
+    {
+        user = user.Trim();
+        if (user.IsEmpty || password.IsEmpty) return null;
+        byte[] u = new byte[Encoding.UTF8.GetMaxByteCount(user.Length)], p = new byte[Encoding.UTF8.GetMaxByteCount(password.Length)], key = null;
+        try
+        {
+            int ul = Encoding.UTF8.GetBytes(user, u), pl = Encoding.UTF8.GetBytes(password, p);
+            key = KeyFor(u.AsSpan(0, ul), p.AsSpan(0, pl));
+            return Protect(key);
+        }
+        finally { Clear(u); Clear(p); Clear(key); }
+    }
+
+    // the bulb's address from Lumos's list - its first device's "host", an IP address (read only; the account in the same file is
+    // skipped, never read out): null - none there
+    public static string BulbFromLumos()
+    {
+        string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        foreach (var path in new[] { Path.Combine(home, "Desktop", "project", "Lumos", "dist", "config.json"), Path.Combine(home, "Desktop", "project", "Lumos", "config.json") })
+            if (BulbFrom(path) is { } h) return h;
+        return null;
+    }
+
+    internal static string BulbFrom(string path)
+    {
+        byte[] file = null;
+        try
+        {
+            if (!File.Exists(path)) return null;
+            int len;
+            using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 0))
+            {
+                if (fs.Length > 1 << 20) return null;
+                file = new byte[fs.Length];
+                len = fs.ReadAtLeast(file, file.Length, throwOnEndOfStream: false);
+            }
+            var json = file.AsSpan(0, len);
+            if (json.StartsWith("\uFEFF"u8)) json = json[3..];
+            var rd = new Utf8JsonReader(json);
+            if (!rd.Read() || rd.TokenType != JsonTokenType.StartObject) return null;
+            while (rd.Read() && rd.TokenType == JsonTokenType.PropertyName)
+            {
+                bool devices = rd.ValueTextEquals("devices"u8);
+                rd.Read();
+                if (!devices || rd.TokenType != JsonTokenType.StartArray) { rd.Skip(); continue; }
+                if (!rd.Read() || rd.TokenType != JsonTokenType.StartObject) return null;
+                while (rd.Read() && rd.TokenType == JsonTokenType.PropertyName)
+                {
+                    bool host = rd.ValueTextEquals("host"u8);
+                    rd.Read();
+                    if (host && rd.TokenType == JsonTokenType.String)
+                    {
+                        string h = rd.GetString()?.Trim();
+                        return h is { Length: > 0 and <= 64 } && System.Net.IPAddress.TryParse(h, out _) ? h : null;
+                    }
+                    rd.Skip();
+                }
+                return null;
+            }
+            return null;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException) { return null; }
+        finally { Clear(file); }
+    }
 
     public static string Protect(byte[] key) => Convert.ToBase64String(ProtectedData.Protect(key, Entropy, DataProtectionScope.CurrentUser));
 

@@ -6,8 +6,9 @@ namespace Orbit;
 
 // The light widget's settings (Sys/RoomLights.cs): which bulb - its IP address, typed in the desktop window (the settings have no text box
 // of their own: a small Windows dialog asks for it; in VR it is shown only) - and how: through Lumos, or straight to the bulb ("Go
-// direct", Erik 10-17: Hexpad does it without Lumos). Going direct takes the account Hexpad or Lumos already keeps and keeps only the
-// bulb's key made from it, DPAPI-protected (TapoDirect.cs); "Use Lumos" forgets it. In the watch editor, when a light widget is selected:
+// direct", Erik 10-17: Hexpad does it without Lumos; 10-19 the app goes straight by itself, OrbitApp.TapoAuto). Going direct takes the
+// account Hexpad or Lumos already keeps - neither has one: the desktop window asks for it - and keeps only the bulb's key made from it,
+// DPAPI-protected (TapoDirect.cs); "Use Lumos" forgets it (and is remembered). In the watch editor, when a light widget is selected:
 // Modern / Cyber a row over its look, the 95 family a line in the Selected widget box. The RGB widget needs none (Prisma's pipe has one
 // name).
 public sealed partial class SettingsView
@@ -27,18 +28,31 @@ public sealed partial class SettingsView
     }
 
     string _bulbNote;                       // why "Go direct" did not (shown where the state is, until the next try)
+    public Action<Action<string>> AskAccount;       // the desktop window asks for the Tapo account: the protected key (null: cancelled)
 
-    // straight to the bulb with the key from Hexpad's / Lumos's account, or back through Lumos
+    // straight to the bulb with the key from Hexpad's / Lumos's account - neither has one: typed in the desktop window's dialog - or back
+    // through Lumos (remembered: the app then does not go straight by itself, OrbitApp.TapoAuto)
     void ToggleDirect()
     {
         _bulbNote = null;
-        if (C.Lights?.Key != null) C.Lights.Key = null;
-        else
+        if (C.Lights?.Key != null)
         {
-            var kept = TapoAccount.Import(out _);
-            if (kept == null) { _bulbNote = Lang.T("No Tapo account in Hexpad or Lumos"); return; }
-            (C.Lights ??= new LightsConfig()).Key = kept;
+            C.Lights.Key = null;
+            C.Lights.ViaLumos = true;
+            _h.Cfg.MarkDirty();
+            return;
         }
+        var kept = TapoAccount.Import(out _);
+        if (kept != null) { Direct(kept); return; }
+        if (AskAccount == null) { _bulbNote = Lang.T("No Tapo account: type it in the desktop window"); return; }
+        AskAccount(k => { if (k != null) Direct(k); });
+    }
+
+    void Direct(string kept)
+    {
+        var l = C.Lights ??= new LightsConfig();
+        l.Key = kept;
+        l.ViaLumos = false;
         _h.Cfg.MarkDirty();
     }
 

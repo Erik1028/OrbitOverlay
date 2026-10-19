@@ -32,6 +32,7 @@ public sealed class SettingsWindow : Form
         View.OnMinimize = () => WindowState = FormWindowState.Minimized;      // the Cyber header's own button (no Windows frame there)
         View.AskFile = (save, name, then) => BeginInvoke(new Action(() => AskFileDialog(save, name, then)));     // the watch editor's Share
         View.AskText = (title, prompt, text, then) => BeginInvoke(new Action(() => AskTextDialog(title, prompt, text, then)));     // the weather's place
+        View.AskAccount = then => BeginInvoke(new Action(() => AskAccountDialog(then)));     // the bulb's Tapo account ("Go direct")
         Text = "OrbitOverlay";
         Icon = icon;
         FormBorderStyle = FormBorderStyle.None;      // every style draws its own frame (ApplyStyle)
@@ -171,6 +172,64 @@ public sealed class SettingsWindow : Form
         try { then(result); } catch (Exception e) { Log.Warn("text dialog: " + e.Message); }
         Dirty = true;
     }
+
+    // The Tapo account typed ("Go direct" with no account in Hexpad or Lumos): an e-mail box and a password box, read from the boxes' own
+    // windows into char arrays as OK is clicked (TextBox.Text would make them strings), the bulb's key made at once and protected
+    // (TapoAccount.FromTyped), the arrays and the boxes cleared - only the protected key leaves here.
+    void AskAccountDialog(Action<string> then)
+    {
+        string kept = null;
+        Native.SetTimer(Handle, ModalTimer, 10, IntPtr.Zero);
+        try
+        {
+            using var font = new Font("Segoe UI", 9f);
+            using var f = new Form
+            {
+                Text = Lang.T("Tapo account"), FormBorderStyle = FormBorderStyle.FixedDialog, MinimizeBox = false, MaximizeBox = false, ShowInTaskbar = false,
+                StartPosition = FormStartPosition.CenterParent, AutoScaleMode = AutoScaleMode.Dpi, AutoScaleDimensions = new SizeF(96, 96),
+                ClientSize = new Size(420, 178), Font = font,
+            };
+            var label = new Label { Text = Lang.T("The account of the Tapo app. OrbitOverlay keeps only the bulb's key made from it, protected for this Windows user - never the e-mail or the password."), Left = 12, Top = 10, Width = 396, Height = 48 };
+            var userLabel = new Label { Text = Lang.T("E-mail:"), Left = 12, Top = 69, Width = 80 };
+            var user = new TextBox { Left = 96, Top = 66, Width = 312 };
+            var passLabel = new Label { Text = Lang.T("Password:"), Left = 12, Top = 101, Width = 80 };
+            var pass = new TextBox { Left = 96, Top = 98, Width = 312, UseSystemPasswordChar = true };
+            var ok = new Button { Text = Lang.T("OK"), DialogResult = DialogResult.OK, Left = 252, Top = 140, Width = 75, Height = 26 };
+            var cancel = new Button { Text = Lang.T("Cancel"), DialogResult = DialogResult.Cancel, Left = 333, Top = 140, Width = 75, Height = 26 };
+            ok.Click += (_, _) => kept = KeyFromBoxes(user, pass);
+            f.Controls.AddRange(new Control[] { label, userLabel, user, passLabel, pass, ok, cancel });
+            f.AcceptButton = ok;
+            f.CancelButton = cancel;
+            f.ShowDialog(this);
+            user.Clear();
+            pass.Clear();
+        }
+        catch (Exception e) { Log.Warn("account dialog: " + e.GetType().Name); kept = null; }
+        finally { Native.KillTimer(Handle, ModalTimer); }
+        try { then(kept); } catch (Exception e) { Log.Warn("account dialog: " + e.GetType().Name); }
+        Dirty = true;
+    }
+
+    static string KeyFromBoxes(TextBox user, TextBox pass)
+    {
+        var (u, ul) = BoxChars(user);
+        var (p, pl) = BoxChars(pass);
+        try { return TapoAccount.FromTyped(u.AsSpan(0, ul), p.AsSpan(0, pl)); }
+        finally { Array.Clear(u); Array.Clear(p); }
+    }
+
+    static (char[] chars, int length) BoxChars(TextBox box)
+    {
+        int n = GetWindowTextLengthW(box.Handle);
+        var c = new char[n + 1];
+        int got = n > 0 ? GetWindowTextW(box.Handle, c, c.Length) : 0;
+        return (c, Math.Clamp(got, 0, n));
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    static extern int GetWindowTextLengthW(IntPtr hwnd);
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    static extern int GetWindowTextW(IntPtr hwnd, char[] text, int max);
 
     protected override void WndProc(ref Message m)
     {
