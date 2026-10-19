@@ -381,7 +381,8 @@ public sealed class MixtapeLink : MixtapeSource, IDisposable
     {
         using var doc = Request("{\"cmd\":\"lyrics\"}");
         var r = doc.RootElement;
-        var ly = new MixtapeLyrics { TrackId = Str(r, "id") ?? "", Synced = Bool(r, "synced") };
+        // the track's id: "trackId" (Mixtape 0.23 - the reply's own "id" is the request's), else the protocol's first draft "id"
+        var ly = new MixtapeLyrics { TrackId = Str(r, "trackId") ?? Str(r, "id") ?? "", Synced = Bool(r, "synced") };
         if (r.TryGetProperty("lines", out var lines) && lines.ValueKind == JsonValueKind.Array)
         {
             var ms = new List<int>();

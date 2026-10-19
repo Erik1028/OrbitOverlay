@@ -55,10 +55,17 @@ The client groups albums / artists itself. Songs in the library's order (as Mixt
 
 ### cover  `{"cmd": "cover", "key": "<coverKey>", "size": 256}`
 → `{"w": 256, "h": 256, "bgra": "<base64>"}` - the art scaled to fit a size × size square (aspect kept, centred, transparent around),
-32-bit BGRA, premultiplied alpha, rows top to bottom. `size` ∈ {64, 128, 256}. Unknown key → `ok: false`.
+32-bit BGRA, premultiplied alpha, rows top to bottom. `size` ∈ {64, 128, 256} (another size: the next of these). Unknown key, or an
+album with no art after all → `ok: false`.
+
+Refusals (`ok: false` with a reason): `play` / `next` with nothing loaded; `rate` for a PC song, a read-only iPod, before Mixtape's
+first-write question was answered this session, or while the desktop is busy writing. Mixtape 0.23 notes: `prev` restarts the song
+past 3 s (the remote only); `playSongs` with shuffle on puts the rest in random order; a `playSongs` list is remembered - Up Next
+running out on it stops at its end (Repeat All goes round), Prev steps back through it; a song started on the desktop drops it.
 
 ### lyrics
-→ `{"id": "<track id>", "synced": true, "lines": [ { "ms": 12340, "text": "..." } ]}` for the playing track (`synced: false` → `ms` 0 and
+→ `{"trackId": "<track id>", "synced": true, "lines": [ { "ms": 12340, "text": "..." } ]}` for the playing track (the reply's `id` is the
+request's; Mixtape 0.23 also repeats the track id as a second `id` string, which JSON readers that keep the last one see) (`synced: false` → `ms` 0 and
 the plain text split into lines); no lyrics → `"lines": []`. Whatever Mixtape's own lyrics panel would show for it (the file's tags, a
 sidecar .lrc, a cached online result) - the API never starts an online lookup by itself.
 
@@ -75,7 +82,7 @@ sidecar .lrc, a cached online result) - the API never starts an online lookup by
 | `queueAdd` | `ids` | to the end of Up Next |
 | `queueNext` | `ids` | to the front of Up Next (play next) |
 | `queueRemove` | `index` | |
-| `queueMove` | `from`, `to` | |
+| `queueMove` | `from`, `to` | `to` = the entry's index after the move |
 | `queueClear` | | |
 | `queueJump` | `index` | plays that queue entry now (the entries before it are dropped) |
 | `rate` | `stars` (0..5) | the playing song's rating |
