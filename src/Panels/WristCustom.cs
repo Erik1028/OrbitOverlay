@@ -379,6 +379,16 @@ public sealed partial class WristPanel
         _dirty = true;
     }
 
+    // the boot waits for the watch to be there (WristPanel.Update): the face held at its very start - nothing of it shows (Cyber: the
+    // cards wait for their scan, the frame for its corners; modern: every widget before its cascade) - till Intro starts it
+    void IntroHold()
+    {
+        if (Theme.Cyber) { if (CyberFx.Full) { CyberSettleFx(); _cyBootAt = Clock.Now + 3600; } }
+        else if (Motion.Full) _introStart = Clock.Now + 3600;
+        _dirty = true;
+    }
+
+    public void IntroHoldForTest() => IntroHold();
     public bool IntroRunning => Clock.Now - _introStart < 1.2;      // --snapshot's Motion check
 
     public bool Animating => _ui.Animating || _rolling || Clock.Now - _introStart < 1.2 || CyberAnimating;

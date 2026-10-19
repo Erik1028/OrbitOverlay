@@ -53,6 +53,8 @@ public sealed partial class WristPanel : IPointerTarget, IDisposable
     public readonly Surface Surf;
     public VrOverlay Ov { get; private set; }
     public Action<string> OnAction;
+    int _introWant;                      // the watch came into view: 2 its boot, 1 a glance (Cyber) - started once it is really there
+    double _introWantAt;
     bool _eyeOn;                         // eye tracking: your eyes are on it (EyeOn / EyeOff degrees, a hysteresis)
     const float EyeOn = 15, EyeOff = 28;
     double _shownAt = -1e9;              // the last frame the watch showed (its intro: not on a glance back)
@@ -153,13 +155,24 @@ public sealed partial class WristPanel : IPointerTarget, IDisposable
             {
                 // (away under 1.5 s: the eyes slipped off its edge a moment - it simply stays)
                 double away = now - _shownAt;
-                if (away > 20) Intro();
-                else if (Theme.Cyber && away > 1.5) CyberGlance();
-                Log.Info($"watch: in view - {(away > 20 ? "boot" : Theme.Cyber && away > 1.5 ? "glance" : "as it was")} (away {Math.Min(away, 999):0.0} s, motion {Motion.Level})");
+                int want = away > 20 ? 2 : Theme.Cyber && away > 1.5 ? 1 : 0;
+                if (want == 2 && _introWant != 2) IntroHold();           // the face waits for its boot (nothing of it before)
+                _introWant = Math.Max(_introWant, want);                  // (a boot still held from a look cut short stays)
+                _introWantAt = now;
+                Log.Info($"watch: in view - {(_introWant == 2 ? "boot" : _introWant == 1 ? "glance" : "as it was")} (away {Math.Min(away, 999):0.0} s, motion {Motion.Level})");
             }
         }
         _shownAt = now;
         Ov.Show();
+        // the boot / the glance once the watch is really there - Alpha 0.55, or 0.35 s after it came: started at 2 % it ran while the
+        // wrist was still turning up and was over before the watch could be seen (Erik 10-19: "még mindig nem animálva jelenik meg az
+        // overlay ha ránézek a csuklómra")
+        if (_introWant != 0 && (Alpha >= 0.55f || now - _introWantAt > 0.35))
+        {
+            if (_introWant == 2) Intro(); else CyberGlance();
+            Log.Info($"watch: {(_introWant == 2 ? "boot" : "glance")} started at {Alpha * 100:0} % shown, {(now - _introWantAt) * 1000:0} ms after it came");
+            _introWant = 0;
+        }
         if (_themeVersion != Theme.Version) { _themeVersion = Theme.Version; _dirty = true; }
         // Hexpad's keys / knobs changed (its animations, a knob turned): drawn as they come (up to its 20 a second), not on the
         // next timer tick - that was 2-10 frames a second (Erik: "a hexpad elég kevés fps-el mozog")
