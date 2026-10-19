@@ -62,7 +62,7 @@ public sealed unsafe class MonitorCapture : IDisposable
         try
         {
             Target = new Surface(g, _size.Width, _size.Height);
-            _pool = Direct3D11CaptureFramePool.CreateFreeThreaded(_device, DirectXPixelFormat.B8G8R8A8UIntNormalized, 2, _size);
+            _pool = Direct3D11CaptureFramePool.CreateFreeThreaded(_device, DirectXPixelFormat.B8G8R8A8UIntNormalized, Buffers, _size);
             _session = _pool.CreateCaptureSession(_item);
             _poolAbi = QueryAbi(_pool, IID_IDirect3D11CaptureFramePool);
             try { _session.IsCursorCaptureEnabled = true; } catch (Exception e) { Log.Warn("cursor capture: " + e.Message); }
@@ -151,12 +151,26 @@ public sealed unsafe class MonitorCapture : IDisposable
 
     // Copies the newest frame (if any) into Target. Returns true when Target changed.
     // IDirect3D11CaptureFramePool: [7] TryGetNextFrame. IDirect3D11CaptureFrame: [6] Surface, [8] ContentSize.
+    // The frame copied last is handed back to Windows only at the next poll (Erik 10-19, the spike line: 1.6-4.6 ms polls in VR, 0.18 ms
+    // on the bench - closing a frame right after its copy was queued waited for that copy while the GPU was full of the game's frame);
+    // one more buffer in the pool so Windows has a free one meanwhile
+    const int Buffers = 3;
+    IntPtr _held;
+
+    void ReleaseHeld()
+    {
+        if (_held == IntPtr.Zero) return;
+        CloseFrame(_held);
+        _held = IntPtr.Zero;
+    }
+
     public bool Poll()
     {
         if (Closed || _pool == null || _poolAbi == IntPtr.Zero) return false;
         IntPtr last = IntPtr.Zero, surface = IntPtr.Zero;
         try
         {
+            long p0 = System.Diagnostics.Stopwatch.GetTimestamp();
             var tryNext = (delegate* unmanaged[Stdcall]<IntPtr, IntPtr*, int>)(*(IntPtr**)_poolAbi)[7];
             for (;;)
             {
@@ -166,6 +180,7 @@ public sealed unsafe class MonitorCapture : IDisposable
                 if (last != IntPtr.Zero) CloseFrame(last);
                 last = f;
             }
+            Spikes.Piece("capture: next frame", p0);
             if (last == IntPtr.Zero) return false;
 
             var fv = *(IntPtr**)last;
@@ -176,12 +191,14 @@ public sealed unsafe class MonitorCapture : IDisposable
             {
                 // monitor mode changed: rebuild pool + target at the new size, take the next frame
                 _size = cs;
-                _pool.Recreate(_device, DirectXPixelFormat.B8G8R8A8UIntNormalized, 2, cs);
+                ReleaseHeld();
+                _pool.Recreate(_device, DirectXPixelFormat.B8G8R8A8UIntNormalized, Buffers, cs);
                 Target.Dispose();
                 Target = new Surface(_g, cs.Width, cs.Height);
                 return false;
             }
 
+            long c0 = System.Diagnostics.Stopwatch.GetTimestamp();
             Marshal.ThrowExceptionForHR(((delegate* unmanaged[Stdcall]<IntPtr, IntPtr*, int>)fv[6])(last, &surface));
             IntPtr texPtr = TexturePointer(surface);
             _frameTex ??= new ID3D11Texture2D(IntPtr.Zero);
@@ -196,6 +213,13 @@ public sealed unsafe class MonitorCapture : IDisposable
                 _frameTex.NativePointer = IntPtr.Zero;
                 Marshal.Release(texPtr);
             }
+            Spikes.Piece("capture: copy", c0);
+            // this frame kept until the next poll (its copy done by then); the one before handed back now
+            long k0 = System.Diagnostics.Stopwatch.GetTimestamp();
+            ReleaseHeld();
+            _held = last;
+            last = IntPtr.Zero;
+            Spikes.Piece("capture: frame back to Windows", k0);
             Frames++;
             return true;
         }
@@ -214,6 +238,7 @@ public sealed unsafe class MonitorCapture : IDisposable
 
     public void Dispose()
     {
+        try { ReleaseHeld(); } catch { }
         if (_poolAbi != IntPtr.Zero) { Marshal.Release(_poolAbi); _poolAbi = IntPtr.Zero; }
         try { _session?.Dispose(); } catch { }
         try { _pool?.Dispose(); } catch { }
