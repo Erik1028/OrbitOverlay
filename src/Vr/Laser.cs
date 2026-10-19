@@ -274,9 +274,32 @@ public sealed class Laser : IDisposable
             var t = targets[ti];
             if (t == null || !t.Interactive || !t.AcceptsFrom(_hand)) continue;
             if (_eyeOn ? !t.WarpTarget : EyeFollow && vr.EyesValid && t.WarpTarget && _press != t) continue;      // (the screens: the eyes')
-            if (Hit(vr, t.Overlay, o, d, out float dist, out Vector2 uv, out var pt, out var nrm) && dist < bestDist && dist < 8f)
+            // the eye cursor: in-process only (SteamVR's own test is a frame late while gaze focus moves the row, and misses a point on
+            // the very edge - Erik 10-19's log: "the cursor on nothing" with the eyes on a monitor)
+            float dist; Vector2 uv; Vector3 pt, nrm;
+            bool h = _eyeOn ? t.Overlay.RaycastLocal(vr, o, d, out dist, out uv, out pt, out nrm) : Hit(vr, t.Overlay, o, d, out dist, out uv, out pt, out nrm);
+            if (h && dist < bestDist && dist < 8f)
             {
                 best = t; bestDist = dist; bestUv = uv; bestPoint = pt; bestNormal = nrm;
+            }
+        }
+        if (_eyeOn && best == null)
+        {
+            // the spot on (or a hair past) a screen's edge: onto the nearest edge (EdgeSnap)
+            float snap = EdgeSnap;
+            for (int ti = 0; ti < targets.Count; ti++)
+            {
+                var t = targets[ti];
+                if (t == null || !t.Interactive || !t.AcceptsFrom(_hand) || !t.WarpTarget || t.Overlay == null) continue;
+                if (!t.Overlay.ProjectLocal(vr, o, d, out float dist, out Vector2 uv, out var pt, out var nrm)) continue;
+                var to = pt - o;
+                if (to.LengthSquared() < 1e-6f) continue;
+                float ang = EyeSpot.Angle(d, Vector3.Normalize(to));
+                if (ang < snap)
+                {
+                    snap = ang;
+                    best = t; bestDist = dist; bestUv = uv; bestPoint = pt; bestNormal = nrm;
+                }
             }
         }
 
