@@ -196,6 +196,35 @@ dotnet publish -c Release -o dist
   és a billentyűzetet számolja; az Orbit saját lebegő beállításpanelje nem (Erik: a DXOverlay
   elindult, amikor csak a beállításokat nyitotta meg).
 
+## 1.16.0 – Mixtape az órán, izzó Lumos nélkül, szemkurzor (2026-10-20)
+
+- **Mixtape** (`Sys/MixtapeLink.cs`, `Panels/WristMixtape.cs`, protokoll: `docs/mixtape-remote.md`): named pipe `Mixtape.Remote.v1`,
+  soronként egy JSON. A Now playing a Mixtape dalát mutatja, ha a Mixtape szól (vagy áll, és más nem szól) – ilyenkor a gombjai
+  és a borítója a Mixtape-é (`WristPanel.Act`: minden óragomb ezen megy át), kinyitva a hat fülű lejátszó. Más lejátszó dala:
+  a megszokott nézet + Mixtape gomb. A régi „mixtape” widget betöltéskor Now playing lesz (`WatchPages.MergeMixtape`, előtte
+  config-másolat; egy oldalon a már meglévő Now playing mellől eltűnik). `ORBIT_SNAP_ONLY=mixtape`, `--mixtapetest [live]`.
+- **Tapo Lumos nélkül**: `OrbitApp.TapoAuto` – lámpa-widget vagy beállított izzó, nincs kulcs, és a „Use Lumos” sosem volt
+  választva → a Hexpad / Lumos fiókjából a kulcs (csak olvasva, DPAPI), az izzó címe a Lumos listájából. Egyik sincs: a „Go
+  direct” az asztali ablakban kéri (`AskAccountDialog`: a mezők szövege GetWindowText-tel char tömbbe, sosem string).
+- **Lámpa-automatika** (`Sys/LightAuto.cs`, kapcsolók az izzó kinyitott nézetében): SteamVR indulásakor fel (a vrserver 3 percnél
+  fiatalabb – egy Orbit-újraindítás nem kapcsol), mozi módban 10 %, utána vissza (ha közben nem állították), kérésre a borító
+  fő színe (24 rekeszes színezet-hisztogram, szürke borító: semmi, 2 s-onként legfeljebb). 1x1 lámpa: bökésre kinyílik.
+- **CPU time widget** (`cputime`): a játék képkockánkénti CPU-ideje = két képkocka közti idő − a WaitGetPoses-ban várt idő
+  (`VrStats.GameCpuMs`). Erik VRChat-je: 18–21 ms 50 FPS-nél, GPU 5,5 ms – CPU-korlátos (a világ miatt).
+- **Szemkurzor** (VRChat > Eye cursor: Off / On click / Follow): `Vr/EyeSpot.cs` simítás, `Laser.FollowEyes`; Follow-ban a
+  monitorok a szemé (nincs lézervonal), a kéz más panelen veszi át; 3°-os élre ugrás, helyi raycast.
+- **Ablak leválasztása** a monitorról (`OrbitApp.PopOut.cs`), **barát-rezgés** (RoomEventCard).
+- **Cyber óra**: minden ránézésre boot (20 s-on belül gyorsabb, 0,44 s; 0,4 s alatti szemrebbenésre nincs), és csak akkor
+  indul, amikor az óra már 55 %-ban látszik (addig üres) – 2 %-nál indult, és a csukló fordítása alatt lefutott.
+- **Lézer**: a Virtual Desktop kontrollereinél a SteamVR Input „tip” pózája másodpercenként többször kiesik; a nyers pózra esés
+  10–17°-ot dobott a sugáron egy képkockára (a kijelző alá mutatva felugrott). Most a nyers póz a tip utoljára látott eltolásával
+  (`VrSession._aimOff`). A theater sáv csak a középső monitor alsó 15 %-án, 0,4 s után nyílik (volt: 28 %, azonnal).
+- **Diagnosztika**: a `trace-laser` nevű üres fájl az Orbit config-mappájában kapcsolja (másodpercenként nézi): a lézer
+  panelváltásainak élő nyomkövetése, laser flap, szemkurzor-sorok, óra-sorok, a perf napló `show:` sora (dashboard aránya,
+  reprojekció, a ciklus késése, monitorképek/s, „tip pose missing”). Fájl nélkül egyik sem ír.
+- **Mérés**: Virtual Desktop alatt, ha a VRChat 90 alatt van, az overlay-ek a játék tempójában frissülnek (a dashboard nyitva:
+  90) – Orbitból nem javítható. Capture: a lemásolt képkocka a következő poll-nál megy vissza (Close várt a GPU-ra), 3 buffer.
+
 ## 1.15.1 – simább: semmi sem tartja fel a főciklust (2026-10-18)
 
 Erik: „1 és 2 mehet”, majd „mehet ami hátra van”. A `spike:` napló-sor (`Sys/Spikes.cs`: a 10 s-os ablak leglassabb képkockája

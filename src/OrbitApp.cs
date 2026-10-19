@@ -417,7 +417,8 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         _gpuLate = _gpuProbes = 0;
         Log.Info($"perf: {_perfFrames / (now - _perfStart):0} loops/s{CompositorRates(now - _perfStart)}, work {total / _perfFrames:0.00} ms, wait {_perfWaitSum / _perfFrames:0.0} ms{gpuq} | avg/max ms:{sb}");
         if (Spikes.Take() is { } spike) Log.Info(spike);        // where the window's slowest frame went (Sys/Spikes.cs)
-        if (_vr.Connected) Log.Info(ShowLine(now - _perfStart));
+        string show = _vr.Connected ? ShowLine(now - _perfStart) : null;
+        if (show != null && Laser.Trace) Log.Info(show);           // (the diagnostics switch: Vr/Laser.cs Trace)
         Array.Clear(_perfSum); Array.Clear(_perfMax);
         _perfFrames = 0; _perfWaitSum = 0; _perfStart = now;
     }

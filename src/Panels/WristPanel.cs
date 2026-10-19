@@ -159,7 +159,7 @@ public sealed partial class WristPanel : IPointerTarget, IDisposable
                 if (want > 0 && _introWant == 0) IntroHold();           // the face waits for its boot (nothing of it before)
                 _introWant = Math.Max(_introWant, want);                  // (a boot still held from a look cut short stays)
                 _introWantAt = now;
-                Log.Info($"watch: in view - {(_introWant == 2 ? "boot" : _introWant == 1 ? "quick boot" : "as it was")} (away {Math.Min(away, 999):0.0} s, motion {Motion.Level})");
+                if (Laser.Trace) Log.Info($"watch: in view - {(_introWant == 2 ? "boot" : _introWant == 1 ? "quick boot" : "as it was")} (away {Math.Min(away, 999):0.0} s, motion {Motion.Level})");
             }
         }
         _shownAt = now;
@@ -170,7 +170,7 @@ public sealed partial class WristPanel : IPointerTarget, IDisposable
         if (_introWant != 0 && (Alpha >= 0.55f || now - _introWantAt > 0.35))
         {
             if (_introWant == 2) Intro(); else CyberBoot(quick: true);
-            Log.Info($"watch: {(_introWant == 2 ? "boot" : "quick boot")} started at {Alpha * 100:0} % shown, {(now - _introWantAt) * 1000:0} ms after it came");
+            if (Laser.Trace) Log.Info($"watch: {(_introWant == 2 ? "boot" : "quick boot")} started at {Alpha * 100:0} % shown, {(now - _introWantAt) * 1000:0} ms after it came");
             _introWant = 0;
         }
         if (_themeVersion != Theme.Version) { _themeVersion = Theme.Version; _dirty = true; }

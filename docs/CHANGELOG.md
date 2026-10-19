@@ -3,6 +3,31 @@
 This file is built into the app: after an update, the "What's new" window shows every section newer than the
 version you came from. Format: "## <version> | <title>", then "- " points (an indented line continues a point).
 
+## 1.16.0 | Mixtape on the watch, your bulb without Lumos, eye cursor
+- Now playing opens into Mixtape's whole player while Mixtape plays (or is paused with nothing else playing): the queue,
+  the song list, albums, playlists and the lyrics, synced; the card's buttons and cover are Mixtape's then. Another
+  player's song: the usual view, with a Mixtape button to open the player anyway. Needs Mixtape 0.23 with Remote
+  control on; a Mixtape widget on your watch turned into Now playing.
+- Your Tapo bulb without Lumos: OrbitOverlay goes straight to the bulb by itself, with the account Hexpad or Lumos
+  keeps; with neither, "Go direct" asks for it in the desktop window. Only the bulb's key is kept, never the password.
+- The light by itself (its opened view, Auto): on when SteamVR starts, dimmed while theater mode plays (its brightness
+  back after), and if you like, the colour of the cover playing. A 1x1 light opens on a tap; its switch is inside.
+- New widget: CPU time - how much CPU time the game takes a frame. Over the frame's budget, the CPU holds it back.
+- Eye cursor (VRChat > Eye cursor): "On click" - the laser jumps to where you look as you click; "Follow" - on the
+  monitors the cursor follows your eyes, smoothed, with no pointer line; your hand takes over everywhere else.
+- Pull a window off a monitor: drag it past the edge into the air and it floats as a panel of its own (Windows >
+  "Pull windows off a monitor").
+- A friend joining your instance buzzes the watch (VRChat > "Buzz for friends").
+- The Cyber watch boots every time you look at it - quicker when you look back within 20 s - and starts once the
+  watch is really in view, not while your wrist is still turning up.
+- The laser no longer jumps up onto a screen: with Virtual Desktop's controllers their aim pose drops out now and then,
+  and for that frame the beam used the controller's raw pose, 10-17 degrees off.
+- The theater bar under the middle screen opens only when the laser stays at the screen's bottom a moment: passing it
+  on the way down to the keyboard no longer pops it up.
+- Smoother monitors: a captured frame goes back to Windows at the next poll instead of waiting for its copy (up to
+  4.6 ms a poll in VR); the SteamVR dashboard tab is drawn once beforehand (its first draw stuttered).
+- OSC: "Orbit/Style" (1 Modern ... 7 Cyber) for avatars that dress in OrbitOverlay's style.
+
 ## 1.15.1 | Smoother: nothing holds the overlay up
 - The watch comes into view without a hitch: the volume and the microphone are read in the background (a call to Windows'
   audio took up to 14 ms of its first frame).

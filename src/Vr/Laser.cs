@@ -580,8 +580,9 @@ public sealed class Laser : IDisposable
     int _flipN;
     double _flipLogged = -10;
 
-    // a trace of every change while the file "trace-laser" is in Orbit's config folder (OrbitApp checks it once a second): the ray,
-    // where the panel is drawn, the theater bar's state - to watch a reproduction live
+    // The diagnostics switch: on while the file "trace-laser" is in Orbit's config folder (OrbitApp checks it once a second). Then: a
+    // trace of every change of the beam's panel (the ray, where the panel is drawn, the theater bar's state - to watch a reproduction
+    // live), the laser flap lines, the eye cursor's lines, the watch's look lines, the perf log's "show:" line. Off: none of them.
     public static bool Trace;
     public static Func<string> TraceMore;
 
@@ -594,6 +595,7 @@ public sealed class Laser : IDisposable
             float yaw = MathF.Atan2(d.X, -d.Z) * 180 / MathF.PI, pitch = MathF.Asin(Math.Clamp(d.Y, -1, 1)) * 180 / MathF.PI;
             Log.Info($"laser trace ({_hand}): -> {(to == null ? "nothing" : Name(to))}{where} | ray from y {o.Y:0.000} yaw {yaw:0.0} pitch {pitch:0.0}, trigger {(click ? "held" : "up")} | {TraceMore?.Invoke()}");
         }
+        if (!Trace) return;
         int i = _flipN++ % _flipAt.Length;
         _flipAt[i] = _clock;
         _flipWhat[i] = to == null ? "nothing" : $"{Name(to)} {uv.X:0.00},{uv.Y:0.00}";
@@ -613,6 +615,7 @@ public sealed class Laser : IDisposable
 
     void EyeDiag(VrSession vr, IReadOnlyList<IPointerTarget> targets, string what)
     {
+        if (!Trace) return;
         var inv = MathUtil.Invert(vr.Hmd);
         var g = Vector3.Normalize(Vector3.TransformNormal(vr.Gaze, inv));            // the look in the head's frame
         var f = Vector3.Normalize(MathUtil.Forward(vr.Hmd));
