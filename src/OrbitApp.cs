@@ -216,7 +216,10 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
                 {
                     double w0 = Clock.Now;
                     if (C.General.HeadsetPacing)
+                    {
                         _pacer.Wait(_awake ? _vr.DisplayHz : 20);       // headset off: a slow tick is plenty (see FramePacer)
+                        if (_lateN < _lateMs.Length) _lateMs[_lateN++] = (float)(_pacer.LastLate * 1000);
+                    }
                     else
                     {
                         // once per game frame (72/90/120 Hz when the game keeps up); a short sleep when none comes
@@ -414,6 +417,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         _gpuLate = _gpuProbes = 0;
         Log.Info($"perf: {_perfFrames / (now - _perfStart):0} loops/s{CompositorRates(now - _perfStart)}, work {total / _perfFrames:0.00} ms, wait {_perfWaitSum / _perfFrames:0.0} ms{gpuq} | avg/max ms:{sb}");
         if (Spikes.Take() is { } spike) Log.Info(spike);        // where the window's slowest frame went (Sys/Spikes.cs)
+        if (_vr.Connected) Log.Info(ShowLine(now - _perfStart));
         Array.Clear(_perfSum); Array.Clear(_perfMax);
         _perfFrames = 0; _perfWaitSum = 0; _perfStart = now;
     }
@@ -434,10 +438,40 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             c.GetCumulativeStats(ref _cstats, (uint)Marshal.SizeOf<Compositor_CumulativeStats>());
             uint s = _cstats.m_nNumFrameSubmits, p = _cstats.m_nNumFramePresents;
             string r = _cPresents == 0 || p < _cPresents ? "" : $" (game {(s - _cSubmits) / secs:0}, compositor {(p - _cPresents) / secs:0} fps)";
+            uint re = _cstats.m_nNumReprojectedFrames, dr = _cstats.m_nNumDroppedFrames;
+            (_reproDelta, _dropDelta) = _cPresents == 0 || re < _cRepro || dr < _cDropped ? (0, 0) : (re - _cRepro, dr - _cDropped);
+            _cRepro = re; _cDropped = dr;
             _cSubmits = s; _cPresents = p;
             return r;
         }
         catch { return ""; }
+    }
+
+    // What the overlays got meanwhile, to tell the game's share from Orbit's (Erik 10-19: "azt veszem eszre hogyha meg van nyitva a
+    // steamvr overlay is, a mi overlayunk sokkal jobb fps-el renderelodik"): the share of the loops the SteamVR dashboard was open, the
+    // compositor's reprojected / dropped frames, how late the loop woke after its slot (p99, max), the monitors' new pictures and the
+    // textures handed to SteamVR, the share at GPU priority 7. Read beside the perf line (dashboard open vs closed).
+    uint _cRepro, _cDropped, _reproDelta, _dropDelta;
+    int _dashLoops, _prioLoops, _lateN, _texMark;
+    readonly float[] _lateMs = new float[4096];
+    long _capMark;
+
+    string ShowLine(double secs)
+    {
+        Array.Sort(_lateMs, 0, _lateN);
+        float p99 = _lateN == 0 ? 0 : _lateMs[Math.Min(_lateN - 1, (int)(_lateN * 0.99))], max = _lateN == 0 ? 0 : _lateMs[_lateN - 1];
+        long caps = 0;
+        int shown = 0;
+        foreach (var d in _desktops) { caps += d.CaptureFrames; if (d.Shown) shown++; }
+        int tex = VrOverlay.Calls.Sent[VrOverlay.Calls.Texture];
+        long newCaps = caps >= _capMark ? caps - _capMark : caps;
+        int newTex = tex >= _texMark ? tex - _texMark : tex;
+        int loops = Math.Max(1, _perfFrames);
+        string s = $"show: dashboard open {100.0 * _dashLoops / loops:0}%, compositor reprojected {_reproDelta / secs:0}/s dropped {_dropDelta / secs:0}/s, " +
+                   $"loop woke late p99 {p99:0.0} max {max:0.0} ms, monitors shown {shown} with {newCaps / secs:0} new pictures/s, " +
+                   $"textures to SteamVR {newTex / secs:0}/s, GPU priority high {100.0 * _prioLoops / loops:0}%";
+        _capMark = caps; _texMark = tex; _lateN = 0; _dashLoops = _prioLoops = 0;
+        return s;
     }
 
     int _tickErrors;
@@ -555,6 +589,8 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             if (_wrist.WantsFrames) _data.Vr.SampleFrame(_vr);
             PlaceMissing();
             bool dash = _vr.Ov.IsDashboardVisible();
+            if (dash) _dashLoops++;
+            if (_gpuPrio == 7) _prioLoops++;
             if (C.General.QuickToggle) CheckQuickToggle(now);
             Perf(0, ref t);
             Spikes.Mark(Spikes.Vr);

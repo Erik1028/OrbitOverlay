@@ -12,6 +12,10 @@ namespace Orbit;
 //    a cyan scan line reveals it top to bottom, its tag wipes in and types its letters, the note types in, values count up,
 //    segments fill block by block, the dial's hands sweep to the time, the frame bars rise left to right, the time card's digits
 //    glitch and settle, its hazard stripes slide in. About 1.05 s, every frame.
+//  - the glance (Full; Erik 10-19: "a wristwatch cyberpunk animacioi nem mukodnek ha ranezek"): the watch back in view within 20 s
+//    of the last look - no boot (its scan hides the cards: 10-18 "very responsive"), the face is there at once, but the HUD answers
+//    the look: card by card (20 ms apart) yellow brackets lock on and a cyan line runs down it over what it shows, the time card's
+//    digits glitch once, the loops wake. About 0.45 s.
 //  - the minute glitch (Full): the yellow time card on a new minute - the red / cyan split jitters wider, slices of the digits shift
 //    sideways - 0.22 s in six 37 ms steps (a frame each), then the static offset again.
 //  - the page swipe (Full): a cyan scan line with its trail on the seam between the two pages (the slide's own frames).
@@ -115,10 +119,49 @@ public sealed partial class WristPanel
         _dirty = true;
     }
 
+    // ================= the glance =================
+
+    double _cyGlanceAt = -10;
+    float _cyG = 99;                                // seconds into the card's glance (99: none)
+    const float CyGlanceLen = 0.34f;                // a card's own part of it
+
+    // back in view within 20 s (WristPanel.Update): the face as it is, the HUD answering the look; Reduced / Off - nothing
+    void CyberGlance()
+    {
+        if (!CyberFx.Full) return;
+        _cyGlanceAt = _cyGlitchAt = Clock.Now;
+        CyWake();
+        _dirty = true;
+    }
+
+    // CyCardBegin, not booting: the card's part of a glance (its brackets and line come in CyCardEnd)
+    void CyGlanceBegin(WatchWidget w)
+    {
+        _cyG = 99;
+        double gt = _cyT - _cyGlanceAt;
+        if (gt < 0 || gt > 0.8 || !CyLiveFx) return;
+        _cyG = (float)(gt - (w.X + w.Y * 1.25f) * 0.02);
+        if (_cyG < CyGlanceLen) _cyBusy = true;
+    }
+
+    void CyGlanceOverlay(RectangleF r, float u)
+    {
+        if (u <= 0) return;
+        // the brackets in from 9 px out (0-0.08 s), gone by 0.34 s; the line down the card over its content (0.04-0.28 s)
+        float lk = CyberFx.EaseOut(CyberFx.Ramp(u, 0, 0.08)), fade = 1 - CyberFx.Ramp(u, 0.2, 0.14);
+        if (fade > 0) CyberFx.Corners(_p, r, Theme.WithAlpha(CyberHud.Yellow, lk * fade), 9, 2, 2 + 9 * (1 - lk));
+        float s = CyberFx.EaseInOut(CyberFx.Ramp(u, 0.04, 0.24));
+        if (s > 0 && s < 1) CyberFx.ScanH(_p, r.X + 1, r.Right - 1, r.Y + 2 + (r.Height - 4) * s, CyberHud.Cyan, 0.85f);
+    }
+
+    // --snapshot: a glance now (the face shown again)
+    public void CyberGlanceForTest() => CyberGlance();
+
     // Settle(): nothing in motion
     void CyberSettleFx()
     {
         _cyBootAt = -100;
+        _cyGlanceAt = -10;
         _cyGlitchAt = _cyTapAt = _cyInboxAt = -10;
         _cyMinute = -1;
         _cyTapKey = null;
@@ -152,7 +195,8 @@ public sealed partial class WristPanel
         _cyEdgeBR = CyberHud.CardBR;
         CyScanCount(id, k);
         double bt = CyBootT;
-        if (bt >= CyBootLen) return;
+        if (bt >= CyBootLen) { CyGlanceBegin(w); return; }
+        _cyG = 99;
         _cyBusy = true;
         _cyU = (float)(bt - (0.03 + (w.X + w.Y * 1.25f) * 0.036));
         float s = CyScanK(_cyU);
@@ -166,8 +210,10 @@ public sealed partial class WristPanel
     {
         if (_cyClip) { _p.PopClip(); _cyClip = false; }
         if (_cyU < CyCardLen) CyBootOverlay(r, _cyU);
+        else if (_cyG < CyGlanceLen) CyGlanceOverlay(r, _cyG);
         else if (id == _cyScanId && _cyU >= 99) CySweep(r);
         _cyU = 99;
+        _cyG = 99;
         _cyCur = -1;
     }
 

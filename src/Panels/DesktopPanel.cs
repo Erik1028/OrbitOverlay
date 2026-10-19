@@ -28,6 +28,8 @@ public sealed class DesktopPanel : ITheaterScreen, IDisposable
     public readonly MonitorInfo Mon;
     public readonly DesktopConfig Cfg;
     MonitorCapture _cap;
+    public long CaptureFrames => _cap?.Frames ?? 0;      // the monitor's new pictures so far (the perf log's "show:" line)
+    public bool Shown => Ov?.Visible == true;
     public VrOverlay Ov { get; private set; }
     VrSession _vr;
     double _nextFrame;

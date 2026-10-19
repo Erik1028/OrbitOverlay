@@ -83,6 +83,9 @@ static class CyberAnimShot
         // the boot, the face's own frames, and whole at 30 a second
         Fresh(0);
         Save("boot", "the boot (the watch comes into view)", Watch(new[] { 0.03, 0.1, 0.17, 0.24, 0.32, 0.4, 0.5, 0.62, 0.78, 1.1 }, wrist.Intro), WristPanel.TW, WristPanel.TH, all);
+        // the glance: back in view within 20 s - the face at once, brackets and a line card by card, the time glitches once
+        Fresh(0);
+        Save("glance", "a glance (back in view within 20 s)", Watch(new[] { 0.0, 0.04, 0.08, 0.12, 0.17, 0.23, 0.3, 0.4, 0.5 }, wrist.CyberGlanceForTest), WristPanel.TW, WristPanel.TH, all);
         Fresh(0);
         var seq = Watch(Steps(0, 1.4, 1 / 30.0), wrist.Intro);
         // the minute glitch

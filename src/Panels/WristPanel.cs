@@ -147,7 +147,14 @@ public sealed partial class WristPanel : IPointerTarget, IDisposable
             _dirty = true;
             // the widgets cascade in (Cyber: every face boots) - not again on a glance back within 20 s: the watch is simply there
             // (a 1.2 s cascade on every raise made a look at the time slow; Erik 10-18: "very responsive")
-            if ((C.Face == "custom" || Theme.Cyber) && !Theme.Classic && now - _shownAt > 20) Intro();
+            // Cyber, back within 20 s: no boot, but the HUD answers the look (Erik 10-19: "a wristwatch cyberpunk animacioi nem mukodnek ha
+            // ranezek"; WristCyberFx.cs)
+            if ((C.Face == "custom" || Theme.Cyber) && !Theme.Classic)
+            {
+                if (now - _shownAt > 20) Intro();
+                else if (Theme.Cyber) CyberGlance();
+                Log.Info($"watch: in view - {(now - _shownAt > 20 ? "boot" : Theme.Cyber ? "glance" : "as it was")} (away {Math.Min(now - _shownAt, 999):0.0} s, motion {Motion.Level})");
+            }
         }
         _shownAt = now;
         Ov.Show();
