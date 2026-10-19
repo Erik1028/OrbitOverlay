@@ -500,8 +500,25 @@ public sealed partial class WristPanel
             lamp?.SetColor(h, s);
             _dirty = true;
         }
+        // what it does by itself (Sys/LightAuto.cs): on with SteamVR, dimmed in theater mode, the cover's colour - a switch each
+        if (_cfg.Data.Lights is { } lc)
+        {
+            y = c.Y + 244;
+            CapText(Upper("Auto"), rx, y + 16, rw, Sub);
+            float aw = (rw - 2 * 8) / 3;
+            for (int i = 0; i < 3; i++)
+            {
+                bool on = i == 0 ? lc.OnWithVr : i == 1 ? lc.TheaterDim : lc.CoverColor;
+                if (!Press(Ui.Id("wdla", i), new RectangleF(rx + i * (aw + 8), y + 26, aw, 30), null, LampAutoNames[i], on, true, 14)) continue;
+                if (i == 0) lc.OnWithVr = !on; else if (i == 1) lc.TheaterDim = !on; else lc.CoverColor = !on;
+                _cfg.MarkDirty();
+                _dirty = true;
+            }
+        }
         LxStatus(rx, c.Bottom - 4, rw, t.Status, t.S.Pending);
     }
+
+    static readonly string[] LampAutoNames = { "SteamVR", "Theater", "Cover" }, LampAutoShort = { "VR", "Theater", "Cover" };
 
     // The RGB opened: its effect big on the left (the picture, its name, the brightness) with a button that switches it all off / on; at
     // the right the four effects as tiles, the brightness to drag, six colours.

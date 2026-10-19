@@ -298,6 +298,26 @@ public sealed partial class WristPanel
             lamp?.SetColor(h, s);
             _dirty = true;
         }
+        // what it does by itself (Sys/LightAuto.cs): a check box each - on with SteamVR, dimmed in theater mode, the cover's colour
+        if (_cfg.Data.Lights is { } lc)
+        {
+            y += 39;
+            // side by side as wide as each label is in this style (too wide for the row: "VR" for "SteamVR")
+            var names = LampAutoNames;
+            float Need(string[] n) { float s = -8; foreach (var l in n) s += 19 + _ui.LabelWidth95(Lang.T(l)) + 8; return s; }
+            if (Need(names) > w) names = LampAutoShort;
+            float cx = x;
+            for (int i = 0; i < 3; i++)
+            {
+                bool ck = i == 0 ? lc.OnWithVr : i == 1 ? lc.TheaterDim : lc.CoverColor;
+                float at = cx;
+                cx += 19 + _ui.LabelWidth95(Lang.T(names[i])) + 8;
+                if (!_ui.Check95(Ui.Id("wd95la", i), at, y, names[i], ref ck)) continue;
+                if (i == 0) lc.OnWithVr = ck; else if (i == 1) lc.TheaterDim = ck; else lc.CoverColor = ck;
+                _cfg.MarkDirty();
+                _dirty = true;
+            }
+        }
     }
 
     static readonly string[] LampWhiteNames95 = { "&Warm", "&Neutral", "&Daylight" };

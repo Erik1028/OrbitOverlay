@@ -280,7 +280,7 @@ public sealed partial class WristPanel
     // which widgets get a title bar when they are one row high (the others need the row for themselves)
     static bool TitleOneRow(string id, int w) => id switch
     {
-        "time" or "date" or "calendar" or "session" or "fps" or "reproj" or "gpu" or "vram" or "cpu" or "ram" or "perf" or "graph" => true,
+        "time" or "date" or "calendar" or "session" or "fps" or "reproj" or "gpu" or "cputime" or "vram" or "cpu" or "ram" or "perf" or "graph" => true,
         "timer" or "battery" or "volume" or "stopwatch" => w == 1,
         "media" => w >= 3,
         _ => false,
@@ -289,7 +289,7 @@ public sealed partial class WristPanel
     // the bar's title: the 95 window's name, a short one on a narrow window (XP's own names where its window was another one)
     static string XpTitle(WatchWidgets.Kind k, int w) => k.Id == "media" ? "Now Playing" : w >= 2 ? k.Title95 : k.Id switch
     {
-        "fps" => "FPS", "reproj" => "Reproj.", "gpu" => "GPU", "vram" => "VRAM", "cpu" => "CPU", "ram" => "RAM", "session" => "In VR",
+        "fps" => "FPS", "reproj" => "Reproj.", "gpu" => "GPU", "cputime" => "CPU ms", "vram" => "VRAM", "cpu" => "CPU", "ram" => "RAM", "session" => "In VR",
         "time" => "Time", "date" => "Date", "calendar" => "Date", "timer" => "Timer", "stopwatch" => "Watch", "battery" => "Power",
         "volume" => "Volume", "room" => "Room", "dock" => "Hexpad", "minesweeper" => "Mines", "mic" => "Mic", _ => k.Title95,
     };
@@ -367,6 +367,7 @@ public sealed partial class WristPanel
             "fps" => v.DisplayHz > 0 ? $"/ {v.DisplayHz:0}" : "fps",
             "reproj" => "frames",
             "gpu" => "ms GPU",
+            "cputime" => "ms CPU",
             "vram" => d.VramTotalGB > 0 ? $"/ {d.VramTotalGB:0} GB" : "GB",
             "cpu" => "load",
             _ => Stats.RamTotalGB > 0 ? $"/ {Stats.RamTotalGB:0} GB" : "GB",

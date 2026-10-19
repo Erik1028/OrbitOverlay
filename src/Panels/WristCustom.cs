@@ -305,16 +305,16 @@ public sealed partial class WristPanel
         CapVolume = { "Volume" }, CapMedia = { "Now playing", "Playing" }, CapGraph = { "Frame time", "Frames" }, CapToday = { "Today" },
         CapHexpad = { "Hexpad" }, CapFps = { "FPS" }, CapReproj = { "Reproj" }, CapGpu = { "GPU" }, CapVram = { "VRAM" }, CapCpu = { "CPU" },
         CapRam = { "RAM" }, WideFps = { "Frame rate", "FPS" }, WideReproj = { "Reprojection", "Reproj" }, WideGpu = { "GPU time", "GPU" },
-        WideRam = { "Memory", "RAM" };
+        WideRam = { "Memory", "RAM" }, CapCpuTime = { "CPU time", "CPU" };
 
     static string[] SmallCaption(string id) => id switch
     {
-        "fps" => CapFps, "reproj" => CapReproj, "gpu" => CapGpu, "vram" => CapVram, "cpu" => CapCpu, _ => CapRam,
+        "fps" => CapFps, "reproj" => CapReproj, "gpu" => CapGpu, "cputime" => CapCpuTime, "vram" => CapVram, "cpu" => CapCpu, _ => CapRam,
     };
 
     static string[] WideCaption(string id) => id switch
     {
-        "fps" => WideFps, "reproj" => WideReproj, "gpu" => WideGpu, "vram" => CapVram, "cpu" => CapCpu, _ => WideRam,
+        "fps" => WideFps, "reproj" => WideReproj, "gpu" => WideGpu, "cputime" => CapCpuTime, "vram" => CapVram, "cpu" => CapCpu, _ => WideRam,
     };
 
     static readonly string[] MediaIds = { "media.prev", "media.play", "media.next" };
@@ -740,6 +740,11 @@ public sealed partial class WristPanel
                 float ms = v.GpuMs;
                 return (ms < 0 ? -1 : MathF.Min(1, ms / budget), ms < 0 ? "–" : _rdMs.Of(ms, static f => $"{f:0.0}"), "ms", _rdBudget.F("of {0:0.0} ms", budget),
                     GpuLevel(ms, budget));
+            case "cputime":
+                // the game's CPU time a frame (VrStats.GameCpuMs) against the frame's budget - over it, the CPU holds the game back
+                float cm = v.CpuMs;
+                return (cm < 0 ? -1 : MathF.Min(1, cm / budget), cm < 0 ? "–" : _rdCpuMs.Of(cm, static f => $"{f:0.0}"), "ms", _rdBudget.F("of {0:0.0} ms", budget),
+                    GpuLevel(cm, budget));
             case "vram":
                 float vram = d.VramUsed, vt = d.VramTotalGB;
                 return (vram < 0 || vt <= 0 ? -1 : vram / vt, vram < 0 ? "–" : _rdVram.Of(vram, static f => $"{f:0.0}"), "GB",
@@ -754,7 +759,7 @@ public sealed partial class WristPanel
         }
     }
 
-    Lang.Memo<float> _rdFps, _rdHz, _rdRp, _rdMs, _rdBudget, _rdVram, _rdVt, _rdCpu, _rdRam, _rdRamT;
+    Lang.Memo<float> _rdFps, _rdHz, _rdRp, _rdMs, _rdBudget, _rdVram, _rdVt, _rdCpu, _rdRam, _rdRamT, _rdCpuMs;
 
     // the 95 face's form of a reading: its colour Orbit's amber / red when it matters
     (float frac, string value, string unit, string caption, uint tint) StatInfo(string id, PanelData d)
@@ -975,7 +980,7 @@ public sealed partial class WristPanel
     {
         var (frac, value, _, _, lv) = Reading(id, d);
         bool none = value == "–";
-        string unit = none ? null : id switch { "fps" => FpsUnit(d.Vr.DisplayHz), "gpu" => "ms", "vram" or "ram" => "GB", _ => null };
+        string unit = none ? null : id switch { "fps" => FpsUnit(d.Vr.DisplayHz), "gpu" or "cputime" => "ms", "vram" or "ram" => "GB", _ => null };
         Small(r, SmallCaption(id), value, unit, frac, Bento.Level(lv, RoleColor(id)), none ? Bento.Faint : Bento.Level(lv, Bento.Text), key,
             unitUp: id is "ram" or "vram", lv: lv);
     }
@@ -2453,7 +2458,7 @@ public sealed partial class WristPanel
                     var (frac, value, unit, _, tint) = StatInfo(k.Id, d);
                     uint color = tint == Theme.Warn ? 0xFF806000u : tint == Theme.Bad ? 0xFF800000u : Blk95;
                     if (value == "–") value = "--";
-                    string cap95 = k.Id switch { "fps" => "fps", "reproj" => "reproj.", "gpu" => "GPU ms", "vram" => "VRAM", "cpu" => "CPU", _ => "RAM" };
+                    string cap95 = k.Id switch { "fps" => "fps", "reproj" => "reproj.", "gpu" => "GPU ms", "cputime" => "CPU ms", "vram" => "VRAM", "cpu" => "CPU", _ => "RAM" };
                     if (w.W >= 2 && (k.Id is "cpu" or "ram" or "vram") && frac >= 0)
                     {
                         // a System Monitor bar

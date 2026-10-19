@@ -351,14 +351,14 @@ public sealed partial class WristPanel
                 StatusMac(d, new RectangleF(c.X + 4, MathF.Floor(c.Y + (c.Height - 13) / 2), c.Width - 8, 13));
                 break;
             }
-            case "fps" or "reproj" or "gpu" or "vram" or "cpu" or "ram":
+            case "fps" or "reproj" or "gpu" or "cputime" or "vram" or "cpu" or "ram":
             {
                 var (frac, value, unit, _, tint) = StatInfo(k.Id, d);
                 if (w.W >= 2 && (k.Id is "cpu" or "ram" or "vram") && frac >= 0) return;      // the 95 bar is the Mac's too
                 var c = m.WidgetFrame(_p, r, w.H >= 2 ? k.Title95 : null);
                 uint color = tint == Theme.Warn ? 0xFF806000u : tint == Theme.Bad ? 0xFF800000u : MacBlack;
                 if (value == "–") value = "--";
-                string cap = k.Id switch { "fps" => "fps", "reproj" => "reproj.", "gpu" => "ms GPU", "vram" => "GB VRAM", "cpu" => "CPU", _ => "GB RAM" };
+                string cap = k.Id switch { "fps" => "fps", "reproj" => "reproj.", "gpu" => "ms GPU", "cputime" => "ms CPU", "vram" => "GB VRAM", "cpu" => "CPU", _ => "GB RAM" };
                 if (k.Id is "vram" or "ram" && (unit != "GB" || _ui.Width95(cap) > c.Width - 2)) cap = k.Id == "vram" ? "VRAM" : "RAM";
                 ValueMac(c, value, cap, color);
                 break;

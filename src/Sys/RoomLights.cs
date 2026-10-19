@@ -64,7 +64,7 @@ public sealed class LampState
 }
 
 // The light through Lumos
-public sealed class LumosLink : IDisposable
+public sealed class LumosLink : ILampControl, IDisposable
 {
     public string Url = "http://127.0.0.1:8770";
     public Func<string, string, string, (int code, string body)> Http;     // method, path, JSON -> the answer (null: HttpClient)

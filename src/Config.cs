@@ -202,6 +202,10 @@ public sealed class LightsConfig
     public string Key { get; set; }                   // the bulb's key, DPAPI-protected (TapoAccount): straight to the bulb; null: through Lumos
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool ViaLumos { get; set; }                // "Use Lumos" picked: the app does not go straight to the bulb by itself (OrbitApp)
+    // what it does by itself (Sys/LightAuto.cs; switched in the light's opened view)
+    public bool OnWithVr { get; set; } = true;        // on when SteamVR starts (Lumos's "Lights on with SteamVR")
+    public bool TheaterDim { get; set; } = true;      // dimmed to 10 % while theater mode plays, its brightness back after
+    public bool CoverColor { get; set; }              // the colour of the cover playing
 }
 
 // The avatar toggles widget (Sys/AvatarToggles.cs): which of an avatar's parameters its widget shows, by the avatar's id - picked in the

@@ -85,8 +85,8 @@ static class PaceTest
                     double span = Clock.Now - win;
                     comp?.GetCumulativeStats(ref st, size);
                     // GPU per frame over the last second: the game's own render, and the compositor's (it draws every overlay)
-                    double gpuApp = 0, gpuComp = 0, cpuComp = 0;
-                    int nt = 0;
+                    double gpuApp = 0, gpuComp = 0, cpuComp = 0, cpuGame = 0;
+                    int nt = 0, nc = 0;
                     if (comp != null)
                     {
                         for (int i = 0; i < _timings.Length; i++) _timings[i].m_nSize = (uint)Marshal.SizeOf<Compositor_FrameTiming>();
@@ -97,11 +97,13 @@ static class PaceTest
                             if (newest - _timings[i].m_flSystemTimeInSeconds > span) continue;
                             gpuApp += _timings[i].m_flTotalRenderGpuMs; gpuComp += _timings[i].m_flCompositorRenderGpuMs; cpuComp += _timings[i].m_flCompositorRenderCpuMs;
                             nt++;
+                            float gc = VrStats.GameCpuMs(_timings[i]);
+                            if (gc >= 0) { cpuGame += gc; nc++; }
                         }
                     }
                     if (nt > 0)
                         Log.Info(string.Create(System.Globalization.CultureInfo.InvariantCulture,
-                            $"pacetest: GPU per frame: game {gpuApp / nt:0.00} ms, compositor {gpuComp / nt:0.00} ms (budget {1000 / hz:0.0} ms), compositor CPU {cpuComp / nt:0.00} ms, {nt} frames"));
+                            $"pacetest: GPU per frame: game {gpuApp / nt:0.00} ms, compositor {gpuComp / nt:0.00} ms (budget {1000 / hz:0.0} ms), compositor CPU {cpuComp / nt:0.00} ms, game CPU {(nc > 0 ? cpuGame / nc : -1):0.00} ms, {nt} frames"));
                     Log.Info(string.Create(System.Globalization.CultureInfo.InvariantCulture,
                         $"pacetest: WaitFrameSync {waits / span:0}/s (avg {waitSum / Math.Max(1, waits + timeouts):0.0} ms, max {waitMax:0.0}, timeouts {timeouts}) | " +
                         $"vsync {(vs - vs0) / span:0}/s | compositor presents {(st.m_nNumFramePresents - presents0) / span:0}/s, " +

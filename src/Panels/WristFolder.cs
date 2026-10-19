@@ -347,7 +347,7 @@ public sealed partial class WristPanel
         {
             case "time":
                 return Clk(Now, _cfg.Data.Appearance.Clock24h ? "HH:mm" : "h:mm", CultureInfo.CurrentCulture);
-            case "fps" or "reproj" or "gpu" or "vram" or "cpu" or "ram":
+            case "fps" or "reproj" or "gpu" or "cputime" or "vram" or "cpu" or "ram":
                 var v = Reading(c.Type, d).value;
                 return v == "–" ? null : v;
             case "battery":

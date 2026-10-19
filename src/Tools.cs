@@ -138,6 +138,7 @@ static partial class Tools
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "lights") return LightsOnly(wrist, data, cfg, painter, gpu, dir);
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "onthisday") return OnThisDayTempsTools.Only(wrist, data, cfg, gpu, dir);
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "mixtape") return MixtapeOnly(wrist, data, cfg, painter, gpu, dir);
+        if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") is { } kindOnly && kindOnly.StartsWith("kind:")) return KindOnly(wrist, data, cfg, painter, gpu, dir, kindOnly[5..]);
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "avatar") return AvatarOnly(wrist, data, cfg, painter, gpu, dir);
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "backdrops") return BackdropsOnly(cfg, painter, gpu, dir);    // theater's backdrops (ToolsBackdrops.cs)
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "citylife") return CityLifeOnly(cfg, painter, gpu, dir);     // Cyber's night city alive (CityLifeTest.cs)
@@ -1742,6 +1743,26 @@ static partial class Tools
     // Every widget kind at every size, alone on a watch with no background ("cards"), and every opened view
     // without its clip: anything drawn outside the card sticks out (a non-transparent pixel there), and in the
     // modern style anything within a few pixels of the card's edge is too close to it. Logged, one line each.
+    // ORBIT_SNAP_ONLY=kind:<id> --snapshot <dir>: one kind's layout check in every style (its pictures in qa/) - a new kind's first look
+    static int KindOnly(WristPanel wrist, PanelData data, ConfigStore cfg, Painter painter, Gpu gpu, string dir, string kind)
+    {
+        int layout = 0;
+        var culture = System.Globalization.CultureInfo.CurrentCulture;
+        System.Globalization.CultureInfo.CurrentCulture = SnapCulture;
+        data.Vr.CpuMs = 18.6f;                                     // (the "cputime" widget: a game its CPU holds back)
+        foreach (var (style, tag) in new[] { ("modern", "modern"), (CyberHud.Id, "cyber"), ("classic", "95"), ("xp", "xp"), ("aero", "aero"), ("mac", "mac"), ("terminal", "term") })
+        {
+            cfg.Data.Appearance = new AppearanceConfig { Style = style, Clock24h = true };
+            Theme.Apply(cfg.Data.Appearance);
+            layout += LayoutCheckRun(wrist, data, cfg, painter, gpu, dir, tag, onlyKind: kind);
+        }
+        cfg.Data.Appearance = new AppearanceConfig { Clock24h = true };
+        Theme.Apply(cfg.Data.Appearance);
+        System.Globalization.CultureInfo.CurrentCulture = culture;
+        Log.Info($"snapshot (kind {kind}) written to {dir}");
+        return layout > 0 ? 1 : 0;
+    }
+
     static int LayoutCheckRun(WristPanel wrist, PanelData data, ConfigStore cfg, Painter painter, Gpu gpu, string dir, string style, bool variantsOnly = false,
         string onlyKind = null)
     {

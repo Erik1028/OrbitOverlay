@@ -724,8 +724,9 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         TapoAuto();
         _lumos.SetKey(C.Lights?.Key);
         _lumos.SetBulb(C.Lights?.Bulb);
-        _lumos.Active = C.Wrist.Face == "custom" && WatchPages.Any(C.Wrist, "light");
+        _lumos.Active = C.Wrist.Face == "custom" && WatchPages.Any(C.Wrist, "light") || LightAutoWanted;
         _lumos.Watched = _wrist?.Alpha > 0.02f;
+        _lightAuto.Tick(now, C.Lights, _lumos, _vr.Connected, SteamVrJustStarted, _theater.On, CoverNow);     // the bulb with VR (Sys/LightAuto.cs)
         _prisma.Active = C.Wrist.Face == "custom" && WatchPages.Any(C.Wrist, "rgb");
         // Mixtape: linked while a page has Now playing (Mixtape's song and player in it) and SteamVR runs (or the settings preview shows
         // it), faster while the watch shows it
@@ -1975,6 +1976,9 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         _osc.Param("openOverlayCount", desks + (kb ? 1 : 0));
         if (!allOff)
         {
+            // the avatar's DXOverlay in Orbit's Look > Style (Erik 10-19, the Lutalis avatar's "Orbit/Style"); not sent when Orbit closes -
+            // the avatar keeps the last one
+            _osc.Param("Orbit/Style", OrbitStyleIndex(C.Appearance?.Style));
             if (v.LeftBattery >= 0) _osc.Param("leftControllerBattery", v.LeftBattery);
             if (v.RightBattery >= 0) _osc.Param("rightControllerBattery", v.RightBattery);
             // the average as Enumerable.Average took it: a double sum, then a float
@@ -1995,16 +1999,51 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
 
     void ShowSettings() => _win.ShowAndFocus();
 
+    // Look > Style as the avatar's "Orbit/Style" Int: 1 modern, 2 Windows 95, 3 XP, 4 Aero, 5 Mac, 6 Terminal, 7 Cyber; anything else 1
+    // (0 - not set, the avatar's own default - is never sent)
+    static int OrbitStyleIndex(string style) => style switch
+    {
+        "classic" => 2, "xp" => 3, "aero" => 4, "mac" => 5, "terminal" => 6,
+        _ when style == CyberHud.Id => 7,
+        _ => 1,
+    };
+
     // The bulb straight by itself (Erik 10-19: "a tapo izzot is supportalhatna nativan az orbitoverlay, jelenleg lumos nelkul nem megy"):
     // a light widget on a page, no key yet and "Use Lumos" never picked - the Tapo account Hexpad or Lumos keeps (TapoAccount.Import,
     // read only; only the bulb's key kept, DPAPI-protected), once a run, on a worker; the bulb's address from Lumos's list when none is
     // set. No account in either: through Lumos as before ("Go direct" in the watch editor asks for one).
     System.Threading.Tasks.Task<(string kept, string from, string bulb)> _tapoAuto;
+
+    // The bulb with VR (Erik 10-19: "1, 7 mehet"; Sys/LightAuto.cs): the link runs for it too while SteamVR is on and a part of it is
+    // switched on; SteamVR "just started" when its server is younger than 3 minutes (Orbit restarted into a running SteamVR: not); what
+    // plays - Mixtape's cover while it plays, else the Windows media session's
+    readonly LightAuto _lightAuto = new();
+
+    bool LightAutoWanted => _vr.Connected && C.Lights is { Bulb.Length: > 0 } lc && (lc.OnWithVr || lc.TheaterDim || lc.CoverColor);
+
+    static bool SteamVrJustStarted()
+    {
+        try
+        {
+            foreach (var p in System.Diagnostics.Process.GetProcessesByName("vrserver"))
+                using (p) if ((DateTime.Now - p.StartTime).TotalMinutes < 3) return true;
+        }
+        catch (Exception e) { Log.Warn("lights: SteamVR's start not read (" + e.GetType().Name + ")"); }
+        return false;
+    }
+
+    (string key, uint[] px) CoverNow()
+    {
+        if (_mixtape.Status == MixtapeStatus.Connected && _mixtape.State is { Playing: true, Track: { Cover: { } ck } })
+            return ("m:" + ck, _mixtape.Cover(ck, 64));
+        var (has, title, artist, playing, art, _) = _media.Snapshot();
+        return has && playing && art != null ? ("s:" + title + "\u0001" + artist, art) : (null, null);
+    }
     bool _tapoAutoDone;
 
     void TapoAuto()
     {
-        if (_tapoAutoDone || C.Lights?.Key != null || C.Lights?.ViaLumos == true || !(C.Wrist.Face == "custom" && WatchPages.Any(C.Wrist, "light"))) return;
+        if (_tapoAutoDone || C.Lights?.Key != null || C.Lights?.ViaLumos == true || !(C.Wrist.Face == "custom" && WatchPages.Any(C.Wrist, "light") || C.Lights?.Bulb != null)) return;
         _tapoAuto ??= System.Threading.Tasks.Task.Run(() =>
         {
             try { return (TapoAccount.Import(out string from), from, TapoAccount.BulbFromLumos()); }

@@ -362,7 +362,7 @@ public sealed partial class WristPanel
                 return;
             }
         }
-        string title = k.Id is "time" or "date" or "battery" or "session" or "fps" or "reproj" or "gpu" or "vram" or "cpu" or "ram" ? null
+        string title = k.Id is "time" or "date" or "battery" or "session" or "fps" or "reproj" or "gpu" or "cputime" or "vram" or "cpu" or "ram" ? null
             : w.H >= 2 ? k.Title95 : null;
         var c = sk.WidgetFrame(_p, r, title);
         sk.Glass = true;
@@ -410,10 +410,10 @@ public sealed partial class WristPanel
                     string cap = k.Id switch
                     {
                         "fps" => d.Vr.AppFps >= 0 ? $"fps / {d.Vr.DisplayHz:0}" : "fps", "reproj" => Lang.T("reprojection"), "gpu" => "ms GPU",
-                        "vram" => "GB VRAM", "cpu" => "CPU", _ => "RAM",
+                        "cputime" => "ms CPU", "vram" => "GB VRAM", "cpu" => "CPU", _ => "RAM",
                     };
                     if (WAero(cap, 11) > c.Width - 2)
-                        cap = k.Id switch { "fps" => "fps", "reproj" => "reproj.", "gpu" => "GPU ms", "vram" => "VRAM", _ => cap };
+                        cap = k.Id switch { "fps" => "fps", "reproj" => "reproj.", "gpu" => "GPU ms", "cputime" => "CPU ms", "vram" => "VRAM", _ => cap };
                     if (w.W >= 2 && (k.Id is "cpu" or "ram" or "vram") && frac >= 0)
                     {
                         _p.Text(Fit($"{Lang.T(cap)}: {value}{(unit == "GB" && k.Id != "vram" ? " GB" : "")}", c.Width - 8), new RectangleF(c.X + 4, c.Y + 2, c.Width - 8, 18),

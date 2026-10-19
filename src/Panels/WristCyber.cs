@@ -295,7 +295,7 @@ public sealed partial class WristPanel
             case "battery": CyberBattery(r, w, d, id); return true;
             case "media": CyberMedia(r, w, d, id); return true;
             case "graph": CyberGraph(r, w, d); return true;
-            case "fps" or "reproj" or "gpu" or "vram" or "cpu" or "ram":
+            case "fps" or "reproj" or "gpu" or "cputime" or "vram" or "cpu" or "ram":
                 if (w.W == 1 && w.H == 1) CyberStat(r, k.Id, d, Ui.Id("wsg", id));
                 else CyberWide(r, k.Id, d, Ui.Id("wsg", id));
                 return true;
@@ -587,7 +587,7 @@ public sealed partial class WristPanel
         bool none = value == "–";
         float pad = PadX(r), iw = r.Width - 2 * pad, x = r.X + pad;
         CyberCaption(x, r, iw + pad - CyTagX, SmallCaption(id));
-        string unit = none ? null : id switch { "fps" => FpsUnit(d.Vr.DisplayHz), "gpu" => "ms", "vram" or "ram" => "GB", _ => null };
+        string unit = none ? null : id switch { "fps" => FpsUnit(d.Vr.DisplayHz), "gpu" or "cputime" => "ms", "vram" or "ram" => "GB", _ => null };
         float barH = _big ? 6 : 5, barY = r.Bottom - (_big ? 18 : 15) - barH;
         float by = barY - (_big ? 13 : 9), top = r.Y + 33;
         float uw = unit == null ? 0 : CyMonoW(unit) + 3;

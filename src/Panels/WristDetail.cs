@@ -28,7 +28,7 @@ public sealed partial class WristPanel
         "calendar" => "calendar",
         "timer" => "timer",
         "stopwatch" => "stopwatch",
-        "perf" or "graph" or "fps" or "reproj" or "gpu" or "vram" => "perf",
+        "perf" or "graph" or "fps" or "reproj" or "gpu" or "cputime" or "vram" => "perf",
         "cpu" or "ram" => "system",
         "volume" => "volume",
         "minesweeper" => "mines",

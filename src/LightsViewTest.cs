@@ -47,7 +47,7 @@ static class LightsViewTools
     public static void DataChecks(WristPanel wrist, PanelData data, string dir)
     {
         var keep = (data.Lamp, data.Rgb);
-        try { LumosChecks(wrist, data); PrismaChecks(wrist, data, dir); TapoChecks.Run(); }
+        try { LumosChecks(wrist, data); PrismaChecks(wrist, data, dir); TapoChecks.Run(); LightAutoChecks.Run(); }
         finally { (data.Lamp, data.Rgb) = keep; }
     }
 
@@ -346,6 +346,8 @@ static partial class Tools
         System.Globalization.CultureInfo.CurrentCulture = SnapCulture;
         LightsViewTools.DataChecks(wrist, data, dir);
         TapoSafetyTools.Run(dir);                                  // the bulb straight, against a made-up bulb (TapoSafetyTest.cs)
+        var lights0 = cfg.Data.Lights;
+        cfg.Data.Lights = new LightsConfig { Bulb = "10.0.0.98", CoverColor = true };      // (the opened view's Auto row: two of three on)
         foreach (var (style, tag) in new[] { ("modern", ""), ("classic", "_95"), ("xp", "_xp"), ("aero", "_aero"), ("mac", "_mac"), ("terminal", "_term"), (CyberHud.Id, "_cyber") })
         {
             cfg.Data.Appearance = new AppearanceConfig { Style = style, Clock24h = true };
@@ -362,6 +364,7 @@ static partial class Tools
         cfg.Data.Appearance = new AppearanceConfig { Clock24h = true };
         Theme.Apply(cfg.Data.Appearance);
         layout += StylesRun(wrist, data, painter, cfg, gpu, dir);           // every kind in every look (the light's and the RGB's among them)
+        cfg.Data.Lights = lights0;
         System.Globalization.CultureInfo.CurrentCulture = culture;
         Log.Info("snapshot (lights only) written to " + dir);
         return layout > 0 ? 1 : WantsExit(failed0);

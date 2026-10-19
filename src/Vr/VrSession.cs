@@ -318,6 +318,7 @@ public sealed class VrSession : IDisposable
 public sealed class VrStats
 {
     public float AppFps = -1, ReprojPct = -1, DroppedPerSec = -1, GpuMs = -1, DisplayHz = 90;
+    public float CpuMs = -1;             // the game's CPU time a frame, estimated (GameCpuMs; the "cputime" widget)
     public readonly List<(string label, float pct, bool charging)> Batteries = new();
     public int TrackerCount;
     // 1.14, the alerts (Sys/Alerts.cs): every controller / tracker with a battery on its own (Batteries sums the trackers up);
@@ -409,6 +410,17 @@ public sealed class VrStats
     public bool Watched = true;          // the watch shows: the batteries every second (else every 5 s: the alerts need no more)
     readonly Compositor_FrameTiming[] _timings = new Compositor_FrameTiming[30];
 
+    // The game's CPU time for a frame (Erik 10-19, the "cputime" widget: how much its CPU holds it back): from one of its frames to the
+    // next, less the time it sat in WaitGetPoses waiting for SteamVR - a game its CPU holds back never waits there, so its whole frame
+    // is CPU; one that keeps up waits out the rest. -1: no frame of its own in it.
+    public static float GameCpuMs(in Compositor_FrameTiming t)
+    {
+        float interval = t.m_flClientFrameIntervalMs;
+        if (interval <= 0 || interval > 250) return -1;
+        float waited = MathF.Max(0, t.m_flNewPosesReadyMs - t.m_flWaitGetPosesCalledMs);
+        return Math.Clamp(interval - waited, 0, interval);
+    }
+
     public void Update(VrSession vr, double now)
     {
         if (!vr.Connected || now < _next) return;
@@ -441,9 +453,16 @@ public sealed class VrStats
         uint n = vr.Comp.GetFrameTimings(_timings);
         if (n > 0)
         {
-            float sum = 0;
-            for (int i = 0; i < n; i++) sum += _timings[i].m_flTotalRenderGpuMs;
+            float sum = 0, cpu = 0;
+            int cn = 0;
+            for (int i = 0; i < n; i++)
+            {
+                sum += _timings[i].m_flTotalRenderGpuMs;
+                float c = GameCpuMs(_timings[i]);
+                if (c >= 0) { cpu += c; cn++; }
+            }
             GpuMs = sum / n;
+            CpuMs = cn > 0 ? cpu / cn : -1;
         }
 
         // the batteries: three property reads a device (each a call to SteamVR) - every second only while the watch can show them

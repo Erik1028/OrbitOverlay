@@ -51,6 +51,8 @@ public static class WatchWidgets
         new("fps", "Frame rate", "Frame Rate", "", W95Icons.Id.Computer, Stat, Tone: 0),
         new("reproj", "Reprojection", "Reprojection", "", W95Icons.Id.Computer, Stat, Tone: 1),
         new("gpu", "GPU time", "GPU Time", "", W95Icons.Id.Computer, Stat, Tone: 2),
+        // the game's CPU time a frame (VrStats.GameCpuMs): how much its CPU holds it back (Erik 10-19)
+        new("cputime", "CPU time", "CPU Time", "", W95Icons.Id.Computer, Stat, Tone: 0),
         new("vram", "VRAM", "Video Memory", "", W95Icons.Id.Computer, Stat, Tone: 1),
         new("cpu", "CPU", "CPU Usage", "", W95Icons.Id.Computer, Stat, Tone: 0),
         new("ram", "Memory", "Memory", "", W95Icons.Id.Computer, Stat, Tone: 2),
@@ -116,7 +118,7 @@ public static class WatchWidgets
     public static int CategoryOf(string id) => id switch
     {
         "time" or "date" or "calendar" or "analog" or "timer" or "stopwatch" or "session" => 0,
-        "perf" or "graph" or "fps" or "reproj" or "gpu" or "vram" or "cpu" or "ram" or "battery" or "temps" => 1,
+        "perf" or "graph" or "fps" or "reproj" or "gpu" or "cputime" or "vram" or "cpu" or "ram" or "battery" or "temps" => 1,
         "media" or "volume" or "mixer" or "mic" => 2,
         "room" or "notifications" or "status" or "friends" or "recap" or "photo" or "memory" or "avatar" => 3,
         "keyboard" or "desktops" or "recenter" or "layout" or "night" or "settings" or "theater" or "buttons" or "dock" or "light" or "rgb" => 4,
@@ -409,7 +411,7 @@ public static class WatchWidgets
         ["timer"] = new[] { S, M, L }, ["stopwatch"] = new[] { M, S }, ["session"] = new[] { S, M },
         ["battery"] = new[] { S, M, L }, ["media"] = new[] { M, S, L, Wd }, ["volume"] = new[] { S, M },
         ["perf"] = new[] { Wd, M }, ["graph"] = new[] { L, M, Wd },
-        ["fps"] = new[] { S, M }, ["reproj"] = new[] { S, M }, ["gpu"] = new[] { S, M }, ["vram"] = new[] { S, M },
+        ["fps"] = new[] { S, M }, ["reproj"] = new[] { S, M }, ["gpu"] = new[] { S, M }, ["cputime"] = new[] { S, M }, ["vram"] = new[] { S, M },
         ["cpu"] = new[] { S, M }, ["ram"] = new[] { S, M },
         ["room"] = new[] { M, S }, ["dock"] = new[] { M, L },
         ["photo"] = new[] { M, S, L },

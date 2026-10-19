@@ -377,7 +377,7 @@ public sealed partial class WristPanel
     {
         "time" => "TIME", "date" => "DATE", "calendar" => "CAL", "analog" => "CLOCK", "timer" => "TIMER", "stopwatch" => "CHRONO",
         "session" => "IN VR", "battery" => "BATT", "media" => "PLAYBACK", "volume" => "VOL", "perf" => "PERF", "graph" => "FRAME TIME",
-        "fps" => "FPS", "reproj" => "REPR", "gpu" => "GPU", "vram" => "VRAM", "cpu" => "CPU", "ram" => "RAM", "room" => "ROOM",
+        "fps" => "FPS", "reproj" => "REPR", "gpu" => "GPU", "cputime" => "CPU MS", "vram" => "VRAM", "cpu" => "CPU", "ram" => "RAM", "room" => "ROOM",
         "dock" => "HEXPAD", "minesweeper" => "MINES", "mic" => "MIC", "notifications" => "NOTIFY", "buttons" => "BUTTONS",
         "photo" => "PHOTO", "weather" => "WTHR", "friends" => "WHO", "recap" => "LAST",
         "light" => "LIGHT", "rgb" => "RGB", "memory" => "MEMORY", "temps" => "SENSORS", "avatar" => "AVATAR",
@@ -499,7 +499,7 @@ public sealed partial class WristPanel
                     {
                         "fps" => d.Vr.DisplayHz > 0 ? $"/{d.Vr.DisplayHz:0}" : "FPS",
                         "reproj" => "FRAMES",
-                        "gpu" => "MS",
+                        "gpu" or "cputime" => "MS",
                         "vram" => d.VramTotalGB > 0 ? $"/{d.VramTotalGB:0}G" : "GB",
                         "cpu" => "LOAD",
                         _ => Stats.RamTotalGB > 0 ? $"/{Stats.RamTotalGB:0}G" : "GB",
