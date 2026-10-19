@@ -263,15 +263,18 @@ static class LightsViewTools
             wcfg.Page = 0;
             Fake(data);
             bool classic = Theme.Classic;
-            // a tap on a 1x1 switches it; a tap on a 2x1's card (its caption) opens it, its X closes it
+            // a tap on a 1x1 opens it and switches nothing (Erik 10-19); a tap on a 2x1's card (its caption) opens it, its X closes it
             wcfg.Widgets = new List<WatchWidget> { W("light", 0, 0, 1, 1), W("rgb", 1, 0, 1, 1), W("light", 0, 1, 2, 1), W("rgb", 2, 1, 2, 1) };
             wrist.Settle(); wrist.Draw(data); wrist.Draw(data);
+            bool lampWas = data.Lamp.State.On;
             Tap(wrist, data, Middle(WatchWidgets.CellRect(0, 0, 1, 1, classic)));
-            bool lampOff = !data.Lamp.State.On;
+            bool lampOff = wrist.IsOpen && wrist.DetailKind == "light" && data.Lamp.State.On == lampWas;
+            wrist.CloseForTest(); wrist.Draw(data); wrist.Draw(data);
+            string effectWas = data.Rgb.State.Effect;
             Tap(wrist, data, Middle(WatchWidgets.CellRect(1, 0, 1, 1, classic)));
-            bool rgbOff = data.Rgb.State.Off;
-            Tap(wrist, data, Middle(WatchWidgets.CellRect(1, 0, 1, 1, classic)));
-            bool rgbBack = data.Rgb.State.Effect == "RainbowWave";
+            bool rgbOff = wrist.IsOpen && wrist.DetailKind == "rgb";
+            wrist.CloseForTest(); wrist.Draw(data); wrist.Draw(data);
+            bool rgbBack = data.Rgb.State.Effect == effectWas;
             // (95: the window's top right, by its little bulb - the rest of it is its check box and trackbar)
             var card = WatchWidgets.CellRect(0, 1, 2, 1, classic);
             Tap(wrist, data, classic ? new Vector2((card.Right - 26) * 2, (card.Y + 7) * 2) : Middle(card, 0.16f));
@@ -282,7 +285,7 @@ static class LightsViewTools
             for (int k = 0; k < 11; k++) { Thread.Sleep(30); wrist.Draw(data); }
             bool shut = !wrist.IsOpen;
             wrist.CloseForTest();
-            Tools.Want($"lights view{tag}: a tap on the 1x1 light switched it off {lampOff}, on the 1x1 RGB off {rgbOff} and back to its rainbow {rgbBack}; " +
+            Tools.Want($"lights view{tag}: a tap on the 1x1 light opened it, switching nothing {lampOff}, on the 1x1 RGB opened it {rgbOff}, its effect as it was {rgbBack}; " +
                        $"a tap on a 2x1's card opened it {opened}, its X closed it {shut} -", lampOff && rgbOff && rgbBack && opened && shut);
             // no garbage a frame at rest
             Fake(data);

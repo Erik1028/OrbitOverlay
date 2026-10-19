@@ -7,7 +7,7 @@ using Vortice.DirectWrite;
 namespace Orbit;
 
 // The light and the RGB widgets ("light": the room's Tapo bulb through Lumos; "rgb": the PC's lighting through Prisma - Sys/RoomLights.cs).
-// A 1x1 is a switch: a tap turns it on / off, its card glows with the light (the bulb's white or colour; the RGB's colour, a rainbow for an
+// A 1x1 is a card that opens (its view has the switch - OpenTap), its card glows with the light (the bulb's white or colour; the RGB's colour, a rainbow for an
 // effect with colours of its own). A 2x1 adds a power button (the light) or the four quick effects - static colour, rainbow wave,
 // breathing, off - (the RGB) and a brightness bar to drag; a 2x2 the quick whites and colours under them; the 4 x 3 page's S, M, L the
 // same, bigger. A tap beside the controls opens it: on / off, the brightness, every white and colour (the light), the effects and colours
@@ -24,6 +24,15 @@ public sealed partial class WristPanel
     static readonly string[] LampWhiteNames = { "Warm", "Neutral", "Daylight" };
     static readonly (int h, int s)[] LampHues = { (0, 100), (30, 100), (120, 90), (190, 90), (230, 100), (285, 80) };
     static readonly uint[] RgbColors = { 0xFFFF0000, 0xFFFF7A00, 0xFF00FF40, 0xFF00C8AA, 0xFF0050FF, 0xFFA000FF };
+
+    // A 1x1 light / RGB is a card that opens - the switch and the rest are in its view (Erik 10-19: "legyen a widget egy kiugró kártya, a
+    // widget önmagába ne kapcsoljon"; a 1x1 had no room beside a switch to tap it open). True: it opened.
+    bool OpenTap(string key, RectangleF r, WatchWidget w, out bool held)
+    {
+        if (!_ui.Clickable(key, r, out _, out held)) return false;
+        OpenDetail(w);
+        return true;
+    }
 
     // ---- what changed: the watch draws again when an app answers or a command was given (WristPanel.Update) ----
 
@@ -219,8 +228,8 @@ public sealed partial class WristPanel
         uint ink = Styled(w) ? Bento.Text : GlowInk(t.Glow);         // a look of its own: its text colour (the glow would not read on it)
         if (w.W == 1)
         {
-            // a switch: the whole card (it opens nothing - a bigger one does)
-            if (_ui.Clickable(Ui.Id("wlt", id), r, out _, out bool held)) { lamp?.Toggle(); _dirty = true; }
+            // the whole card opens it (its view has the switch)
+            if (OpenTap(Ui.Id("wlt", id), r, w, out bool held)) _dirty = true;
             if (held) _p.Fill(r, Theme.WithAlpha(t.On ? t.Glow : Bento.Accent, 0.14f), CardRadius);
             Caption(r, iw, CapLight);
             LxIconValue(x, right, r.Y + SBase, BulbGlyph, t.On ? ink : t.Ready ? Sub : Bento.Faint, t.Value, t.Ready ? Bento.Text : Bento.Faint);
@@ -276,7 +285,7 @@ public sealed partial class WristPanel
         float pad = PadX(r), x = r.X + pad, iw = r.Width - 2 * pad, right = r.Right - pad;
         if (w.W == 1)
         {
-            if (_ui.Clickable(Ui.Id("wrt", id), r, out _, out bool held)) { rgb?.Toggle(); _dirty = true; }
+            if (OpenTap(Ui.Id("wrt", id), r, w, out bool held)) _dirty = true;
             if (held) _p.Fill(r, Theme.WithAlpha(Bento.Accent, 0.14f), CardRadius);
             Caption(r, iw, CapRgb);
             float gs = Hero, by = r.Y + SBase, mid = by - Hero * DigitH / 2;
@@ -629,7 +638,7 @@ public sealed partial class WristPanel
         if (w.W == 1)
         {
             string mk = Ui.Id("wlt", id);
-            if (_ui.Clickable(mk, r, out _, out _)) { lamp?.Toggle(); _dirty = true; CyTap(mk); }
+            if (OpenTap(mk, r, w, out _)) { _dirty = true; CyTap(mk); }
             CyTapFx(mk, r, CyberHud.CardTL, CyberHud.CardBR);
             CyWord(r, x, right, BulbGlyph, !t.Ready ? "–" : t.On ? "ON" : "OFF", !t.Ready ? CyberHud.Faint : t.On ? CyY : CyG);
             float barY = r.Bottom - (_big ? 18 : 15) - 5;
@@ -682,7 +691,7 @@ public sealed partial class WristPanel
         if (w.W == 1)
         {
             string mk = Ui.Id("wrt", id);
-            if (_ui.Clickable(mk, r, out _, out _)) { rgb?.Toggle(); _dirty = true; CyTap(mk); }
+            if (OpenTap(mk, r, w, out _)) { _dirty = true; CyTap(mk); }
             CyTapFx(mk, r, CyberHud.CardTL, CyberHud.CardBR);
             float gs = _big ? 32 : 26, by = r.Y + (_big ? 82 : 66);
             EffectPic(t.Effect, x + gs / 2, by - gs / 2 + 2, gs / 2, t.Color, !t.Ready);

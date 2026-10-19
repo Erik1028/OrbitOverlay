@@ -30,7 +30,7 @@ public sealed partial class WristPanel
         var lamp = d.Lamp;
         if (w.W == 1)
         {
-            if (_ui.Clickable(Ui.Id("wlt", id), r, out _, out _)) { lamp?.Toggle(); _dirty = true; }
+            if (OpenTap(Ui.Id("wlt", id), r, w, out _)) _dirty = true;
             TValue(c, !t.Ready ? "--" : t.On ? t.Pct : Upper("Off"), TLxFit(!t.Ready ? Upper(t.Short) : t.On ? Upper("On") : Upper("Light"), c.Width - 2),
                 !t.Ready ? T.DIM : t.On ? T.HOT : T.INK);
             return;
@@ -63,7 +63,7 @@ public sealed partial class WristPanel
         var rgb = d.Rgb;
         if (w.W == 1)
         {
-            if (_ui.Clickable(Ui.Id("wrt", id), r, out _, out _)) { rgb?.Toggle(); _dirty = true; }
+            if (OpenTap(Ui.Id("wrt", id), r, w, out _)) _dirty = true;
             TValue(c, !t.Ready ? "--" : t.Off ? Upper("Off") : t.Pct, TLxFit(!t.Ready ? Upper(t.ShortMsg) : Upper(t.Short), c.Width - 2),
                 !t.Ready ? T.DIM : t.Off ? T.INK : T.HOT);
             return;

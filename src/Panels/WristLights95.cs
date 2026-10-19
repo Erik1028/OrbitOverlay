@@ -109,7 +109,7 @@ public sealed partial class WristPanel
         if (w.W == 1)
         {
             // the switch: the whole little window
-            if (_ui.Clickable(Ui.Id("wlt", id), r, out _, out _)) { lamp?.Toggle(); _dirty = true; }
+            if (OpenTap(Ui.Id("wlt", id), r, w, out _)) _dirty = true;
             int s = c.Height >= 56 ? 32 : 16;
             float y = MathF.Floor(c.Y + (c.Height - s - 15) / 2);
             LampPic95(false, t.On, MathF.Floor(c.X + (c.Width - s) / 2), y, s);
@@ -164,7 +164,7 @@ public sealed partial class WristPanel
         var rgb = d.Rgb;
         if (w.W == 1)
         {
-            if (_ui.Clickable(Ui.Id("wrt", id), r, out _, out _)) { rgb?.Toggle(); _dirty = true; }
+            if (OpenTap(Ui.Id("wrt", id), r, w, out _)) _dirty = true;
             int s = c.Height >= 56 ? 32 : 16;
             float y = MathF.Floor(c.Y + (c.Height - s - 15) / 2);
             LampPic95(true, t.Ready && !t.Off, MathF.Floor(c.X + (c.Width - s) / 2), y, s);
