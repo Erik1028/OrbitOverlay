@@ -333,6 +333,7 @@ public sealed class Laser : IDisposable
         Spikes.Mark(Spikes.Rays);
         if (best != _hover)
         {
+            FlapNote(best, bestUv, hs.Click);
             _hover?.PointerLeave(_hand);
             _hover = best;
             if (best != null && haptics && !_eyeOn) vr.Haptic(_hand, 0.12f);     // (the eyes crossing monitors: no ticks)
@@ -571,6 +572,32 @@ public sealed class Laser : IDisposable
     // ---- why the eye cursor does what it does (Erik 10-19 "még nem jó"): a log line on each change and every 3 s while it follows ----
     double _eyeLostAt = -1, _eyeDiagNext;
     bool _eyeLostLogged;
+
+    // Diagnostics (Erik 10-19: "ha a kijelző alá vagy a billentyűzet alá húzom a kurzort, néha elkezd vissza ugrálni"): the panel under the
+    // beam changing 4 times or more within a second is logged - once per 5 s, change by change: which one, where on it, the trigger
+    readonly double[] _flipAt = new double[6];
+    readonly string[] _flipWhat = new string[6];
+    int _flipN;
+    double _flipLogged = -10;
+
+    void FlapNote(IPointerTarget to, Vector2 uv, bool click)
+    {
+        int i = _flipN++ % _flipAt.Length;
+        _flipAt[i] = _clock;
+        _flipWhat[i] = to == null ? "nothing" : $"{Name(to)} {uv.X:0.00},{uv.Y:0.00}";
+        if (_flipN < 4) return;
+        if (_clock - _flipAt[(_flipN - 4) % _flipAt.Length] > 1 || _clock - _flipLogged < 5) return;
+        _flipLogged = _clock;
+        int n = Math.Min(_flipN, _flipAt.Length);
+        var sb = new System.Text.StringBuilder();
+        for (int j = n; j >= 1; j--)
+        {
+            int k = (_flipN - j) % _flipAt.Length;
+            sb.Append($" -> {_flipWhat[k]} ({(_flipAt[k] - _clock) * 1000:0} ms)");
+        }
+        Log.Info($"laser flap ({_hand}): the beam's panel changed {n} times in {_clock - _flipAt[(_flipN - n) % _flipAt.Length]:0.0} s, trigger {(click ? "held" : "up")}, " +
+                 $"eye cursor {(_eyeOn ? "on" : "off")}:{sb}");
+    }
 
     void EyeDiag(VrSession vr, IReadOnlyList<IPointerTarget> targets, string what)
     {
