@@ -141,10 +141,10 @@ public sealed partial class WristPanel
         }
         // previous, the yellow play square, next
         float gap = 12, big = MathF.Min(64, (w - 2 * gap) * 0.4f), small = MathF.Min(52, (w - 2 * gap - big) / 2), by = c.Y + 146;
-        if (Press("wdm0", new RectangleF(x, by + (big - small) / 2, small, small), "\uE892", null, false, has, 20, true)) OnAction?.Invoke(MediaIds[0]);
-        if (Press("wdm1", new RectangleF(x + small + gap, by, big, big), playing ? PauseFill : PlayFill, null, true, has, 26, true)) OnAction?.Invoke(MediaIds[1]);
+        if (Press("wdm0", new RectangleF(x, by + (big - small) / 2, small, small), "\uE892", null, false, has, 20, true)) Act(MediaIds[0]);
+        if (Press("wdm1", new RectangleF(x + small + gap, by, big, big), playing ? PauseFill : PlayFill, null, true, has, 26, true)) Act(MediaIds[1]);
         if (Press("wdm2", new RectangleF(x + small + gap + big + gap, by + (big - small) / 2, small, small), "\uE893", null, false, has, 20, true))
-            OnAction?.Invoke(MediaIds[2]);
+            Act(MediaIds[2]);
         // the volume: its speaker (a tap mutes it, red), what it is, the segments
         float lvl = Volume.Level;
         bool ok = lvl >= 0, muted = Volume.Muted;

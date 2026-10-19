@@ -203,7 +203,7 @@ public sealed partial class WristPanel
         string[][] glyphs = { PrevGlyph, playing ? PauseGlyph : PlayGlyph, NextGlyph };
         float bx = g.Right - 8 - (3 * 24 + 4);
         for (int i = 0; i < 3; i++)
-            if (_ui.GlyphButton95(Ui.Id("wm", i), new RectangleF(bx + i * 26, g.Y + 18, 24, 20), glyphs[i], has)) OnAction?.Invoke(ids[i]);
+            if (_ui.GlyphButton95(Ui.Id("wm", i), new RectangleF(bx + i * 26, g.Y + 18, 24, 20), glyphs[i], has)) Act(ids[i]);
         float tx = box.Right + 6, tw = bx - 8 - tx;
         if (!has) { _ui.Text95("Nothing playing", new RectangleF(tx, g.Y + 14, tw, 13), Gry95); return; }
         float t1 = _ui.Width95(Fit(title, tw, Ui.F95, true), true);
@@ -245,7 +245,7 @@ public sealed partial class WristPanel
             var r = new RectangleF(x0 + i * (bw + 2), y, bw, 32);
             bool on = (i == 0 && d.KeyboardVisible) || (i == 1 && d.DesktopsVisible) || (i == 4 && d.NightMode);
             string label = i switch { 0 => "Keyboard", 1 => "Monitors", 2 => "Recenter", 3 => d.LayoutName, 4 => "Night", _ => "Settings" };
-            if (_ui.Button95(Ui.Id("wt", i), r, Ui.Esc95(Fit(label, bw - 4)), true, false, on, icons[i])) OnAction?.Invoke(ids[i]);
+            if (_ui.Button95(Ui.Id("wt", i), r, Ui.Esc95(Fit(label, bw - 4)), true, false, on, icons[i])) Act(ids[i]);
         }
     }
 
@@ -470,7 +470,7 @@ public sealed partial class WristPanel
         for (int j = 0; j < nb; j++)
         {
             int a = nb == 1 ? 1 : j;
-            if (_ui.GlyphButton95(Ui.Id("wcm", id * 3 + a), new RectangleF(bx + j * (bw + 2), by, bw, bh), glyphs[a], has)) OnAction?.Invoke(ids[a]);
+            if (_ui.GlyphButton95(Ui.Id("wcm", id * 3 + a), new RectangleF(bx + j * (bw + 2), by, bw, bh), glyphs[a], has)) Act(ids[a]);
         }
         float tr = tall ? c.Right - 2 : bx - 5, tw = tr - x;
         if (tw >= 20)
@@ -602,7 +602,7 @@ public sealed partial class WristPanel
             string name = w.W >= 2 || _ui.Width95(k.Name) <= r.Width - 8 ? k.Name : _ui.Width95(k.Title95) <= r.Width - 8 ? k.Title95 : null;
             click = _ui.Button95(Ui.Id("wcb", id), r, name == null ? null : Ui.Esc95(Fit(name, r.Width - 8)), true, false, IsOn(k.Id, d), icon);
         }
-        if (click) OnAction?.Invoke(k.Id);
+        if (click) Act(k.Id);
     }
 
     // ================= the pages' taskbar =================

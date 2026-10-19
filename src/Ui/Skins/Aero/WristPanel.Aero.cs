@@ -238,7 +238,7 @@ public sealed partial class WristPanel
             bool click = _ui.Clickable(Ui.Id(key, baseId + i), hit, out bool hover, out bool held) && has;
             string[] g = i == 0 ? PrevAero : i == 2 ? NextAero : playing ? PauseAero : PlayAero;
             AeroSkin.Orb(_p, xs[i], cy, rad, i == 1, hover && has, held && has, g, has);
-            if (click) OnAction?.Invoke(ids[i]);
+            if (click) Act(ids[i]);
         }
     }
 
@@ -274,7 +274,7 @@ public sealed partial class WristPanel
             float size = WAero(label, 11) <= bw - 5 ? 11 : 10;
             _p.Text(Fit(label, bw - 5, size), new RectangleF(r.X + 1, r.Y - 2, r.Width - 2, r.Height + 4), 0xFF000000, size, FontWeight.Normal,
                 TextAlignment.Center, ParagraphAlignment.Center, Ae.Font);
-            if (click) OnAction?.Invoke(ids[i]);
+            if (click) Act(ids[i]);
         }
     }
 
@@ -808,7 +808,7 @@ public sealed partial class WristPanel
                 _p.Text(name, new RectangleF(r.X + 1 + o, iy + 15 + o, r.Width - 2, 18), 0xFF1E2B3A, size, FontWeight.Normal, TextAlignment.Center,
                     ParagraphAlignment.Center, Ae.Font);
         }
-        if (click) OnAction?.Invoke(k.Id);
+        if (click) Act(k.Id);
     }
 
     // Windows Media Player: the cover big, the title and artist, the round buttons, the volume

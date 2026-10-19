@@ -759,10 +759,10 @@ public sealed partial class WristPanel
             float tw = right - tx;
             const float big = 52, sm = 42, gap = 10;
             float bby = bottom - big;
-            if (CyberPress(Ui.Id("wcm", id * 3), new RectangleF(tx, bby + (big - sm) / 2, sm, sm), "\uE892", null, false, has, 18, true, 0)) OnAction?.Invoke(ids[0]);
-            if (CyberPress(Ui.Id("wcm", id * 3 + 1), new RectangleF(tx + sm + gap, bby, big, big), play, null, true, has, 20, true, 0)) OnAction?.Invoke(ids[1]);
+            if (CyberPress(Ui.Id("wcm", id * 3), new RectangleF(tx, bby + (big - sm) / 2, sm, sm), "\uE892", null, false, has, 18, true, 0)) Act(ids[0]);
+            if (CyberPress(Ui.Id("wcm", id * 3 + 1), new RectangleF(tx + sm + gap, bby, big, big), play, null, true, has, 20, true, 0)) Act(ids[1]);
             if (CyberPress(Ui.Id("wcm", id * 3 + 2), new RectangleF(tx + sm + gap + big + gap, bby + (big - sm) / 2, sm, sm), "\uE893", null, false, has, 18, true, 0))
-                OnAction?.Invoke(ids[2]);
+                Act(ids[2]);
             float ty = top + 22;
             if (!has) { CyMono("NOT PLAYING", tx, ty, tw, CyG); return; }
             float ts = _big ? 26 : 24;
@@ -776,14 +776,14 @@ public sealed partial class WristPanel
         // one row: play at the right (previous / next too on a six-wide card), the cover box from three cells
         float bs = _big ? 52 : 44, mid = top + (bottom - top) / 2;
         float bx = right - bs;
-        if (CyberPress(Ui.Id("wcm", id * 3 + 1), new RectangleF(bx, mid - bs / 2, bs, bs), play, null, true, has, 20, true, 0)) OnAction?.Invoke(ids[1]);
+        if (CyberPress(Ui.Id("wcm", id * 3 + 1), new RectangleF(bx, mid - bs / 2, bs, bs), play, null, true, has, 20, true, 0)) Act(ids[1]);
         if (w.W >= 6)
         {
             const float sm = 38, gap = 8;
             bx -= gap + sm;
-            if (CyberPress(Ui.Id("wcm", id * 3 + 2), new RectangleF(bx, mid - sm / 2, sm, sm), "\uE893", null, false, has, 16, true, 0)) OnAction?.Invoke(ids[2]);
+            if (CyberPress(Ui.Id("wcm", id * 3 + 2), new RectangleF(bx, mid - sm / 2, sm, sm), "\uE893", null, false, has, 16, true, 0)) Act(ids[2]);
             bx -= gap + sm;
-            if (CyberPress(Ui.Id("wcm", id * 3), new RectangleF(bx, mid - sm / 2, sm, sm), "\uE892", null, false, has, 16, true, 0)) OnAction?.Invoke(ids[0]);
+            if (CyberPress(Ui.Id("wcm", id * 3), new RectangleF(bx, mid - sm / 2, sm, sm), "\uE892", null, false, has, 16, true, 0)) Act(ids[0]);
         }
         float x0 = x;
         if (w.W >= 3)
@@ -1204,7 +1204,7 @@ public sealed partial class WristPanel
         }
         CyTapFx(key, t, tl, br);
         if (scaled) _p.PopScale();
-        if (click) { CyTap(key); OnAction?.Invoke(kid); }
+        if (click) { CyTap(key); Act(kid); }
     }
 
     void CyTileFace(RectangleF t, WatchWidgets.Kind k, string kid, PanelData d, int mode, bool card, bool on, bool hover, float tl, float br)

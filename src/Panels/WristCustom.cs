@@ -107,7 +107,17 @@ public sealed partial class WristPanel
         if (d.FakeMedia is { } f) { (has, title, artist, playing) = f; if (d.FakeArt != null) (art, ver) = (d.FakeArt, -3); }
         else if (d.Media != null) (has, title, artist, playing, art, ver) = d.Media.Snapshot();
         else { has = false; title = artist = null; playing = false; }
-        if (ver != _artVersion)
+        // Mixtape's song when it plays, or is paused with no other player playing (WristMixtape.cs): its title, its buttons, its cover
+        _mtLead = MixtapeLeads(has, title, playing);
+        if (_mtLead)
+        {
+            var st = Mixtape.State;
+            has = st.Track != null;
+            (title, artist, playing) = (st.Track?.Title, st.Track?.Artist, st.Playing);
+            art = has ? Mixtape.Cover(st.Track.Cover, MtCardCover) : null;      // (asked for: it comes with a later frame)
+            ver = -4;
+        }
+        if (ver != _artVersion || !ReferenceEquals(art, _artSource))
         {
             _artVersion = ver;
             // the version also moves on play / pause and title changes: only a new picture is rebuilt (and fades in)
@@ -117,7 +127,7 @@ public sealed partial class WristPanel
                 // the cover before stays a moment: the new one cross-fades over it (MediaOrbit)
                 _artOld?.Dispose();
                 _artOld = _art;
-                _art = art != null ? _p.CreateBitmap(art, MediaInfo.ArtSize, MediaInfo.ArtSize) : null;
+                _art = art != null ? _p.CreateBitmap(art, (int)MathF.Sqrt(art.Length), (int)MathF.Sqrt(art.Length)) : null;      // (square: 96 or Mixtape's 128)
                 _artFade = !_settled;
             }
         }
@@ -204,7 +214,7 @@ public sealed partial class WristPanel
         {
             _timer = TimerState.Done;
             _dirty = true;
-            OnAction?.Invoke("timer.done");
+            Act("timer.done");
         }
     }
 
@@ -664,7 +674,6 @@ public sealed partial class WristPanel
             case "notifications": NotesOrbit(r, w, d, id); break;
             case "buttons": GroupOrbit(r, w, d, id); break;
             case "mixer": MixerOrbit(r, w, id); break;
-            case "mixtape": MixtapeOrbit(r, w, d, id); break;
             case "photo": PhotoOrbit(r, w, d, id); break;
             case "weather": WeatherOrbit(r, w, d, id); break;
             case "folder": FolderOrbit(r, w, d, id); break;          // its widgets' icons; Cyber's too (WristFolder.cs)
@@ -1182,7 +1191,7 @@ public sealed partial class WristPanel
     {
         string icon = k.Id == "desktops" && !d.DesktopsVisible ? Theme.IcoHide : k.Icon;
         string label = k.Id == "layout" ? d.LayoutName : TileName(k, w.W >= 2);
-        if (TileButton(Ui.Id("wcb", id), r, icon, label, IsOn(k.Id, d), w.W >= 2, IsToggle(k.Id))) OnAction?.Invoke(k.Id);
+        if (TileButton(Ui.Id("wcb", id), r, icon, label, IsOn(k.Id, d), w.W >= 2, IsToggle(k.Id))) Act(k.Id);
     }
 
     // ---- the widgets ----
@@ -2196,12 +2205,12 @@ public sealed partial class WristPanel
             const float big = 52, sm = 44, gap = 10;
             float by = r.Bottom - 12 - big;
             if (Press(Ui.Id("wcm", id * 3), new RectangleF(x, by + (big - sm) / 2, sm, sm), "\uE892", null, false, has, 18, true))
-                OnAction?.Invoke(ids[0]);
+                Act(ids[0]);
             if (Press(Ui.Id("wcm", id * 3 + 1), new RectangleF(x + sm + gap, by, big, big), playIcon, null, true, has, 20, true))
-                OnAction?.Invoke(ids[1]);
+                Act(ids[1]);
             if (Press(Ui.Id("wcm", id * 3 + 2), new RectangleF(x + sm + gap + big + gap, by + (big - sm) / 2, sm, sm), "\uE893", null, false,
                     has, 18, true))
-                OnAction?.Invoke(ids[2]);
+                Act(ids[2]);
             right = r.Right - pad;
         }
         else
@@ -2218,7 +2227,7 @@ public sealed partial class WristPanel
                 float px = nb == 1 ? bx : bx + (j == 0 ? 0 : j == 1 ? sm + gap : sm + gap + big + gap);
                 string icon = a == 0 ? "\uE892" : a == 1 ? playIcon : "\uE893";
                 if (Press(Ui.Id("wcm", id * 3 + a), new RectangleF(px, cy - bs / 2, bs, bs), icon, null, a == 1, has, a == 1 ? 20 : 18, true))
-                    OnAction?.Invoke(ids[a]);
+                    Act(ids[a]);
             }
             right = bx - 10;
         }
@@ -2416,7 +2425,6 @@ public sealed partial class WristPanel
                 case "notifications": Notes95(c, d); break;
                 case "buttons": Group95(c, w, d, id); break;
                 case "mixer": Mixer95(r, c, w, id); break;
-                case "mixtape": Mixtape95(r, c, w, id); break;
                 case "photo": Photo95(r, c, w, d, id); break;
                 case "weather": Weather95(c, d, w); break;
                 case "friends": Friends95(c, w, d); break;
@@ -2718,7 +2726,7 @@ public sealed partial class WristPanel
         for (int j = 0; j < nb; j++)
         {
             int a = nb == 1 ? 1 : j;
-            if (_ui.GlyphButton95(Ui.Id("wcm", id * 3 + a), new RectangleF(bx + j * 28, by, 26, 18), glyphs[a], has)) OnAction?.Invoke(ids[a]);
+            if (_ui.GlyphButton95(Ui.Id("wcm", id * 3 + a), new RectangleF(bx + j * 28, by, 26, 18), glyphs[a], has)) Act(ids[a]);
         }
         if (w.H >= 2 && c.Width >= 150 && c.Bottom - (by + 24) >= 30)
             Volume95Row(new RectangleF(c.X + 4, by + 24, c.Width - 8, 30), Ui.Id("wcv", id));
@@ -2734,6 +2742,6 @@ public sealed partial class WristPanel
             var icon = k.Id == "desktops" && !d.DesktopsVisible ? W95Icons.Id.ComputerOff : k.Icon95;
             click = _ui.Button95(Ui.Id("wcb", id), r, w.W >= 2 ? Ui.Esc95(Fit(k.Name, r.Width - 30)) : null, true, false, IsOn(k.Id, d), icon);
         }
-        if (click) OnAction?.Invoke(k.Id);
+        if (click) Act(k.Id);
     }
 }

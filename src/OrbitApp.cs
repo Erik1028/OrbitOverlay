@@ -126,6 +126,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         // 1.12, the watch pages: a new install starts on the VRChat and Performance pages; an older config gets them once, after its
         // own face (a copy of config.json first). Only the config here - no window exists yet (1.10.0 crashed touching one).
         WatchPages.Migrate(_cfg);
+        WatchPages.MergeMixtape(_cfg);      // 10-19: the Mixtape widget went into Now playing (a copy of config.json first)
         _layout = new DesktopLayout(_desktops, _cfg);
         _gazeFocus = new GazeFocus(_desktops);
         _data.Gpu = _gpuStats;
@@ -689,8 +690,9 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         _lumos.Active = C.Wrist.Face == "custom" && WatchPages.Any(C.Wrist, "light");
         _lumos.Watched = _wrist?.Alpha > 0.02f;
         _prisma.Active = C.Wrist.Face == "custom" && WatchPages.Any(C.Wrist, "rgb");
-        // Mixtape: linked while a page has its widget and SteamVR runs (or the settings preview shows it), faster while the watch shows it
-        _mixtape.Active = C.Wrist.Face == "custom" && WatchPages.Any(C.Wrist, "mixtape") && (_vr.Connected || now - _photoPreview < 3);
+        // Mixtape: linked while a page has Now playing (Mixtape's song and player in it) and SteamVR runs (or the settings preview shows
+        // it), faster while the watch shows it
+        _mixtape.Active = C.Wrist.Face == "custom" && WatchPages.Any(C.Wrist, "media") && (_vr.Connected || now - _photoPreview < 3);
         _mixtape.Watched = _wrist?.Alpha > 0.02f;
         _mixtape.Pump();
         Spikes.Piece("app: light + rgb", ap);

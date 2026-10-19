@@ -128,7 +128,7 @@ public sealed partial class WristPanel
             var r = new RectangleF(x0 + i * (bw + 2), y, bw, 26);
             bool on = (i == 0 && d.KeyboardVisible) || (i == 1 && d.DesktopsVisible) || (i == 4 && d.NightMode);
             // the body only (Platinum, the highlight colour when on), then the word: Geneva, Chicago on the one that is on
-            if (_ui.Button95(Ui.Id("wt", i), r, null, true, false, on)) OnAction?.Invoke(ids[i]);
+            if (_ui.Button95(Ui.Id("wt", i), r, null, true, false, on)) Act(ids[i]);
             var face = RectangleF.Inflate(r, -2, -2);
             string word = words[i] ?? d.LayoutName ?? "";
             bool bold = on && _ui.Width95(word, true) <= face.Width - 3;
@@ -192,7 +192,7 @@ public sealed partial class WristPanel
         for (int j = 0; j < n; j++)
         {
             int a = n == 1 ? 1 : j;
-            if (_ui.GlyphButton95(Ui.Id(key, a), new RectangleF(bx + j * (bw + gap), by, bw, bh), glyphs[a], has)) OnAction?.Invoke(ids[a]);
+            if (_ui.GlyphButton95(Ui.Id(key, a), new RectangleF(bx + j * (bw + gap), by, bw, bh), glyphs[a], has)) Act(ids[a]);
         }
     }
 

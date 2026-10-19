@@ -46,16 +46,16 @@ public sealed partial class WristPanel
         "memory" => "memory",
         "temps" => "temps",
         "avatar" => "avatar",
-        "mixtape" => "mixtape",
         _ => null,
     };
 
-    bool DetailIs(string kind) => _open != null && DetailOf(_open.Type) == kind;
+    bool DetailIs(string kind) => _open != null && OpenKindOf(_open.Type) == kind;
 
     void OpenDetail(WatchWidget w)
     {
         _folder = FolderUnder(w);           // a widget of the open folder: the folder stays under its view (WristFolder.cs)
         _open = w;
+        _openMt = w.Type == "media" && _mtLead && MixtapeUp;        // Now playing on Mixtape's song: its whole player (WristMixtape.cs)
         _closing = false;
         _openStart = Clock.Now;
         _calOffset = 0;
@@ -86,6 +86,7 @@ public sealed partial class WristPanel
         var w = WatchPages.Widgets(C, CurPage)?.Find(x => x?.Type == type);
         if (w == null || DetailOf(type) == null) return false;        // e.g. the dock: a tap opens its own panel
         _open = w;
+        _openMt = type == "media" && _mtLead && MixtapeUp;
         _closing = false;
         _openStart = -10;
         _roomScroll = 0;
@@ -120,7 +121,7 @@ public sealed partial class WristPanel
         if (_open == null) return;
         list = FolderBehind(d, list);       // opened from a folder: the folder open under it, its widgets the list (WristFolder.cs)
         var k = list.Contains(_open) ? WatchWidgets.Find(_open.Type) : null;
-        string kind = k == null ? null : DetailOf(k.Id);
+        string kind = k == null ? null : OpenKindOf(k.Id);
         if (kind == null) { _open = null; return; }
         float e = _ui.Spring(OpenKey, _closing ? 0 : 1, 240, 24);
         if (_closing && e < 0.03f) { _open = FolderBack(); _closing = false; return; }
@@ -169,6 +170,12 @@ public sealed partial class WristPanel
                 FontWeight.SemiBold);
         if (Press("wclose", new RectangleF(E.Right - 22 - 46, E.Y + 14, 46, 46), "\uE711", null, false, !_closing, 18, true))
             CloseDetail();
+        // Now playing on another player's song, Mixtape linked: its button beside the X opens Mixtape's player anyway (its library)
+        if (kind == "media" && MixtapeUp && Press("wdmt", new RectangleF(E.Right - 22 - 46 - 56, E.Y + 14, 46, 46), MixtapeKindIcon, null, false, !_closing, 18, true))
+        {
+            _openMt = true;
+            _dirty = true;
+        }
         var c = new RectangleF(E.X + 24, E.Y + 74, E.Width - 48, E.Height - 96);
         var now = Now;
         switch (kind)
@@ -253,11 +260,11 @@ public sealed partial class WristPanel
         else _p.Text(NotPlaying, new RectangleF(x, c.Y + 6, w, 42), Sub, 26);
         float gap = 14, big = MathF.Min(84, (w - 2 * gap) * 0.4f), small = MathF.Min(64, (w - 2 * gap - big) / 2);
         float by = c.Y + 116, bx = x;
-        if (Press("wdm0", new RectangleF(bx, by + (big - small) / 2, small, small), "\uE892", null, false, has, 24, true)) OnAction?.Invoke(MediaIds[0]);
+        if (Press("wdm0", new RectangleF(bx, by + (big - small) / 2, small, small), "\uE892", null, false, has, 24, true)) Act(MediaIds[0]);
         if (Press("wdm1", new RectangleF(bx + small + gap, by, big, big), playing ? PauseFill : PlayFill, null, true, has, 32, true))
-            OnAction?.Invoke(MediaIds[1]);
+            Act(MediaIds[1]);
         if (Press("wdm2", new RectangleF(bx + small + gap + big + gap, by + (big - small) / 2, small, small), "\uE893", null, false, has, 24, true))
-            OnAction?.Invoke(MediaIds[2]);
+            Act(MediaIds[2]);
         // the system volume under it (muted: the speaker red, like the card's mute disc)
         float lvl = Volume.Level;
         bool ok = lvl >= 0, muted = Volume.Muted;
@@ -578,7 +585,7 @@ public sealed partial class WristPanel
         if (_open == null) return;
         list = FolderBehind95(d, list);     // opened from a folder: the folder's window under it, its widgets the list (WristFolder95.cs)
         var k = list.Contains(_open) ? WatchWidgets.Find(_open.Type) : null;
-        string kind = k == null ? null : DetailOf(k.Id);
+        string kind = k == null ? null : OpenKindOf(k.Id);
         if (kind == null) { _open = null; return; }
         if (kind == "folder") { FolderWindow95(d, k); return; }         // each style's folder window (WristFolder95.cs)
         var win = WatchWidgets.CellRect(0, 0, WatchWidgets.Cols, WatchWidgets.Rows, true);
@@ -608,6 +615,11 @@ public sealed partial class WristPanel
         _ui.Caption95(new RectangleF(win.X + 3, win.Y + 3, win.Width - 6, 18), k.Title95);
         if (_ui.CaptionClose95("wd95x", win.Right - 5 - 16, win.Y + 5, true, 6)) { CloseDetail(); return; }
         if (_ui.Button95("wd95ok", new RectangleF(win.Right - 8 - 75, win.Bottom - 8 - 23, 75, 23), "OK", true, true)) { CloseDetail(); return; }
+        if (kind == "media" && MixtapeUp && _ui.Button95("wd95mt", new RectangleF(win.X + 8, win.Bottom - 8 - 23, 75, 23), "Mixtape"))
+        {
+            _openMt = true;             // (as the modern view's Mixtape button)
+            _dirty = true;
+        }
         var c = new RectangleF(win.X + 8, win.Y + 27, win.Width - 16, win.Height - 27 - 36);
         var now = DateTime.Now;
         switch (kind)
@@ -655,7 +667,7 @@ public sealed partial class WristPanel
         string[] ids = { "media.prev", "media.play", "media.next" };
         string[][] glyphs = { PrevGlyph, playing ? PauseGlyph : PlayGlyph, NextGlyph };
         for (int j = 0; j < 3; j++)
-            if (_ui.GlyphButton95(Ui.Id("wd95m", j), new RectangleF(lcd.X + j * 32, lcd.Bottom + 6, 30, 20), glyphs[j], has)) OnAction?.Invoke(ids[j]);
+            if (_ui.GlyphButton95(Ui.Id("wd95m", j), new RectangleF(lcd.X + j * 32, lcd.Bottom + 6, 30, 20), glyphs[j], has)) Act(ids[j]);
         Volume95Row(new RectangleF(c.X, box.Bottom + 12, c.Width, 34));
     }
 

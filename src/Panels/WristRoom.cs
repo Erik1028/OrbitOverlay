@@ -244,7 +244,7 @@ public sealed partial class WristPanel
     // ---- --snapshot's hooks ----
 
     public bool DetailShown => _open != null;            // opened, or still shrinking back into its tile
-    public string DetailKind => _open == null ? null : DetailOf(_open.Type);
+    public string DetailKind => _open == null ? null : OpenKindOf(_open.Type);
     public float RoomScroll => _roomScroll;
     public float RoomScrollMax => _roomMax;
 

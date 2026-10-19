@@ -105,7 +105,7 @@ public sealed partial class WristPanel
             g.ToggleFlag(_mPress);
             _mPressDone = true;
             _dirty = true;
-            OnAction?.Invoke("mines.flag");                  // a tick in the laser's hand: the flag is there, let go
+            Act("mines.flag");                  // a tick in the laser's hand: the flag is there, let go
         }
         if (click)
         {
@@ -137,7 +137,7 @@ public sealed partial class WristPanel
         bool changed = _mFlagMode && !g.IsOpen(i) ? g.ToggleFlag(i) : g.Click(i, now);
         if (!changed) return;
         _dirty = true;
-        if (g.State == MinesGame.Phase.Lost) OnAction?.Invoke("mines.boom");
+        if (g.State == MinesGame.Phase.Lost) Act("mines.boom");
         if (g.State != MinesGame.Phase.Won) return;
         // a best time (per board) in the config
         int level = g == _mines[1] ? 1 : 0, s = Math.Max(1, (int)g.Seconds(now));

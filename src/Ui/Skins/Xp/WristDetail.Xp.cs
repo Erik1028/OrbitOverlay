@@ -217,7 +217,7 @@ public sealed partial class WristPanel
             var r = new RectangleF(bx, j == 1 ? pane.Bottom + 13 : pane.Bottom + 15, s, s);
             bool click = _ui.Clickable(Ui.Id("wd95m", j), r, out bool hover, out bool held);
             RoundButtonXp(r, glyphs[j], j == 1, has, hover && has, held && has);
-            if (click && has) OnAction?.Invoke(ids[j]);
+            if (click && has) Act(ids[j]);
             bx += s + 3;
         }
         Volume95Row(new RectangleF(c.X, c.Y + 82, c.Width, 34));

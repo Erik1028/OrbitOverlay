@@ -234,7 +234,7 @@ public sealed partial class WristPanel
         string[][] glyphs = { PrevGlyph, playing ? PauseGlyph : PlayGlyph, NextGlyph };
         float bw = 26, bx = r.Right - 3 * bw - 4;
         for (int i = 0; i < 3; i++)
-            if (TGlyphKey(Ui.Id(idp, i), new RectangleF(bx + i * (bw + 2), r.Y, bw, 18), glyphs[i], has)) OnAction?.Invoke(ids[i]);
+            if (TGlyphKey(Ui.Id(idp, i), new RectangleF(bx + i * (bw + 2), r.Y, bw, 18), glyphs[i], has)) Act(ids[i]);
         float tw = bx - 8 - r.X;
         if (!has) { TCaps("\u266A NOTHING PLAYING", r.X, r.Y + 6, T.DIM); return; }
         string line = T.Up(string.IsNullOrEmpty(artist) ? title : $"{title} - {artist}");
@@ -270,7 +270,7 @@ public sealed partial class WristPanel
         {
             bool on = (i == 0 && d.KeyboardVisible) || (i == 1 && d.DesktopsVisible) || (i == 4 && d.NightMode);
             string word = words[i] ?? T.Up(d.LayoutName ?? "LAYOUT");
-            if (TKey(Ui.Id("wt", i), new RectangleF(x + i * (bw + 2), r.Y, bw, r.Height), $"[F{i + 1}]", on, true, word)) OnAction?.Invoke(ids[i]);
+            if (TKey(Ui.Id("wt", i), new RectangleF(x + i * (bw + 2), r.Y, bw, r.Height), $"[F{i + 1}]", on, true, word)) Act(ids[i]);
         }
     }
 
@@ -411,7 +411,7 @@ public sealed partial class WristPanel
             bool click = w.W >= 2
                 ? TKey(Ui.Id("wcb", id), r, $"[{key}] {wide}", IsOn(k.Id, d))
                 : TKey(Ui.Id("wcb", id), r, $"[{key}]", IsOn(k.Id, d), true, word);
-            if (click) OnAction?.Invoke(k.Id);
+            if (click) Act(k.Id);
             return;
         }
         var c = Tsk.WidgetFrame(_p, r, TTitle(k.Id));
@@ -699,7 +699,7 @@ public sealed partial class WristPanel
             float by = y + 2;
             if (has && tok && dur > 0) TTrack(x, by + 6, (int)((iw - 3 * 28 - 6) / 6) - 2, (float)(pos / dur));
             for (int j = 0; j < 3; j++)
-                if (TGlyphKey(Ui.Id("wcm", id * 3 + j), new RectangleF(c.Right - 3 - (3 - j) * 28 + 2, by, 26, 18), glyphs[j], has)) OnAction?.Invoke(ids[j]);
+                if (TGlyphKey(Ui.Id("wcm", id * 3 + j), new RectangleF(c.Right - 3 - (3 - j) * 28 + 2, by, 26, 18), glyphs[j], has)) Act(ids[j]);
             if (c.Width >= 150 && c.Bottom - (by + 24) >= 30) Volume95Row(new RectangleF(c.X + 4, by + 24, c.Width - 8, 30), Ui.Id("wcv", id));
             return;
         }
@@ -712,7 +712,7 @@ public sealed partial class WristPanel
         for (int j = 0; j < nb; j++)
         {
             int a = nb == 1 ? 1 : j;
-            if (TGlyphKey(Ui.Id("wcm", id * 3 + a), new RectangleF(bx, top + 14, 26, 18), glyphs[a], has)) OnAction?.Invoke(ids[a]);
+            if (TGlyphKey(Ui.Id("wcm", id * 3 + a), new RectangleF(bx, top + 14, 26, 18), glyphs[a], has)) Act(ids[a]);
             bx += 28;
         }
         float rest = c.Right - 3 - bx - 4;
@@ -837,7 +837,7 @@ public sealed partial class WristPanel
             shrt = Lang.T(shrt);
             string label = T.W($"[{key}] {wide}") <= fit ? $"[{key}] {wide}" : T.W(wide) <= fit ? wide : T.W(word) <= fit ? word
                 : T.W(shrt) <= fit ? shrt : key;
-            if (TKey(Ui.Id("wgb", id * 8 + j), b, label, IsOn(kid, d))) OnAction?.Invoke(kid);
+            if (TKey(Ui.Id("wgb", id * 8 + j), b, label, IsOn(kid, d))) Act(kid);
         }
     }
 
@@ -1010,7 +1010,7 @@ public sealed partial class WristPanel
         string[] ids = { "media.prev", "media.play", "media.next" };
         string[][] glyphs = { PrevGlyph, playing ? PauseGlyph : PlayGlyph, NextGlyph };
         for (int j = 0; j < 3; j++)
-            if (TGlyphKey(Ui.Id("wd95m", j), new RectangleF(c.X + j * 34, c.Y + 54, 32, 22), glyphs[j], has)) OnAction?.Invoke(ids[j]);
+            if (TGlyphKey(Ui.Id("wd95m", j), new RectangleF(c.X + j * 34, c.Y + 54, 32, 22), glyphs[j], has)) Act(ids[j]);
         Volume95Row(new RectangleF(c.X, c.Y + 84, c.Width, 34));
     }
 

@@ -8,10 +8,12 @@ using System.Threading;
 
 namespace Orbit;
 
-// ORBIT_SNAP_ONLY=mixtape --snapshot <dir>: the Mixtape widget (Panels/WristMixtape.cs) without Mixtape - a made-up source (MixtapeFake:
-// placeholder songs, albums with drawn covers, playlists, a queue, placeholder synced lines): the cards in every style, the opened view's
-// six tabs (and an album / a playlist opened) in Modern, Cyber and 95, taps that must reach the source (play, a song, the queue's cross,
-// a lyrics line), the layout check of every size.
+// ORBIT_SNAP_ONLY=mixtape --snapshot <dir>: Mixtape in Now playing (Panels/WristMixtape.cs) without Mixtape - a made-up source
+// (MixtapeFake: placeholder songs, albums with drawn covers, playlists, a queue, placeholder synced lines): the Now playing cards on
+// Mixtape's song in every style (their play goes to Mixtape, not the app), opened - Mixtape's player, its six tabs (and an album / a
+// playlist opened) in Modern, Cyber and 95, taps that must reach the source (a song, the queue's cross, a lyrics line); another player
+// playing: the card is its song (the app's command), opened the usual view, its Mixtape button Mixtape's player; Mixtape not running:
+// the usual card; the layout check of every size; an older face's Mixtape widgets merged into Now playing (WatchPages.MergeMixtape).
 public sealed class MixtapeFake : MixtapeSource
 {
     public readonly List<string> Sent = new();
@@ -60,9 +62,11 @@ public sealed class MixtapeFake : MixtapeSource
     // a still: the clock does not move the position (pictures stay the same run to run)
     public void Hold() { var s = State.Copy(); s.Playing = false; State = s; }
 
+    public bool NoCovers;            // the layout check: no covers (as the watch's own check runs Now playing without one)
+
     public override uint[] Cover(string key, int size)
     {
-        if (string.IsNullOrEmpty(key)) return null;
+        if (string.IsNullOrEmpty(key) || NoCovers) return null;
         if (_covers.TryGetValue((key, size), out var px)) return px;
         // a made-up cover: a diagonal two-colour gradient with a ring, the colours from the key
         uint mixed = unchecked((uint)key.Aggregate(17, (x, ch) => x * 31 + ch) * 2654435761u);
@@ -108,7 +112,7 @@ static partial class Tools
         var culture = System.Globalization.CultureInfo.CurrentCulture;
         System.Globalization.CultureInfo.CurrentCulture = SnapCulture;
         var wcfg = cfg.Data.Wrist;
-        var keep = (wcfg.Face, wcfg.Widgets, wcfg.Grid, wcfg.Pages, wcfg.Page, wcfg.Background, wrist.Mixtape);
+        var keep = (wcfg.Face, wcfg.Widgets, wcfg.Grid, wcfg.Pages, wcfg.Page, wcfg.Background, wrist.Mixtape, data.FakeMedia, wrist.OnAction);
         try
         {
             foreach (var (style, tag) in new[] { ("modern", ""), (CyberHud.Id, "_cyber"), ("classic", "_95"), ("xp", "_xp"), ("aero", "_aero"), ("mac", "_mac"), ("terminal", "_term") })
@@ -119,27 +123,31 @@ static partial class Tools
                 var fake = new MixtapeFake();
                 fake.Hold();
                 wrist.Mixtape = fake;
+                data.FakeMedia = (false, null, null, false);        // no other player: Now playing is Mixtape's song
+                string acted = null;
+                wrist.OnAction = a => acted = a;
                 wcfg.Face = "custom";
                 wcfg.Background = "panel";
                 wcfg.Grid = null; wcfg.Pages = null; wcfg.Page = 0;
                 wcfg.Widgets = new List<WatchWidget>
                 {
-                    new() { Type = "mixtape", X = 0, Y = 0, W = 3, H = 2 }, new() { Type = "mixtape", X = 3, Y = 0, W = 3, H = 1 },
-                    new() { Type = "mixtape", X = 3, Y = 1, W = 2, H = 1 }, new() { Type = "time", X = 0, Y = 2, W = 3, H = 2 },
+                    new() { Type = "media", X = 0, Y = 0, W = 4, H = 2 }, new() { Type = "media", X = 4, Y = 0, W = 2, H = 1 },
+                    new() { Type = "time", X = 0, Y = 2, W = 3, H = 2 },
                 };
                 wrist.Settle(); wrist.Draw(data); wrist.Draw(data);
                 wrist.Surf.SavePng(gpu, Path.Combine(dir, $"mixtape_face{tag}.png"));
-                // the card's play: a toggle sent (modern / Cyber: the 3x2's big disc)
-                if (!classic)
-                {
-                    Vector2? p = null;
-                    for (int k = 0; k < 24 && p == null; k++) p = wrist.ControlPoint(data, Ui.Id("wmt", k * 3 + 1));
-                    int n0 = fake.Sent.Count;
-                    if (p is { } pp) MtTap(wrist, data, pp);
-                    Want($"mixtape{tag}: the card's play button sent '{(fake.Sent.Count > n0 ? fake.Last() : "nothing")}' (want toggle)", p != null && fake.Last() == "toggle");
-                }
-                // opened: every tab
-                bool opened = wrist.OpenForTest("mixtape");
+                bool lead = wrist.MixtapeLeadsForTest;
+                // the card's play: a toggle to Mixtape, nothing to the app (the retro styles: when their card has the button)
+                Vector2? p = null;
+                for (int k = 0; k < 24 && p == null; k++) p = wrist.ControlPoint(data, Ui.Id("wcm", k * 3 + 1));
+                int n0 = fake.Sent.Count;
+                if (p is { } pp) MtTap(wrist, data, pp);
+                string toMixtape = fake.Sent.Count > n0 ? fake.Last() : "nothing";
+                Want($"mixtape{tag}: Mixtape's song in Now playing {lead} (want True); the card's play sent '{toMixtape}' to Mixtape, '{acted ?? "nothing"}' to the app " +
+                     $"(want toggle, nothing){(p == null ? " - no play button found" : "")}",
+                    lead && (p == null ? classic : toMixtape == "toggle" && acted == null));
+                // opened: Mixtape's player, every tab
+                bool opened = wrist.OpenForTest("media") && wrist.DetailKind == "mixtape";
                 for (int i = 0; i < 6; i++)
                 {
                     wrist.MixtapeTabForTest(i);
@@ -147,6 +155,7 @@ static partial class Tools
                     wrist.Surf.SavePng(gpu, Path.Combine(dir, $"mixtape_tab{i}{tag}.png"));
                     if (classic) break;                  // (the retro styles: one view)
                 }
+                Want($"mixtape{tag}: Now playing on Mixtape's song opens Mixtape's player {opened} (want True; opened '{wrist.DetailKind}')", opened);
                 if (!classic)
                 {
                     wrist.MixtapeTabForTest(3, openFirst: true);
@@ -172,23 +181,53 @@ static partial class Tools
                     if (line is { } lp) MtTap(wrist, data, lp);
                     string seek = fake.Last();
                     string wantPlay = $"playSongs ids={fake.Library.Songs.Length} start=1";
-                    Want($"mixtape{tag}: opened {opened}; a song tapped sent '{played}' (want {wantPlay}), the queue's cross '{removed}' (want queueRemove index=0), " +
+                    Want($"mixtape{tag}: a song tapped sent '{played}' (want {wantPlay}), the queue's cross '{removed}' (want queueRemove index=0), " +
                          $"a lyrics line '{seek}' (want seek ms=64000)",
-                        opened && played == wantPlay && removed == "queueRemove index=0" && seek == "seek ms=64000");
+                        played == wantPlay && removed == "queueRemove index=0" && seek == "seek ms=64000");
                 }
                 wrist.CloseForTest();
-                // not running: the card and the opened view say so
+                wrist.MixtapeTabForTest(0);
+                fake.Hold();                     // (the card's play above started it: paused again)
+                // another player plays: its song on the card, its play the app's; opened the usual view - and its Mixtape button Mixtape's player
+                data.FakeMedia = (true, "Other Player Song", "Other Player", true);
+                wrist.Settle(); wrist.Draw(data); wrist.Draw(data);
+                wrist.Surf.SavePng(gpu, Path.Combine(dir, $"mixtape_other{tag}.png"));
+                bool other = !wrist.MixtapeLeadsForTest;
+                acted = null;
+                int n1 = fake.Sent.Count;
+                p = null;
+                for (int k = 0; k < 24 && p == null; k++) p = wrist.ControlPoint(data, Ui.Id("wcm", k * 3 + 1));
+                if (p is { } pp2) MtTap(wrist, data, pp2);
+                bool toApp = p == null ? classic : acted == "media.play" && fake.Sent.Count == n1;
+                wrist.OpenForTest("media");
+                for (int f = 0; f < 4; f++) wrist.Draw(data);
+                string k1 = wrist.DetailKind;
+                wrist.Surf.SavePng(gpu, Path.Combine(dir, $"mixtape_other_open{tag}.png"));
+                var sw = wrist.ControlPoint(data, classic ? "wd95mt" : "wdmt");
+                if (sw is { } swp) MtTap(wrist, data, swp);
+                for (int f = 0; f < 4; f++) wrist.Draw(data);
+                string k2 = wrist.DetailKind;
+                // (a style's own window - XP, Aero, Mac, Terminal - has no Mixtape button: the usual view stays)
+                bool own = Theme.Retro is RetroStyle.XP or RetroStyle.Aero or RetroStyle.Mac or RetroStyle.Terminal;
+                Want($"mixtape{tag}: another player playing - Mixtape's song not shown {other} (want True), its play to the app {toApp} (want True), opened '{k1}' (want media), " +
+                     $"its Mixtape button {(sw == null ? "none" : "found")} -> '{k2}' (want {(own ? "media: no button in this style's window" : "mixtape")})",
+                    other && toApp && k1 == "media" && (own ? k2 == "media" : sw != null && k2 == "mixtape"));
+                wrist.CloseForTest();
+                // not running: the usual card (nothing playing)
+                data.FakeMedia = (false, null, null, false);
                 wrist.Mixtape = new MixtapeFake(connected: false);
                 wrist.Settle(); wrist.Draw(data); wrist.Draw(data);
                 wrist.Surf.SavePng(gpu, Path.Combine(dir, $"mixtape_off{tag}.png"));
-                wrist.Mixtape = new MixtapeFake();
+                Want($"mixtape{tag}: Mixtape not running - Now playing its usual self {!wrist.MixtapeLeadsForTest} (want True)", !wrist.MixtapeLeadsForTest);
+                wrist.Mixtape = new MixtapeFake { NoCovers = true };
                 ((MixtapeFake)wrist.Mixtape).Hold();
-                layout += LayoutCheckRun(wrist, data, cfg, painter, gpu, dir, tag.Length > 0 ? tag[1..] : "modern", onlyKind: "mixtape");
+                layout += LayoutCheckRun(wrist, data, cfg, painter, gpu, dir, tag.Length > 0 ? tag[1..] : "modern", onlyKind: "media");
             }
+            MergeCheck(dir);
         }
         finally
         {
-            (wcfg.Face, wcfg.Widgets, wcfg.Grid, wcfg.Pages, wcfg.Page, wcfg.Background, wrist.Mixtape) = keep;
+            (wcfg.Face, wcfg.Widgets, wcfg.Grid, wcfg.Pages, wcfg.Page, wcfg.Background, wrist.Mixtape, data.FakeMedia, wrist.OnAction) = keep;
             wrist.CloseForTest();
             cfg.Data.Appearance = new AppearanceConfig { Clock24h = true };
             Theme.Apply(cfg.Data.Appearance);
@@ -196,6 +235,43 @@ static partial class Tools
         }
         Log.Info("snapshot (mixtape only) written to " + dir);
         return layout > 0 ? 1 : WantsExit(failed0);
+    }
+
+    // an older face's Mixtape widgets: Now playing in their place (one row on 6 x 4 and in a folder), gone beside a Now playing; once
+    static void MergeCheck(string dir)
+    {
+        string md = Path.Combine(dir, "merge");
+        if (Directory.Exists(md)) Directory.Delete(md, true);
+        Directory.CreateDirectory(md);
+        string mp = Path.Combine(md, "config.json");
+        var old = new Config();
+        old.Wrist.Face = "custom";
+        old.Wrist.Widgets = new List<WatchWidget>
+        {
+            new() { Type = "media", X = 0, Y = 2, W = 2, H = 1 }, new() { Type = "mixtape", X = 2, Y = 2, W = 2, H = 1 },
+            new() { Type = "folder", X = 4, Y = 3, W = 1, H = 1, Name = "Music", Children = new List<WatchWidget> { new() { Type = "mixtape", X = 0, Y = 0, W = 3, H = 2 } } },
+        };
+        old.Wrist.Pages = new List<WatchPage>
+        {
+            new() { Grid = "4x3", Widgets = new List<WatchWidget> { new() { Type = "mixtape", X = 0, Y = 0, W = 2, H = 2 } } },
+            new() { Grid = "6x4", Widgets = new List<WatchWidget> { new() { Type = "mixtape", X = 0, Y = 0, W = 3, H = 2 }, new() { Type = "time", X = 3, Y = 0, W = 3, H = 2 } } },
+        };
+        old.Wrist.PagesVersion = 1;
+        old.General.LastVersion = "1.15.1";
+        File.WriteAllText(mp, System.Text.Json.JsonSerializer.Serialize(old));
+        var s1 = new ConfigStore(mp);
+        bool m1 = WatchPages.MergeMixtape(s1);
+        s1.SaveIfDue(force: true);
+        var s2 = new ConfigStore(mp);
+        bool m2 = WatchPages.MergeMixtape(s2);
+        var w = s2.Data.Wrist;
+        static string Desc(List<WatchWidget> l) => string.Join(" ", l.Select(x => x.Children != null ? $"[{Desc(x.Children)}]" : $"{x.Type}{x.W}x{x.H}@{x.X},{x.Y}"));
+        string p1 = Desc(w.Widgets), p2 = Desc(w.Pages[0].Widgets), p3 = Desc(w.Pages[1].Widgets);
+        int baks = Directory.GetFiles(md, "config.json.bak-mixtape-*").Length;
+        Want($"mixtape: an older face merged {m1} (want True), again {m2} (want False); page 1 '{p1}' (want 'media2x1@0,2 [media3x1@0,0]': the Mixtape one beside " +
+             $"Now playing gone, the folder's one row high), the 4 x 3 page '{p2}' (want 'media2x2@0,0'), the 6 x 4 page '{p3}' (want 'media3x1@0,0 time3x2@3,0'), " +
+             $"copies of the config {baks} (want 1)",
+            m1 && !m2 && p1 == "media2x1@0,2 [media3x1@0,0]" && p2 == "media2x2@0,0" && p3 == "media3x1@0,0 time3x2@3,0" && baks == 1);
     }
 
     static void MtTap(WristPanel wrist, PanelData data, Vector2 p)

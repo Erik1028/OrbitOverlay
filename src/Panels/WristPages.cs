@@ -486,7 +486,7 @@ public sealed partial class WristPanel
                 _p.PopRoundedClip();
             }
             else _p.Icon("\uE8D6", new RectangleF(x - 4, r.Y + 12, 44, 44), CoverSub, 32);
-            if (CoverDisc(Ui.Id("wcm", id * 3 + 1), r.Right - 12 - 22, r.Bottom - 12 - 22, 44, play, glyph, has, true)) OnAction?.Invoke(MediaIds[1]);
+            if (CoverDisc(Ui.Id("wcm", id * 3 + 1), r.Right - 12 - 22, r.Bottom - 12 - 22, 44, play, glyph, has, true)) Act(MediaIds[1]);
             float tw = r.Width - 2 * pad - 50;
             if (_art == null && tw > 40)
             {
@@ -511,9 +511,9 @@ public sealed partial class WristPanel
             CapText(Upper(CaptionWidth(CapMedia, tw) >= 0 && _p.MeasureTracked(Upper(CapMedia[0]), CapSize, FontWeight.SemiBold, CapTrack) <= tw ? CapMedia[0] : CapMedia[1]),
                 tx, r.Y + CapBase, tw, CoverCap);
             float bcy = r.Bottom - 14 - 26;
-            if (CoverDisc(Ui.Id("wcm", id * 3), tx + 20, bcy, 40, "\uE892", glyph, has, false)) OnAction?.Invoke(MediaIds[0]);
-            if (CoverDisc(Ui.Id("wcm", id * 3 + 1), tx + 40 + 12 + 26, bcy, 52, play, glyph, has, true)) OnAction?.Invoke(MediaIds[1]);
-            if (CoverDisc(Ui.Id("wcm", id * 3 + 2), tx + 40 + 12 + 52 + 12 + 20, bcy, 40, "\uE893", glyph, has, false)) OnAction?.Invoke(MediaIds[2]);
+            if (CoverDisc(Ui.Id("wcm", id * 3), tx + 20, bcy, 40, "\uE892", glyph, has, false)) Act(MediaIds[0]);
+            if (CoverDisc(Ui.Id("wcm", id * 3 + 1), tx + 40 + 12 + 26, bcy, 52, play, glyph, has, true)) Act(MediaIds[1]);
+            if (CoverDisc(Ui.Id("wcm", id * 3 + 2), tx + 40 + 12 + 52 + 12 + 20, bcy, 40, "\uE893", glyph, has, false)) Act(MediaIds[2]);
             float ty = r.Y + 60;
             if (!has) { TextAt(Ellipsize(NotPlaying, tw, SmallText, FontWeight.SemiBold), tx, ty, tw + 2, CoverSub, SmallText, FontWeight.SemiBold); return; }
             var (l1, l2) = TwoLines(title ?? "", tw, 20, FontWeight.SemiBold);
@@ -531,9 +531,9 @@ public sealed partial class WristPanel
             CoverArt(cover);
             tx = cover.Right + 16;
             float cy = r.Y + r.Height / 2, big = compact ? 48 : 52;
-            if (CoverDisc(Ui.Id("wcm", id * 3 + 2), r.Right - pad - 20, cy, 40, "\uE893", glyph, has, false)) OnAction?.Invoke(MediaIds[2]);
-            if (CoverDisc(Ui.Id("wcm", id * 3 + 1), r.Right - pad - 40 - 10 - big / 2, cy, big, play, glyph, has, true)) OnAction?.Invoke(MediaIds[1]);
-            if (CoverDisc(Ui.Id("wcm", id * 3), r.Right - pad - 40 - 10 - big - 10 - 20, cy, 40, "\uE892", glyph, has, false)) OnAction?.Invoke(MediaIds[0]);
+            if (CoverDisc(Ui.Id("wcm", id * 3 + 2), r.Right - pad - 20, cy, 40, "\uE893", glyph, has, false)) Act(MediaIds[2]);
+            if (CoverDisc(Ui.Id("wcm", id * 3 + 1), r.Right - pad - 40 - 10 - big / 2, cy, big, play, glyph, has, true)) Act(MediaIds[1]);
+            if (CoverDisc(Ui.Id("wcm", id * 3), r.Right - pad - 40 - 10 - big - 10 - 20, cy, 40, "\uE892", glyph, has, false)) Act(MediaIds[0]);
             right = r.Right - pad - 40 - 10 - big - 10 - 40 - 16;
             if (compact) CoverText3(r, tx, right, r.Y + CapBase, r.Y + 52, r.Y + 72, has, title, artist, tok, pos, dur, 18, false);
             else CoverText3(r, tx, right, r.Y + CapBase, r.Y + 72, r.Y + 96, has, title, artist, tok, pos, dur, 22, false);
@@ -549,9 +549,9 @@ public sealed partial class WristPanel
             CapText(Upper(CapMedia[0]), x, r.Y + CapBase, iw, CoverCap);
             CoverArt(cover);
             float bx = cover.Right + (right - cover.Right) / 2, cy = cover.Y + s / 2;
-            if (CoverDisc(Ui.Id("wcm", id * 3 + 1), bx, cy, 56, play, glyph, has, true)) OnAction?.Invoke(MediaIds[1]);
-            if (CoverDisc(Ui.Id("wcm", id * 3), bx - 52, cy, 40, "\uE892", glyph, has, false)) OnAction?.Invoke(MediaIds[0]);
-            if (CoverDisc(Ui.Id("wcm", id * 3 + 2), bx + 52, cy, 40, "\uE893", glyph, has, false)) OnAction?.Invoke(MediaIds[2]);
+            if (CoverDisc(Ui.Id("wcm", id * 3 + 1), bx, cy, 56, play, glyph, has, true)) Act(MediaIds[1]);
+            if (CoverDisc(Ui.Id("wcm", id * 3), bx - 52, cy, 40, "\uE892", glyph, has, false)) Act(MediaIds[0]);
+            if (CoverDisc(Ui.Id("wcm", id * 3 + 2), bx + 52, cy, 40, "\uE893", glyph, has, false)) Act(MediaIds[2]);
             float ty = cover.Bottom + 30;
             if (!has) { TextAt(NotPlaying, x, ty, iw + 2, CoverSub, SmallText, FontWeight.SemiBold); return; }
             var (l1, l2) = TwoLines(title ?? "", iw, 20, FontWeight.SemiBold);
@@ -563,7 +563,7 @@ public sealed partial class WristPanel
         }
         // M: the caption, the title and the artist with where in the track; the white play disc on the right; the line along the bottom
         float disc = compact ? 44 : 48, dcx = r.Right - pad - disc / 2, dcy = compact ? r.Y + r.Height / 2 : r.Y + 70;
-        if (CoverDisc(Ui.Id("wcm", id * 3 + 1), dcx, dcy, disc, play, glyph, has, true)) OnAction?.Invoke(MediaIds[1]);
+        if (CoverDisc(Ui.Id("wcm", id * 3 + 1), dcx, dcy, disc, play, glyph, has, true)) Act(MediaIds[1]);
         right = dcx - disc / 2 - 12;
         if (compact) CoverText3(r, x, right, r.Y + CapBase, r.Y + 52, r.Y + 72, has, title, artist, tok, pos, dur, 18, true);
         else CoverText3(r, x, right, r.Y + CapBase, r.Y + 80, r.Y + 102, has, title, artist, tok, pos, dur, 20, true);
@@ -1100,7 +1100,7 @@ public sealed partial class WristPanel
         }
         else _p.Icon(icon, t, fg, 22);
         if (scaled) _p.PopScale();
-        if (click) OnAction?.Invoke(kid);
+        if (click) Act(kid);
     }
 
     // 95: plain push buttons in a row (a toolbar), the ones that are on pushed in; a tall one in two columns with their names
@@ -1119,7 +1119,7 @@ public sealed partial class WristPanel
             var b = new RectangleF(a.X + j % cols * (bw + 2), y0 + j / cols * (bh + 2), bw, bh);
             var icon = kid == "desktops" && !d.DesktopsVisible ? W95Icons.Id.ComputerOff : k.Icon95;
             string label = bw >= 72 ? Ui.Esc95(Fit(GroupLabel(kid, d), bw - 30)) : null;
-            if (_ui.Button95(Ui.Id("wgb", id * 8 + j), b, label, true, false, IsOn(kid, d), icon)) OnAction?.Invoke(kid);
+            if (_ui.Button95(Ui.Id("wgb", id * 8 + j), b, label, true, false, IsOn(kid, d), icon)) Act(kid);
         }
     }
 }

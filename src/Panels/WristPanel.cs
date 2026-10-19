@@ -429,7 +429,7 @@ public sealed partial class WristPanel : IPointerTarget, IDisposable
             bool click = icons[i] == null
                 ? _ui.Button(Ui.Id("w", i), r, d.LayoutName, null, false, true, d.LayoutName.Length > 5 ? 15 : 17)
                 : _ui.Button(Ui.Id("w", i), r, null, icons[i], on, true, 24);
-            if (click) OnAction?.Invoke(ids[i]);
+            if (click) Act(ids[i]);
         }
     }
 
@@ -472,7 +472,7 @@ public sealed partial class WristPanel : IPointerTarget, IDisposable
         for (int i = 0; i < 3; i++)
         {
             if (_ui.Button("m" + i, new RectangleF(bx + i * 58, 276, 52, 52), null, icons[i], false, has, 20))
-                OnAction?.Invoke(ids[i]);
+                Act(ids[i]);
         }
     }
 

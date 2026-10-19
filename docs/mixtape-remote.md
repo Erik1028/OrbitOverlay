@@ -4,6 +4,10 @@ Erik 10-19: "lehetne egy fullos mixtape overlay mint kinyíló widget - a dallis
 gets a Mixtape widget that opens into a full player: now playing, the Up Next queue, the song list / albums / artists / playlists,
 synced lyrics. Mixtape serves this local API; OrbitOverlay is the client.
 
+The same day: "a mixtape es now playing widgetet ossze kellene olvasztani" - the widget went into Now playing: it shows Mixtape's
+song (its buttons, its cover) while Mixtape plays or is paused with no other player playing, and opens into the full player then; another
+player's song: the usual Now playing, with a Mixtape button to open the player anyway.
+
 ## Transport
 
 - Named pipe `\\.\pipe\Mixtape.Remote.v1`, duplex, message = one UTF-8 JSON object per line (`\n`), no BOM.

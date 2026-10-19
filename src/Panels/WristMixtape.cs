@@ -7,22 +7,22 @@ using Vortice.DirectWrite;
 
 namespace Orbit;
 
-// The Mixtape widget ("mixtape"; Erik 10-19: "lehetne egy fullos mixtape overlay mint kinyíló widget - a dallistám, lyrics, meg minden
-// főbb funkció"). Erik's iPod manager plays the music on the PC; its Remote API (docs/mixtape-remote.md, Sys/MixtapeLink.cs) gives what
-// plays, the Up Next queue, the song list, the albums and playlists, the covers and the lyrics, and takes the buttons.
-// The card: the cover, the song, the artist, a line of how far in, play / pause (bigger: previous and next too).
-// Opened, six tabs in its header: Playing (the cover big, the song, the time line to seek on, shuffle / previous / play / next / repeat,
+// Mixtape in Now playing (Erik 10-19: "lehetne egy fullos mixtape overlay mint kinyíló widget - a dallistám, lyrics, meg minden főbb
+// funkció"; the same day: "a mixtape es now playing widgetet ossze kellene olvasztani" - its own widget went into Now playing).
+// Erik's iPod manager plays the music on the PC; its Remote API (docs/mixtape-remote.md, Sys/MixtapeLink.cs) gives what plays, the Up
+// Next queue, the song list, the albums and playlists, the covers and the lyrics, and takes the buttons.
+// The card is Now playing's own (WristCustom.MediaNow reads Mixtape while it leads - see "in Now playing" below).
+// Opened ("mixtape", the opened kind of Now playing on Mixtape), six tabs in its header: Playing (the cover big, the song, the time line to seek on, shuffle / previous / play / next / repeat,
 // the volume), Up next (the queue: a tap plays that one, the cross takes it out, Clear), Songs (the whole song list: a tap plays it and
 // lines up the ones after it; Shuffle all), Albums (a grid of covers; a tap opens the album: Play, Shuffle, Queue, its songs), Playlists
 // (the library's own; opened like an album) and Lyrics (the playing song's, synced ones follow the song with the line being sung bright
 // - a tap on a line jumps there; the stick scrolls them, the song takes over again 4 s later). The stick scrolls every list; a long list
 // also has a bar on its right to drag.
 // Modern and Cyber draw the same layout in their own colours (Bento's tokens follow the style; Cyber's cover box, brackets, mono
-// labels and the yellow line); the retro styles show the song and its buttons and the queue as a 1995 list (Mixtape95*).
+// labels and the yellow line); the retro styles show the song and its buttons and the queue as a 1995 list (Mixtape95Detail).
 public sealed partial class WristPanel
 {
     public const string MixtapeKindIcon = "";            // Segoe's album: the widget in the palette
-    static readonly string[] CapMixtape = { "Mixtape" };
     const string MtNotRunning = "Mixtape is not running";
 
     public MixtapeSource Mixtape;                               // the app's link (or the tools' made-up one); null: none
@@ -37,7 +37,7 @@ public sealed partial class WristPanel
     double _mtLyricsHandUntil;                                  // the stick scrolled the lyrics: the song does not move them until then
     float _mtLyricsY = float.NaN;
 
-    bool MixtapeOn => C.Face == "custom" && (HasWidget("mixtape") || DetailIs("mixtape"));
+    bool MixtapeOn => C.Face == "custom" && (HasWidget("media") || DetailIs("mixtape"));
 
     // the tools: a tab of the opened view (and its first album / playlist opened)
     public void MixtapeTabForTest(int tab, bool openFirst = false)
@@ -67,7 +67,7 @@ public sealed partial class WristPanel
         if (m == null) return;
         bool open = DetailIs("mixtape");
         m.WantLibrary = open && _mtTab is MtTab.Songs or MtTab.Albums or MtTab.Playlists;
-        m.WantLyrics = open && _mtTab == MtTab.Lyrics || _mtTab == MtTab.Lyrics && HasWidget("mixtape");
+        m.WantLyrics = open && _mtTab == MtTab.Lyrics || _mtTab == MtTab.Lyrics && HasWidget("media");
         if (open && m.State.Playing) AnimWake.At(Clock.Now + 0.25);      // the time line and the lyrics move while it plays
     }
 
@@ -121,85 +121,43 @@ public sealed partial class WristPanel
         else _p.Icon("", box, Sub, MathF.Min(box.Width, box.Height) * 0.36f);
     }
 
-    // ---------------- the card ----------------
+    // ---------------- in Now playing (Erik 10-19: "a mixtape es now playing widgetet ossze kellene olvasztani") ----------------
+    // Now playing shows Mixtape's song when Mixtape plays, or is paused with no other player playing (the Windows media session's
+    // player: a browser, Spotify...); nothing playing anywhere and Mixtape linked: Mixtape too (opened: its library, to start one). Then
+    // the card's buttons are Mixtape's (Act), its cover is Mixtape's (MediaNow), and a tap opens Mixtape's whole player.
+    const int MtCardCover = 128;
+    bool _mtLead;                    // the Now playing drawn last showed Mixtape's song
+    bool _openMt;                    // the Now playing opened is Mixtape's player (chosen as it opened, or by its Mixtape button)
+    bool MixtapeUp => Mixtape is { Status: MixtapeStatus.Connected };
+    public bool MixtapeLeadsForTest => _mtLead;
 
-    void MixtapeOrbit(RectangleF r, WatchWidget w, PanelData d, int id)
+    bool MixtapeLeads(bool has, string title, bool playing)
     {
-        var m = Mixtape;
-        var st = m?.State;
-        bool on = m != null && m.Status == MixtapeStatus.Connected, has = on && st.Track != null;
-        float pad = PadX(r);
-        bool tall = w.H >= 2;
-        float x = r.X + pad;
-        if (r.Width >= 260)                // the cover on a wide card (a narrow one keeps its width for the song)
-        {
-            const float mg = 12;
-            float s = tall ? MathF.Min(r.Height - 2 * mg, r.Width * 0.45f) : r.Height - 2 * mg;
-            if (tall) s = MathF.Min(s, r.Width - 2 * mg - 14 - 170);
-            var cover = new RectangleF(r.X + mg, r.Y + (r.Height - s) / 2, s, s);
-            MtCoverBox(cover, has ? st.Track.Cover : null, s > 140 ? 256 : 128, MathF.Max(10, s * 0.1f));
-            if (Theme.Cyber) CyberHud.Brackets(_p, RectangleF.Inflate(cover, 4, 4), CyY, 10, 0, 2);
-            x = cover.Right + 14;
-        }
-        float right = r.Right - pad;
-        if (has)
-        {
-            // previous / play / next under the text on a tall card, play alone on the right of a wide one
-            string playIcon = st.Playing ? PauseFill : PlayFill;
-            if (tall)
-            {
-                const float big = 52, sm = 44, gap = 10;
-                float by = r.Bottom - 12 - big;
-                if (Press(Ui.Id("wmt", id * 3), new RectangleF(x, by + (big - sm) / 2, sm, sm), "", null, false, true, 18, true)) m.Prev();
-                if (Press(Ui.Id("wmt", id * 3 + 1), new RectangleF(x + sm + gap, by, big, big), playIcon, null, true, true, 20, true)) m.Toggle();
-                if (Press(Ui.Id("wmt", id * 3 + 2), new RectangleF(x + sm + gap + big + gap, by + (big - sm) / 2, sm, sm), "", null, false, true, 18, true))
-                    m.Next();
-            }
-            else
-            {
-                const float big = 48;
-                float bx = r.Right - 12 - big;
-                if (Press(Ui.Id("wmt", id * 3 + 1), new RectangleF(bx, r.Y + (r.Height - big) / 2, big, big), playIcon, null, true, true, 20, true)) m.Toggle();
-                right = bx - 10;
-            }
-        }
-        float tw = right - x;
-        if (tw < 40) return;
-        CaptionRow(r, x, right, null, Bento.Cap, CapMixtape);
-        if (!has)
-        {
-            string why = m == null || !on ? MtNotRunning : NotPlaying;
-            TextAt(Ellipsize(why, tw, SmallText, FontWeight.SemiBold), x, r.Y + 56, tw + 2, Sub, SmallText, FontWeight.SemiBold);
-            return;
-        }
-        var t = st.Track;
-        float ty = r.Y + 54;
-        if (tall)
-        {
-            var (l1, l2) = TwoLines(t.Title, tw, 21, FontWeight.SemiBold);
-            TextAt(l1, x, r.Y + 58, tw + 2, Bento.Text, 21, FontWeight.SemiBold);
-            if (l2.Length > 0) TextAt(l2, x, r.Y + 84, tw + 2, Bento.Text, 21, FontWeight.SemiBold);
-            ty = r.Y + (l2.Length > 0 ? 110 : 84);
-            TextAt(Ellipsize(t.Artist, tw, SmallText, FontWeight.SemiBold), x, ty, tw + 2, Sub, SmallText, FontWeight.SemiBold);
-            MtLine(new RectangleF(x, ty + 12, tw, 4), st);
-            return;
-        }
-        TextAt(Ellipsize(t.Title, tw, SmallText, FontWeight.SemiBold), x, r.Y + 50, tw + 2, Bento.Text, SmallText, FontWeight.SemiBold);
-        if (r.Height >= 90)
-        {
-            TextAt(Ellipsize(t.Artist, tw, SmallText, FontWeight.SemiBold), x, r.Y + 72, tw + 2, Sub, SmallText, FontWeight.SemiBold);
-            MtLine(new RectangleF(x, r.Y + 80, tw, 3), st);
-        }
+        if (!MixtapeUp) return false;
+        var st = Mixtape.State;
+        if (st.Track != null && st.Playing) return true;
+        if (playing && !(st.Track != null && title == st.Track.Title)) return false;     // another player plays (Mixtape's own session: its song)
+        return st.Track != null || !has;
     }
 
-    // how far into the song: a thin line (Cyber: yellow, with its tick)
-    void MtLine(RectangleF bar, MixtapeState st)
+    // the opened view of a widget's kind: Now playing opened on Mixtape - Mixtape's player
+    string OpenKindOf(string type)
     {
-        if (st.Track == null || st.Track.DurationMs <= 0) return;
-        double f = st.PositionNow(Clock.Now) / (double)st.Track.DurationMs;
-        if (Theme.Cyber) { CyProgress(bar, f); return; }
-        _p.Fill(bar, Bento.Track, bar.Height / 2);
-        _p.Fill(new RectangleF(bar.X, bar.Y, MathF.Max(bar.Height, bar.Width * (float)Math.Clamp(f, 0, 1)), bar.Height), Bento.Accent, bar.Height / 2);
+        string k = DetailOf(type);
+        return k == "media" && _openMt && MixtapeUp ? "mixtape" : k;
+    }
+
+    // every button of the watch reaches the app through here (OrbitApp.WristAction); Now playing's three go to Mixtape while it shows
+    // Mixtape's song
+    void Act(string id)
+    {
+        if (id is "media.prev" or "media.play" or "media.next" && _mtLead && Mixtape is { Status: MixtapeStatus.Connected } m)
+        {
+            if (id == "media.play") m.Toggle(); else if (id == "media.next") m.Next(); else m.Prev();
+            _dirty = true;
+            return;
+        }
+        OnAction?.Invoke(id);
     }
 
     // ---------------- opened ----------------
@@ -570,21 +528,7 @@ public sealed partial class WristPanel
         _p.PopClip();
     }
 
-    // ================= the retro styles: the song, its buttons; opened, the queue as a list =================
-
-    void Mixtape95(RectangleF r, RectangleF c, WatchWidget w, int id)
-    {
-        var m = Mixtape;
-        var st = m?.State;
-        if (m == null || m.Status != MixtapeStatus.Connected) { _ui.Text95(Fit(MtNotRunning, c.Width - 4), c, Gry95, false, TextAlignment.Center); return; }
-        if (st.Track == null) { _ui.Text95(Fit(NotPlaying, c.Width - 4), c, Gry95, false, TextAlignment.Center); return; }
-        float bw = 22;
-        var b = new RectangleF(c.Right - bw - 2, c.Y + (c.Height - 18) / 2, bw, 18);
-        if (_ui.Button95(Ui.Id("wmt95", id), b, st.Playing ? "||" : ">")) m.Toggle();
-        float tw = b.X - c.X - 6;
-        _ui.Text95(Fit(st.Track.Title, tw, Ui.F95, true), new RectangleF(c.X + 2, c.Y + 2, tw, 13), Blk95, true);
-        if (c.Height >= 30) _ui.Text95(Fit(st.Track.Artist, tw), new RectangleF(c.X + 2, c.Y + 16, tw, 13), Gry95);
-    }
+    // ================= the retro styles opened: the song, its buttons, the queue as a list =================
 
     void Mixtape95Detail(RectangleF c)
     {

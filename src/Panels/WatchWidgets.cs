@@ -42,6 +42,8 @@ public static class WatchWidgets
         new("session", "Time in VR", "Session", "", W95Icons.Id.Computer, Stat, Tone: 1),
         // what is going on
         new("battery", "Batteries", "Power Meter", "", W95Icons.Id.Computer, new[] { (1, 1), (2, 1), (2, 2), (3, 2) }, 2, Tone: 3),
+        // (Mixtape linked: its song, its buttons, and opened its whole player - the queue, the song list, albums, playlists, lyrics; the
+        // Mixtape widget merged into it, Erik 10-19: WristMixtape.cs)
         new("media", "Now playing", "CD Player", "", W95Icons.Id.Note, new[] { (2, 1), (3, 1), (4, 1), (6, 1), (4, 2), (6, 2) }, 2, Tone: 1),
         new("volume", "Volume", "Volume Control", "", W95Icons.Id.Note, new[] { (1, 1), (2, 1), (3, 1) }, 1, Tone: 2),
         new("perf", "Performance", "Performance", "", W95Icons.Id.Computer, new[] { (4, 1), (6, 1) }, 1, Tone: 0),
@@ -98,9 +100,6 @@ public static class WatchWidgets
         // VRChat: buttons for the avatar worn, made from its OSC config; a tap sends the parameter over OSC (Erik 10-18; Sys/AvatarToggles.cs,
         // WristAvatar.cs); a tap on its header opens all of them
         new("avatar", "Avatar toggles", "Avatar", WristPanel.AvatarKindIcon, W95Icons.Id.People, new[] { (1, 1), (2, 1), (3, 1), (2, 2), (3, 2) }, 1),
-        // Mixtape (Erik's iPod manager) through its Remote API: what plays, with its buttons; a tap opens the whole player - the queue, the
-        // song list, albums, playlists, lyrics (Sys/MixtapeLink.cs, WristMixtape.cs; Erik 10-19)
-        new("mixtape", "Mixtape", "Mixtape", WristPanel.MixtapeKindIcon, W95Icons.Id.Note, new[] { (2, 1), (3, 1), (2, 2), (3, 2) }, 1),
     };
 
     // what the editor offers: the dock only when Hexpad is there (set by the app)
@@ -118,7 +117,7 @@ public static class WatchWidgets
     {
         "time" or "date" or "calendar" or "analog" or "timer" or "stopwatch" or "session" => 0,
         "perf" or "graph" or "fps" or "reproj" or "gpu" or "vram" or "cpu" or "ram" or "battery" or "temps" => 1,
-        "media" or "volume" or "mixer" or "mic" or "mixtape" => 2,
+        "media" or "volume" or "mixer" or "mic" => 2,
         "room" or "notifications" or "status" or "friends" or "recap" or "photo" or "memory" or "avatar" => 3,
         "keyboard" or "desktops" or "recenter" or "layout" or "night" or "settings" or "theater" or "buttons" or "dock" or "light" or "rgb" => 4,
         _ => 5,
@@ -422,7 +421,6 @@ public static class WatchWidgets
         ["light"] = new[] { M, S, L }, ["rgb"] = new[] { M, S, L },
         ["memory"] = new[] { M, S, L }, ["temps"] = new[] { M, S, L },
         ["avatar"] = new[] { M, S, L, Wd },
-        ["mixtape"] = new[] { M, L, Wd },
     };
     static readonly Dictionary<string, (int W, int H)[]> _derived43 = new();
 
@@ -618,6 +616,54 @@ public static class WatchPages
             Log.Info($"pages: the VRChat and Performance pages added after page {Count(w) - 2} (a copy of the config: {bak})");
         }
         w.PagesVersion = 1;
+        store.MarkDirty();
+        return true;
+    }
+
+    // Erik 10-19: "a mixtape es now playing widgetet ossze kellene olvasztani" - the Mixtape widget went into Now playing (it shows
+    // Mixtape's song and opens its whole player while Mixtape plays: WristMixtape.cs). A face from before: each Mixtape widget becomes a
+    // Now playing one in its place (one row high on the 6 x 4 grid and in a folder: Now playing has no 2 x 2 / 3 x 2 there), or goes
+    // when its page (its folder) has a Now playing already. A copy of config.json first (config.json.bak-mixtape-<time>); a face with
+    // none: nothing (so it runs once).
+    public static bool MergeMixtape(ConfigStore store)
+    {
+        var w = store.Data.Wrist;
+        static bool Has(List<WatchWidget> l) => l != null && l.Exists(x => x?.Type == "mixtape" || Has(x?.Children));
+        bool any = false;
+        for (int i = 0; i < Count(w); i++) any |= Has(Widgets(w, i));
+        if (!any) return false;
+        if (!store.Fresh)
+        {
+            string bak = store.Path + $".bak-mixtape-{DateTime.Now:yyyyMMdd-HHmmss}";
+            try
+            {
+                if (System.IO.File.Exists(store.Path)) System.IO.File.Copy(store.Path, bak, false);
+            }
+            catch (Exception e)
+            {
+                Log.Warn($"mixtape: no copy of the config ({e.Message}) - the Mixtape widgets wait for the next start");
+                return false;
+            }
+        }
+        int turned = 0, dropped = 0;
+        void Merge(List<WatchWidget> l, bool g43)
+        {
+            if (l == null) return;
+            bool media = l.Exists(x => x?.Type == "media");
+            for (int j = l.Count - 1; j >= 0; j--)
+            {
+                var x = l[j];
+                if (x?.Children != null) Merge(x.Children, false);
+                if (x?.Type != "mixtape") continue;
+                if (media) { l.RemoveAt(j); dropped++; continue; }
+                x.Type = "media";
+                if (!g43) x.H = 1;          // (2 x 1, 3 x 1; the 4 x 3 grid's M / L / Wd are Now playing sizes too)
+                media = true;               // a second one on the same page: this is its Now playing now
+                turned++;
+            }
+        }
+        for (int i = 0; i < Count(w); i++) Merge(Widgets(w, i), GridId(w, i) == "4x3");
+        Log.Info($"mixtape: the Mixtape widget merged into Now playing - {turned} turned into Now playing, {dropped} gone (a Now playing beside it)");
         store.MarkDirty();
         return true;
     }

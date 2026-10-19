@@ -232,7 +232,7 @@ public sealed partial class WristPanel
         for (int i = 0; i < 3; i++)
         {
             var b = new RectangleF(tx + i * 30, r.Y + 30, 28, 18);
-            if (_ui.GlyphButton95(Ui.Id("wm", i), b, glyphs[i], has)) OnAction?.Invoke(MediaIds[i]);
+            if (_ui.GlyphButton95(Ui.Id("wm", i), b, glyphs[i], has)) Act(MediaIds[i]);
         }
     }
 
@@ -282,7 +282,7 @@ public sealed partial class WristPanel
             bool click = icons[i] is { } ic
                 ? _ui.Button95(Ui.Id("wt", i), r, null, true, false, on, ic)
                 : _ui.Button95(Ui.Id("wt", i), r, Ui.Esc95(Fit(d.LayoutName, bw - 6)), true, false, false);
-            if (click) OnAction?.Invoke(ids[i]);
+            if (click) Act(ids[i]);
         }
     }
 
