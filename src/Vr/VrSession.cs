@@ -243,13 +243,25 @@ public sealed class VrSession : IDisposable
                 _in.GetPoseActionDataRelativeToNow(_pointer[h], ETrackingUniverseOrigin.TrackingUniverseStanding, _predict, ref pose,
                     (uint)Marshal.SizeOf<InputPoseActionData_t>(), 0);
                 hs.PoseValid = pose.bActive && pose.pose.bPoseIsValid;
-                if (hs.PoseValid) hs.Aim = MathUtil.FromHmd(pose.pose.mDeviceToAbsoluteTracking);
+                uint di = h == 0 ? LeftIndex : RightIndex;
+                if (hs.PoseValid)
+                {
+                    hs.Aim = MathUtil.FromHmd(pose.pose.mDeviceToAbsoluteTracking);
+                    // the tip's place on the controller (its offset from the raw pose), for a frame the tip pose is missing
+                    if (di < Device.Length && DeviceValid[di] && Matrix4x4.Invert(Device[di], out var inv)) { _aimOff[h] = hs.Aim * inv; _aimOffOk[h] = true; }
+                }
                 else
                 {
-                    // controller without a binding for the tip pose: aim with its raw pose
-                    uint idx = h == 0 ? LeftIndex : RightIndex;
-                    hs.PoseValid = idx < Device.Length && DeviceValid[idx];
-                    if (hs.PoseValid) hs.Aim = Device[idx];
+                    // no tip pose this frame: the raw pose, turned by the tip's offset from it as last seen, so the beam points where the tip
+                    // did (Erik 10-19, the laser trace: with Virtual Desktop's controllers the tip pose dropped out about 3 times a second
+                    // and the raw pose - 10-17 deg off it - threw the beam up onto the screen for a frame); a controller without a binding
+                    // for the tip pose (never seen): its raw pose
+                    hs.PoseValid = di < Device.Length && DeviceValid[di];
+                    if (hs.PoseValid)
+                    {
+                        hs.Aim = _aimOffOk[h] ? _aimOff[h] * Device[di] : Device[di];
+                        AimFallbacks[h]++;
+                    }
                 }
                 hs.Click = Digital(_click[h]);
                 hs.Grab = Digital(_grab[h]);
@@ -271,6 +283,10 @@ public sealed class VrSession : IDisposable
             }
         }
     }
+
+    readonly Matrix4x4[] _aimOff = new Matrix4x4[2];
+    readonly bool[] _aimOffOk = new bool[2];
+    public readonly int[] AimFallbacks = new int[2];     // frames a hand's tip pose was missing (the perf log's "show:" line)
 
     bool Digital(ulong action)
     {

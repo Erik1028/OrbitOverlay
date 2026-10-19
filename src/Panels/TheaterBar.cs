@@ -78,6 +78,8 @@ public sealed partial class TheaterBar : IPointerTarget, IDisposable
 
     // choices: the screens theater mode can switch to, in bar order; pointed: the monitor / window a laser is on (null:
     // none) and lower: on the lower part of it; onBar: a laser is on the bar
+    public static string TraceState = "";        // (Laser.Trace)
+
     public void Update(VrSession vr, double now, float dt, Theater theater, List<ITheaterScreen> choices,
         ITheaterScreen pointed, bool lower, bool onBar)
     {
@@ -121,6 +123,7 @@ public sealed partial class TheaterBar : IPointerTarget, IDisposable
         _vis = Motion.Step(_vis, show, dt, 0.18f);                       // Look > Motion off: at once
         if (_vis <= 0 || _target == null)
         {
+            if (Laser.Trace) TraceState = "bar hidden";
             Cancel();
             if (!th) _target = null;
             Ov.Hide();
@@ -165,6 +168,8 @@ public sealed partial class TheaterBar : IPointerTarget, IDisposable
         }
         Ov.SetAbsolute(_world);
         Ov.SetAlpha(e);
+        if (Laser.Trace) TraceState = $"bar vis {_vis:0.00} at y {_world.M42:0.000} z {_world.M43:0.000} under {(_target is DesktopPanel dp ? dp.Mon.Name : _target?.GetType().Name)} " +
+            $"(drawn y {_target?.WorldTransform.M42:0.000}, w {_target?.Overlay?.Width:0.000}), shown till {_showUntil - now:0.00} s";
         // a style's opening / closing (the Mac's Control Strip sliding) shows on every frame of the fade
         if (_dirty || _ui.Animating || now >= _wake || (_vis < 1 && Theme.RetroSkin.AnimatesFade))
         {

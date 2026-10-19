@@ -333,7 +333,7 @@ public sealed class Laser : IDisposable
         Spikes.Mark(Spikes.Rays);
         if (best != _hover)
         {
-            FlapNote(best, bestUv, hs.Click);
+            FlapNote(best, bestUv, hs.Click, o, d);
             _hover?.PointerLeave(_hand);
             _hover = best;
             if (best != null && haptics && !_eyeOn) vr.Haptic(_hand, 0.12f);     // (the eyes crossing monitors: no ticks)
@@ -580,8 +580,20 @@ public sealed class Laser : IDisposable
     int _flipN;
     double _flipLogged = -10;
 
-    void FlapNote(IPointerTarget to, Vector2 uv, bool click)
+    // a trace of every change while the file "trace-laser" is in Orbit's config folder (OrbitApp checks it once a second): the ray,
+    // where the panel is drawn, the theater bar's state - to watch a reproduction live
+    public static bool Trace;
+    public static Func<string> TraceMore;
+
+    void FlapNote(IPointerTarget to, Vector2 uv, bool click, Vector3 o, Vector3 d)
     {
+        if (Trace)
+        {
+            string where = to == null ? "" : $" uv {uv.X:0.00},{uv.Y:0.00} at ({to.WorldTransform.M41:0.000},{to.WorldTransform.M42:0.000},{to.WorldTransform.M43:0.000})" +
+                (to.Overlay != null ? $" a {to.Overlay.Alpha:0.00} w {to.Overlay.Width:0.000}" : "");
+            float yaw = MathF.Atan2(d.X, -d.Z) * 180 / MathF.PI, pitch = MathF.Asin(Math.Clamp(d.Y, -1, 1)) * 180 / MathF.PI;
+            Log.Info($"laser trace ({_hand}): -> {(to == null ? "nothing" : Name(to))}{where} | ray from y {o.Y:0.000} yaw {yaw:0.0} pitch {pitch:0.0}, trigger {(click ? "held" : "up")} | {TraceMore?.Invoke()}");
+        }
         int i = _flipN++ % _flipAt.Length;
         _flipAt[i] = _clock;
         _flipWhat[i] = to == null ? "nothing" : $"{Name(to)} {uv.X:0.00},{uv.Y:0.00}";

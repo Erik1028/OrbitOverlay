@@ -469,7 +469,9 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         int loops = Math.Max(1, _perfFrames);
         string s = $"show: dashboard open {100.0 * _dashLoops / loops:0}%, compositor reprojected {_reproDelta / secs:0}/s dropped {_dropDelta / secs:0}/s, " +
                    $"loop woke late p99 {p99:0.0} max {max:0.0} ms, monitors shown {shown} with {newCaps / secs:0} new pictures/s, " +
-                   $"textures to SteamVR {newTex / secs:0}/s, GPU priority high {100.0 * _prioLoops / loops:0}%";
+                   $"textures to SteamVR {newTex / secs:0}/s, GPU priority high {100.0 * _prioLoops / loops:0}%, " +
+                   $"tip pose missing L {_vr.AimFallbacks[0] / secs:0.0}/s R {_vr.AimFallbacks[1] / secs:0.0}/s";
+        _vr.AimFallbacks[0] = _vr.AimFallbacks[1] = 0;
         _capMark = caps; _texMark = tex; _lateN = 0; _dashLoops = _prioLoops = 0;
         return s;
     }
@@ -727,6 +729,15 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         _lumos.Active = C.Wrist.Face == "custom" && WatchPages.Any(C.Wrist, "light") || LightAutoWanted;
         _lumos.Watched = _wrist?.Alpha > 0.02f;
         _lightAuto.Tick(now, C.Lights, _lumos, _vr.Connected, SteamVrJustStarted, _theater.On, CoverNow);     // the bulb with VR (Sys/LightAuto.cs)
+        if (now >= _traceCheckAt)
+        {
+            // the laser's live trace (Vr/Laser.cs FlapNote): on while the file "trace-laser" is in the config folder
+            _traceCheckAt = now + 1;
+            bool tr = File.Exists(Path.Combine(Path.GetDirectoryName(_cfg.Path) ?? "", "trace-laser"));
+            if (tr != Laser.Trace) Log.Info($"laser trace {(tr ? "on" : "off")}");
+            Laser.Trace = tr;
+            Laser.TraceMore ??= () => TheaterBar.TraceState + (_barLowSince >= 0 ? $" | low on the screen for {Clock.Now - _barLowSince:0.00} s" : "");
+        }
         _prisma.Active = C.Wrist.Face == "custom" && WatchPages.Any(C.Wrist, "rgb");
         // Mixtape: linked while a page has Now playing (Mixtape's song and player in it) and SteamVR runs (or the settings preview shows
         // it), faster while the watch shows it
@@ -1298,6 +1309,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         _theaterBar.Update(_vr, now, dt, _theater, _theaterChoices, pointed, lower, onBar);
     }
 
+    double _traceCheckAt;
     const float BarLow = 0.85f;              // the part of the middle screen that opens the bar: its bottom 15 % (it was 28 %)
     const double BarDwell = 0.4;             // ... the laser kept there this long
     double _barLowSince = -1;
