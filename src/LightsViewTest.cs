@@ -306,11 +306,14 @@ static class LightsViewTools
             if (Environment.GetEnvironmentVariable("ORBIT_PERF_TYPES") == "1") Tools.SocialAllocTypes("lights none" + tag, () => wrist.Draw(data));
             Tools.Want($"lights view{tag}: a frame of every size at rest makes {rest} B of garbage (want 0), without the apps {none} B (want 0)", rest == 0 && none == 0);
             // the pictures
-            void Shot(string name, List<WatchWidget> face, LampState l, RgbState r, string open = null, string grid = null)
+            void Shot(string name, List<WatchWidget> face, LampState l, RgbState r, string open = null, string grid = null, bool paged = false)
             {
                 Fake(data, l, r);
                 wcfg.Grid = grid;
                 wcfg.Widgets = face;
+                // (a face of more pages: its grid leaves room for the page dots / taskbar - the cards are shorter: Erik 10-20, the Cyber
+                // light's power button over its bar)
+                wcfg.Pages = paged ? new List<WatchPage> { new() { Grid = grid ?? "6x4" } } : null;
                 wrist.Settle();
                 if (open != null && !wrist.OpenForTest(open)) Log.Warn("lights view: nothing to open: " + open);
                 wrist.Draw(data); wrist.Draw(data);
@@ -327,8 +330,11 @@ static class LightsViewTools
             Shot("light_open", Face64(), null, null, "light");
             Shot("rgb_open", Face64(), null, RgbOn("Static"), "rgb");
             Shot("none_open", Face64(), new LampState { Status = LinkStatus.NoDevice }, null, "light");
+            Shot("face_paged", Face64(), null, null, paged: true);
+            Shot("face43_paged", Face43(), null, RgbOn("Static"), null, "4x3", paged: true);
             wcfg.Grid = null;
-            Log.Info($"lights view{tag}: 8 pictures (wrist_lights_*{tag}.png)");
+            wcfg.Pages = null;
+            Log.Info($"lights view{tag}: 10 pictures (wrist_lights_*{tag}.png)");
         }
         finally
         {

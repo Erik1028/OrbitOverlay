@@ -241,6 +241,8 @@ public sealed partial class WristPanel
         if (w.H >= 2 && !t.Ready) { LxNone(r, t.Icon, t.Msg, t.Hint); return; }
         // the power button, the brightness beside it
         float bs = _big ? 54 : 36, top = r.Y + 38;           // (under a header look's band)
+        // one row: the buttons keep 6 px above the bar - a face of more pages has shorter cards, and they ran into it (Erik 10-20)
+        if (w.H == 1) bs = Math.Clamp(r.Bottom - 15 - (_big ? 4 : 0) - KnobR - 6 - top, 26, bs);
         var disc = new RectangleF(x, top, bs, bs);
         if (Press(Ui.Id("wlp", id), disc, PowerGlyph, null, t.On, t.Ready || t.CanWake, _big ? 22 : 18, true, accentFill: false, fill: t.Glow))
         { lamp?.Toggle(); _dirty = true; }
@@ -300,7 +302,10 @@ public sealed partial class WristPanel
         CaptionRow(r, t.Ready ? t.Name : null, CapRgb, noteShort: t.NameShort);
         if (w.H >= 2 && !t.Ready) { LxNone(r, "", t.Msg, t.Hint); return; }
         // the four quick effects
-        float cs = _big ? 50 : 36, top = r.Y + 38, gap = (iw - 4 * cs) / 3;     // (under a header look's band)
+        float cs = _big ? 50 : 36, top = r.Y + 38;     // (under a header look's band)
+        // one row: the buttons keep 6 px above the bar - a face of more pages has shorter cards, and they ran into it (Erik 10-20)
+        if (w.H == 1) cs = Math.Clamp(r.Bottom - 15 - (_big ? 4 : 0) - KnobR - 6 - top, 24, cs);
+        float gap = (iw - 4 * cs) / 3;
         for (int i = 0; i < 4; i++)
         {
             var b = new RectangleF(x + i * (cs + gap), top, cs, cs);
@@ -648,6 +653,8 @@ public sealed partial class WristPanel
         }
         if (w.H >= 2 && !t.Ready) { CyLxNone(r, t.Msg, t.Hint); return; }
         float bs = _big ? 54 : 42, top = r.Y + (_big ? 38 : 31);
+        // one row: the buttons keep 6 px above the bar - a face of more pages has shorter cards, and they ran into it (Erik 10-20)
+        if (w.H == 1) bs = Math.Clamp(r.Bottom - 16 - (_big ? 4 : 0) - 4 - 6 - top, 26, bs);
         var sq = new RectangleF(x, top, bs, bs);
         if (Press(Ui.Id("wlp", id), sq, PowerGlyph, null, t.On, t.Ready || t.CanWake, _big ? 22 : 18)) { lamp?.Toggle(); _dirty = true; }
         float vx = sq.Right + 12;
@@ -702,7 +709,10 @@ public sealed partial class WristPanel
             return;
         }
         if (w.H >= 2 && !t.Ready) { CyLxNone(r, t.Msg, t.Hint); return; }
-        float cs = _big ? 50 : 40, top = r.Y + (_big ? 38 : 31), gap = (iw - 4 * cs) / 3;
+        float cs = _big ? 50 : 40, top = r.Y + (_big ? 38 : 31);
+        // one row: the buttons keep 6 px above the bar - a face of more pages has shorter cards, and they ran into it (Erik 10-20)
+        if (w.H == 1) cs = Math.Clamp(r.Bottom - 16 - (_big ? 4 : 0) - 4 - 6 - top, 24, cs);
+        float gap = (iw - 4 * cs) / 3;
         for (int i = 0; i < 4; i++)
         {
             var b = new RectangleF(x + i * (cs + gap), top, cs, cs);
