@@ -116,9 +116,7 @@ public sealed class DesktopPanel : ITheaterScreen, IDisposable
         bool warm = !want && TheaterHidden && _cap != null && !_cap.Closed;
         if (want && _staleTex && _cap != null && !_cap.Closed) Hand();       // shown again: the picture taken meanwhile, at once
         if (!(want || warm) || !CaptureDue(ref _nextFrame, now, want ? EffectiveFps(vr, fps) : 3)) return;
-        f0 = System.Diagnostics.Stopwatch.GetTimestamp();
-        bool got = _cap.Poll();
-        Spikes.Piece("monitor: capture poll", f0);
+        bool got = _cap.Poll();         // (its own pieces: capture: next frame / copy / frame back to Windows - Capture/MonitorCapture.cs)
         if (got)
         {
             // hidden it is only kept fresh: SteamVR gets it once it shows (it copied every one of those 3 a second for nothing)

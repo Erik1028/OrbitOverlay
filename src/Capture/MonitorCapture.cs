@@ -183,6 +183,7 @@ public sealed unsafe class MonitorCapture : IDisposable
             Spikes.Piece("capture: next frame", p0);
             if (last == IntPtr.Zero) return false;
 
+            long s0 = System.Diagnostics.Stopwatch.GetTimestamp();
             var fv = *(IntPtr**)last;
             Windows.Graphics.SizeInt32 cs;
             Marshal.ThrowExceptionForHR(((delegate* unmanaged[Stdcall]<IntPtr, Windows.Graphics.SizeInt32*, int>)fv[8])(last, &cs));
@@ -198,9 +199,12 @@ public sealed unsafe class MonitorCapture : IDisposable
                 return false;
             }
 
+            Spikes.Piece("capture: frame size", s0);
             long c0 = System.Diagnostics.Stopwatch.GetTimestamp();
             Marshal.ThrowExceptionForHR(((delegate* unmanaged[Stdcall]<IntPtr, IntPtr*, int>)fv[6])(last, &surface));
             IntPtr texPtr = TexturePointer(surface);
+            Spikes.Piece("capture: the frame's texture", c0);
+            c0 = System.Diagnostics.Stopwatch.GetTimestamp();
             _frameTex ??= new ID3D11Texture2D(IntPtr.Zero);
             _frameTex.NativePointer = texPtr;
             try
