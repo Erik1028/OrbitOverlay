@@ -1486,6 +1486,9 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         foreach (var d in deskChanged) SetDesktopOverlay(d);
         foreach (var w in winChanged) SetWindowEnabled(w, w.Enabled);
         C.Appearance.NightMode = p.NightMode;
+        // the focus rows made afresh from the new layout, as turning focus mode off and on did (Erik 10-21: after a switch to Bed the
+        // row stayed at its saved sizes with focus on - "ha ki és be kapcsolom a focus módot akkor megjavul")
+        _gazeFocus?.Restart();
     }
 
     // The current arrangement is kept in the profile you leave; the new one is put back as it was.

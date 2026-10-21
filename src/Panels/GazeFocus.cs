@@ -119,6 +119,7 @@ public sealed class GazeFocus
         bool othersChanged = others != _others;
         _others = others;
         if (on && Stale()) Rebuild();                                          // off: the rows only ease back to the saved layout and let go
+        Diag(now, on);
         // a hand holds a monitor (any of them, not the theater screen): every row at its saved sizes meanwhile - the snap into a row
         // and the join go by the saved layout, so that is what you see while you arrange things
         bool grab = false;
@@ -131,6 +132,7 @@ public sealed class GazeFocus
             Step(row, vr, now, dt, on, grab, othersChanged, theater || hold, laserA as DesktopPanel, laserB as DesktopPanel);
             if ((!on || row.Leaving) && row.T >= 1)                              // back at its saved layout: let go of the row
             {
+                if (!row.Leaving) Log.Info($"focus: row {Short(row.Group)} let go (focus mode off)");
                 Release(row);
                 _rows.RemoveAt(i);
                 if (!row.Leaving) _memberCount -= row.Members.Count;
@@ -226,6 +228,17 @@ public sealed class GazeFocus
         }
         _rows.Clear();
         _memberCount = 0;
+        {
+            var sb = new System.Text.StringBuilder($"focus: rows built again (#{Rebuilds}) -");
+            foreach (var row in fresh)
+            {
+                sb.Append($" row {Short(row.Group)}{(row.Leaving ? " (leaving)" : "")}:");
+                foreach (var m in row.Members) sb.Append(' ').Append(m.Panel.Mon.Name);
+                sb.Append(';');
+            }
+            foreach (var p in _panels) if (!IsMember(p) || Siblings(p) < 2) sb.Append($" {p.Mon.Name}: {Why(p)};");
+            Log.Info(sb.ToString());
+        }
         foreach (var row in fresh)
         {
             _rows.Add(row);
@@ -249,6 +262,55 @@ public sealed class GazeFocus
             Targets(row);
             Retarget(row);                                    // a new row eases from its saved layout into the focus layout
         }
+    }
+
+    // ---- the log (Erik 10-21: "néha focus mód bekapcsolva léte mellett is ... nincs focus mode" - the monitors at their saved sizes with
+    // it on): every rebuild and every row going to its saved sizes / let go is a line; on with no row at all, once a minute why; with
+    // the diagnostics switch (Laser.Trace) the whole state every 30 s ----
+    double _diagNoRowAt = -100, _diagStateAt;
+
+    static string Short(string g) => g == null ? "-" : g.Length > 4 ? g[..4] : g;
+
+    string GrabbedName()
+    {
+        foreach (var p in _panels) if (p.Grabbing) return p.Mon.Name;
+        return "?";
+    }
+
+    string Why(DesktopPanel p) =>
+        !p.Cfg.Enabled ? "off" : p.Cfg.Group == null ? "in no row" : !Placement.IsWorld(p.Cfg.Place) ? "not placed in the world (" + p.Cfg.Place?.Attach + ")"
+        : p.Cfg.Place.M == null ? "no place yet" : Siblings(p) < 2 ? "alone in its row" : "a member";
+
+    void Diag(double now, bool on)
+    {
+        if (on && _rows.Count == 0 && now - _diagNoRowAt > 60)
+        {
+            _diagNoRowAt = now;
+            var sb = new System.Text.StringBuilder("focus: on, but no row -");
+            foreach (var p in _panels) sb.Append($" {p.Mon.Name}: {Why(p)};");
+            Log.Info(sb.ToString());
+        }
+        if (!Laser.Trace || now < _diagStateAt) return;
+        _diagStateAt = now + 30;
+        var s = new System.Text.StringBuilder($"focus state: {(on ? "on" : "off")}, {_rows.Count} row(s)");
+        foreach (var r in _rows)
+        {
+            s.Append($" | row {Short(r.Group)}{(r.Leaving ? " leaving" : "")}{(r.Plain ? " plain" : "")}{(r.Grab ? " grab" : "")} T {r.T:0.00} focused {r.Focused}:");
+            foreach (var m in r.Members)
+                s.Append($" {m.Panel.Mon.Name} w {m.Drawn:0.00}->{m.ToWidth:0.00}{(m.Panel.Focus == m.View ? "" : " (NOT drawn by it)")}");
+        }
+        foreach (var p in _panels) if (Find(p) == null) s.Append($" | {p.Mon.Name}: {Why(p)}");
+        Log.Info(s.ToString());
+    }
+
+    // every row let go at once (each monitor back to its saved layout) - the next frame makes them again from the saved layout as it
+    // is now: a layout profile switched (OrbitApp.ApplyLayout)
+    public void Restart()
+    {
+        foreach (var r in _rows) Release(r);
+        _rows.Clear();
+        _memberCount = 0;
+        Log.Info("focus: rows let go - the layout changed; made again from it");
     }
 
     static int DefaultFocus(Row row)
@@ -333,6 +395,8 @@ public sealed class GazeFocus
             bool plain = grab || !on;
             if (grab != row.Grab || plain != row.Plain)
             {
+                if (plain != row.Plain)
+                    Log.Info($"focus: row {Short(row.Group)} {(plain ? "at its saved sizes - " + (grab ? "a hand holds " + GrabbedName() : "focus mode off") : "focused again")}");
                 row.Grab = grab;
                 row.Plain = plain;
                 row.Anchor = row.Focused;
