@@ -553,6 +553,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
                 Log.Info("a monitor capture ended - rebuilding the monitor panels");
                 SyncMonitors(force: true);
             }
+            VirtualTick();                              // virtual monitors on with SteamVR, off without it (OrbitApp.Virtual.cs)
         }
 
         if (_vr.Connected)
@@ -2290,6 +2291,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
     public void Dispose()
     {
         try { if (_vr.Connected) DisconnectVr(false); } catch (Exception e) { Log.Warn("shutdown: " + e.Message); }
+        VirtualExit();
         InputQueue.Flush();                  // a button / key let go reaches Windows before OrbitOverlay ends
         _cfg.SaveIfDue(force: true);
         foreach (var d in _desktops) d.Dispose();

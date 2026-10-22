@@ -41,7 +41,7 @@ static class Program
         bool has(string a) => args.Contains(a);
         if (has("--tempstest")) { Log.Init("orbit-tool.log"); return TempSensors.Probe(); }      // the real temperature sources read twice, read only (Sys/Temps.cs)
         if (has("--avatartest")) { Log.Init("orbit-tool.log"); return AvatarProbe.Run(); }      // VRChat's real OSC configs read, only counts logged (AvatarViewTest.cs)
-        bool tool = has("--snapshot") || has("--animstrip") || has("--faceshot") || has("--clockshot") || has("--selftest") || has("--scene") || has("--osctest") || has("--tasktest") || has("--filtertest") || has("--focustest") || has("--leaktest") || has("--raytest") || has("--updatetest") || has("--wintest") || has("--docktest") || has("--roomtest") || has("--theatertest") || has("--perfbench") || has("--ovdump") || has("--pacetest") || has("--pacertest") || has("--capturetest") || has("--voltest") || has("--mixertest") || has("--tapotest") || has("--eyetest") || has("--mixtapetest");
+        bool tool = has("--snapshot") || has("--animstrip") || has("--faceshot") || has("--clockshot") || has("--selftest") || has("--scene") || has("--osctest") || has("--tasktest") || has("--filtertest") || has("--focustest") || has("--leaktest") || has("--raytest") || has("--updatetest") || has("--wintest") || has("--docktest") || has("--roomtest") || has("--theatertest") || has("--perfbench") || has("--ovdump") || has("--pacetest") || has("--pacertest") || has("--capturetest") || has("--voltest") || has("--mixertest") || has("--tapotest") || has("--eyetest") || has("--mixtapetest") || has("--virtualstatus");
         if (tool) return RunTool(args);
 
         // install / uninstall (the same exe: named "OrbitSetup.exe" it is the installer)
@@ -257,6 +257,7 @@ static class Program
                 int i = Array.IndexOf(args, "--pacetest");
                 return PaceTest.Run(i + 1 < args.Length ? double.Parse(args[i + 1], System.Globalization.CultureInfo.InvariantCulture) : 20);
             }
+            if (args.Contains("--virtualstatus")) return VirtualMonitors.Status();      // read only: the driver's device and its settings file
             if (args.Contains("--ovdump"))
             {
                 int i = Array.IndexOf(args, "--ovdump");

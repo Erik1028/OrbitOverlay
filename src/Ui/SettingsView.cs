@@ -62,6 +62,12 @@ public interface IOrbitHost
     // 1.14: the SteamVR app running now (Layouts > Per game offers it); a card in VR (an in-VR export says where the file went)
     (string key, string name) RunningApp => (null, null);
     void Notify(string title, string text) { }
+    // virtual monitors (Sys/VirtualMonitors.cs, 10-21): null - none to offer
+    VirtualMonitors Virtual => null;
+    void SetVirtualCount(int n) { }
+    void SetVirtualOnlyInVr(bool on) { }
+    void InstallVirtual() { }
+    void RemoveVirtual() { }
 }
 
 // The settings screen. Same code draws the desktop window and the SteamVR dashboard tab.
@@ -359,9 +365,12 @@ public sealed partial class SettingsView
         var p = ui.P;
         var mons = _h.MonitorList;
         ui.Section(new RectangleF(232, 80, 400, 22), "Monitors");
-        // (10-18: the map 26 px lower than it was, the gaze focus switch and its slider under Arrangement; the row hint moved left)
-        var map = new RectangleF(232, 104, 752, 92);
+        // (10-18: the map 26 px lower than it was, the gaze focus switch and its slider under Arrangement; the row hint moved left;
+        // 10-21: with virtual monitors to offer, their card at the map's right end)
+        var vm = _h.Virtual;
+        var map = new RectangleF(232, 104, vm == null ? 752 : 520, 92);
         p.Fill(map, Theme.Panel, 12);
+        if (vm != null) DrawVirtual(ui, vm, new RectangleF(760, 104, 224, 92));
         if (mons.Count == 0) { p.Text("No monitors found", map, Theme.Dim, 15, FontWeight.Normal, TextAlignment.Center); return; }
         if (_selected == null || !mons.Any(m => m.Id == _selected)) _selected = mons.FirstOrDefault(m => !m.Virtual)?.Id ?? mons[0].Id;
 
@@ -449,6 +458,48 @@ public sealed partial class SettingsView
         if (ui.Button("d.sep", new RectangleF(rx + 256, 502, 110, 36), "Separate", null, false, true, 14))
             _h.SeparateDesktops();
         DrawFocus(ui, rx, cw, 542);
+    }
+
+    // virtual monitors (Sys/VirtualMonitors.cs, Erik 10-21): how many - or "Add" the first time (a display driver: one Windows prompt)
+    void DrawVirtual(Ui ui, VirtualMonitors vm, RectangleF r)
+    {
+        var p = ui.P;
+        vm.LookSoon();
+        p.Fill(r, Theme.Panel, 12);
+        p.Text("Virtual monitors", new RectangleF(r.X + 12, r.Y + 6, r.Width - 24, 20), Theme.Dim, 12, FontWeight.SemiBold);
+        var row = new RectangleF(r.X + 12, r.Y + 30, r.Width - 24, 30);
+        var low = new RectangleF(r.X + 2, r.Bottom - 31, r.Width - 4, 30);
+        if (!vm.Admin)
+        {
+            ui.Label(new RectangleF(row.X, row.Y, row.Width, 56), "Orbit needs to run as administrator for these (General)", Theme.Dim, 12, FontWeight.Normal, true);
+            return;
+        }
+        if (vm.Busy && vm.Doing != null || vm.State == VirtualMonitors.Kind.Unknown)
+        {
+            p.Text(vm.Doing ?? "Looking...", row, Theme.Text, 13);
+            return;
+        }
+        if (vm.State == VirtualMonitors.Kind.NoDriver)
+        {
+            if (ui.Button("d.vadd", new RectangleF(row.X, row.Y, 140, 30), "Add", Theme.IcoAdd, true, true, 14)) _h.InstallVirtual();
+            ui.Label(new RectangleF(row.X, row.Bottom + 2, row.Width, 30), vm.Note ?? "Installs a free display driver (Windows asks once)",
+                Theme.Dim, 11, FontWeight.Normal, true);
+            return;
+        }
+        int n = C.General.VirtualMonitors;
+        if (ui.Button("d.vless", new RectangleF(row.X, row.Y, 34, 30), "\u2212", null, false, n > 0, 18)) _h.SetVirtualCount(n - 1);
+        p.Text(n.ToString(), new RectangleF(row.X + 34, row.Y, 36, 30), Theme.Text, 18, FontWeight.SemiBold, TextAlignment.Center);
+        if (ui.Button("d.vmore", new RectangleF(row.X + 70, row.Y, 34, 30), "+", null, false, n < VirtualMonitors.Max, 18)) _h.SetVirtualCount(n + 1);
+        var right = new RectangleF(row.X + 112, row.Y, row.Width - 112, 30);
+        if (vm.Note != null) ui.Label(right, vm.Note, Theme.Dim, 11, FontWeight.Normal, true);
+        else if (n == 0)
+        {
+            if (ui.Button("d.vrm", right, "Remove", null, false, true, 12)) _h.RemoveVirtual();
+        }
+        else p.Text(vm.State == VirtualMonitors.Kind.Broken ? "a problem" : vm.State == VirtualMonitors.Kind.On ? Lang.F("{0} on", vm.Count)
+            : C.General.VirtualOnlyInVr && !_h.VrConnected ? "with SteamVR" : "off", right, Theme.Dim, 12);
+        bool only = C.General.VirtualOnlyInVr;
+        if (ui.Toggle("d.vvr", low, "Only while in VR", ref only)) _h.SetVirtualOnlyInVr(only);
     }
 
     // gaze focus (Panels/GazeFocus.cs, Erik 10-18): the monitor you look at full size, the others of its row smaller beside it

@@ -987,6 +987,32 @@ nem kér admin jogot (admin példányból kikapcsolva a feladatot is törli); `O
 egyszer admin nélkül indít. Ha az exe máshova kerül, a következő indításkor újra kér egy UAC-ot,
 és frissíti a feladatot.
 
+## Virtuális monitorok (Settings → Desktops, 2026-10-21)
+
+Képernyők, amelyekre a Windows kiterjeszti az asztalt, de csak VR-ben látszanak. A meghajtó a nyílt
+forrású **Virtual Display Driver** (`VirtualDrivers/Virtual-Display-Driver`, MIT, SignPath Foundation
+aláírással), `Sys/VirtualMonitors.cs`:
+
+- **Add**: letölti a rögzített 25.7.23-as kiadás driver-only zipjét (`%LOCALAPPDATA%\Orbit\vdd\25.7.23`),
+  ellenőrzi az SHA-256-ot, létrehozza a `Root\MttVDD` eszközt (SetupAPI), és feltelepíti rá a meghajtót
+  (`UpdateDriverForPlugAndPlayDevices`). A kiadóra a **Windows egyszer rákérdez**; az Orbit nem teszi be
+  a tanúsítványt a megbízható kiadók közé (a projekt saját csendes szkriptje igen – mi szándékosan nem).
+- **Darabszám**: a meghajtó `vdd_settings.xml`-jében a `<monitors><count>` (`C:\VirtualDisplayDriver`, vagy
+  amit a `HKLM\SOFTWARE\MikeTheTech\VirtualDisplayDriver\VDDPATH` mond). A meghajtó az eszköz indulásakor
+  olvassa, ezért egy szám = fájl + `pnputil /restart-device`. 0 db = az eszköz letiltva
+  (`/disable-device`), mert a 0-t a meghajtó 1-nek veszi. Ha nincs fájl, az Orbit írja a sajátját (első mód
+  1920×1080@60 – ezzel indul egy új monitor). Ha másé a fájl, csak a számot írja át, és előtte egyszer
+  `vdd_settings.before-orbit.xml` másolatot tesz mellé.
+- **Csak VR alatt** (alapból be): a SteamVR-rel jönnek, nélküle és az Orbit bezárásakor mennek – ilyenkor
+  a Windows a rajtuk lévő ablakokat visszateszi a valódi monitorokra. Az 5 mp-es monitor-ellenőrzés hívja
+  (`OrbitApp.Virtual.cs`); ha a Windows újraindítást kér vagy nem lett meg az állapot, 1 / 10 percig nem
+  próbálja újra (minden próba villantja a képernyőket).
+- Admin jog kell hozzá (az Orbit alapból adminként fut). Minden lépés saját szálon fut.
+- Az új monitor neve az Orbitban „Virtual monitor” (az EDID-je `MTT1337`, „VDD by MTT”).
+- `--virtualstatus`: csak olvas – az eszköz, az állapota, a beállításfájl, a monitorok.
+- `ORBIT_SNAP_ONLY=virtual`: a kártya minden állapota (nincs admin, nincs meghajtó, folyamatban, be, 0,
+  hiba) a modern, 95-ös, XP, terminál és Cyber kinézetben.
+
 ## Ismert korlátok
 
 - A UAC-ablakra magára (biztonsági asztal) VR-ből sem lehet kattintani – ez minden overlaynél így van.

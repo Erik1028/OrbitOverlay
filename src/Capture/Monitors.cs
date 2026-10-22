@@ -41,6 +41,8 @@ public static class Monitors
                     m.Id = string.IsNullOrWhiteSpace(n.path) ? null : n.path;
                     m.Virtual = n.tech == 16 || n.tech == 17;   // DISPLAYCONFIG_OUTPUT_TECHNOLOGY_INDIRECT_WIRED / _VIRTUAL
                 }
+                // the Virtual Display Driver's (Sys/VirtualMonitors.cs; its EDID says "VDD by MTT", MTT1337)
+                if (m.Id != null && m.Id.Contains("MTT1337", StringComparison.OrdinalIgnoreCase)) m.Name = "Virtual monitor";
                 m.Name ??= m.Device.Replace(@"\\.\", "");
                 m.Id ??= m.Device;
                 list.Add(m);

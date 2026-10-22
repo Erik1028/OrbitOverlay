@@ -141,4 +141,7 @@ DirectWrite, XAudio2), Valve's [OpenVR](https://github.com/ValveSoftware/openvr)
 ## License
 
 MIT - see [LICENSE](LICENSE). The OpenVR API files in `third_party/openvr` are Valve's, under their
-BSD 3-clause license.
+BSD 3-clause license. Virtual monitors (Settings > Desktops) use the
+[Virtual Display Driver](https://github.com/VirtualDrivers/Virtual-Display-Driver) (MIT, signed by SignPath
+Foundation): OrbitOverlay downloads its release 25.7.23 only when you press Add, checks the file's SHA-256,
+and Windows asks you about the driver's publisher before installing it.

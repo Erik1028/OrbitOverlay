@@ -174,9 +174,11 @@ public sealed partial class SettingsView
     {
         var p = ui.P;
         var mons = _h.MonitorList;
-        var box = new RectangleF(16, 56, 718, 100);
+        var vm = _h.Virtual;                    // (10-21: with virtual monitors to offer, their group box at the right end)
+        var box = new RectangleF(16, 56, vm == null ? 718 : 500, 100);
         p.Fill(box, Theme.W95Face);
         p.Bevel(box, Painter.Edge.Sunken);
+        if (vm != null) Virtual95(ui, vm, new RectangleF(524, 50, 210, 106));
         if (mons.Count == 0) { ui.Text95("No monitors found.", new RectangleF(28, 98, 300, 13)); return; }
         if (_selected == null || !mons.Any(m => m.Id == _selected)) _selected = mons.FirstOrDefault(m => !m.Virtual)?.Id ?? mons[0].Id;
 
@@ -255,6 +257,41 @@ public sealed partial class SettingsView
             (C.Focus ??= new FocusConfig()).Others = oth;
         bool las = C.Focus?.Laser ?? true;                  // a laser on a monitor focuses it too (off: only the look)
         if (ui.Check95("d95.flaser", 388, 424, "A &laser on a monitor focuses it too", ref las, focus)) (C.Focus ??= new FocusConfig()).Laser = las;
+    }
+
+    // virtual monitors (Sys/VirtualMonitors.cs, 10-21): an up-down count box, or "Add..." the first time
+    static readonly string[] Up95 = { "...k...", "..kkk..", ".kkkkk.", "kkkkkkk" };
+    static readonly string[] Down95 = { "kkkkkkk", ".kkkkk.", "..kkk..", "...k..." };
+
+    void Virtual95(Ui ui, VirtualMonitors vm, RectangleF g)
+    {
+        vm.LookSoon();
+        ui.Group95(g, "Virtual monitors");
+        float x = g.X + 12, y = g.Y + 22, w = g.Width - 24;
+        if (!vm.Admin) { Hint(ui, x, y, w, "Orbit needs to run as administrator for these (General tab).", 41); return; }
+        if (vm.Busy && vm.Doing != null || vm.State == VirtualMonitors.Kind.Unknown) { Hint(ui, x, y + 5, w, vm.Doing ?? "Looking..."); return; }
+        if (vm.State == VirtualMonitors.Kind.NoDriver)
+        {
+            if (ui.Button95("v95.add", new RectangleF(x, y, 75, 23), "A&dd...")) _h.InstallVirtual();
+            Hint(ui, x, y + 31, w, vm.Note ?? "Installs a free display driver. Windows asks once.", 41);
+            return;
+        }
+        int n = C.General.VirtualMonitors;
+        ui.Label95("Cou&nt:", new RectangleF(x, y + 5, 44, 13));
+        var ed = new RectangleF(x + 46, y + 1, 30, 21);
+        ui.Edit95(ed, n.ToString());
+        if (ui.GlyphButton95("v95.up", new RectangleF(ed.Right, ed.Y, 16, 11), Up95, n < VirtualMonitors.Max)) _h.SetVirtualCount(n + 1);
+        if (ui.GlyphButton95("v95.dn", new RectangleF(ed.Right, ed.Y + 11, 16, 10), Down95, n > 0)) _h.SetVirtualCount(n - 1);
+        float sx = ed.Right + 24;
+        if (n == 0)
+        {
+            if (ui.Button95("v95.rm", new RectangleF(sx, y, g.Right - 12 - sx, 23), "Remove dri&ver")) _h.RemoveVirtual();
+        }
+        else Hint(ui, sx, y + 5, g.Right - 12 - sx, vm.State == VirtualMonitors.Kind.Broken ? "A problem" : vm.State == VirtualMonitors.Kind.On
+            ? Lang.F("{0} on", vm.Count) : C.General.VirtualOnlyInVr && !_h.VrConnected ? "With SteamVR" : "Off");
+        bool only = C.General.VirtualOnlyInVr;
+        if (ui.Check95("v95.vr", x, y + 33, "Only &while in VR", ref only)) _h.SetVirtualOnlyInVr(only);
+        if (vm.Note != null) Hint(ui, x, y + 53, w, vm.Note, 28);
     }
 
     // ---------------- Windows ----------------

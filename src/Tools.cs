@@ -46,6 +46,7 @@ static partial class Tools
         public void DesktopEdited(DesktopConfig d) { }
         public void AppearanceChanged() => Theme.Apply(Cfg.Data.Appearance);
         public bool IsElevated => true;
+        public VirtualMonitors Virtual { get; set; }
         public void SetRunAsAdmin(bool on) { }
         public void RestartElevated() { }
         public string NotificationStatus => Lang.F("listening on UDP {0}", 42069);
@@ -217,7 +218,10 @@ static partial class Tools
             catch (Exception e) { Log.Error($"capture {m}: {e}"); }
         }
 
-        var host = new FakeHost { Cfg = cfg, GpuName = gpu.AdapterName, MonitorList = mons, Data = data, Wrist = wrist, Keyboard = kb };
+        // (the Desktops page with two virtual monitors on: a made-up state, nothing installed - ORBIT_SNAP_ONLY=virtual has all the states)
+        cfg.Data.General.VirtualMonitors = 2;
+        var host = new FakeHost { Cfg = cfg, GpuName = gpu.AdapterName, MonitorList = mons, Data = data, Wrist = wrist, Keyboard = kb,
+            Virtual = new VirtualMonitors { Fake = true, Admin = true, State = VirtualMonitors.Kind.On, Count = 2 } };
         var view = new SettingsView(host);
         var ui = new Ui(painter);
         using var surf = new Surface(gpu, 1500, 960);
@@ -302,6 +306,7 @@ static partial class Tools
         var wcfg = cfg.Data.Wrist;
         string face0 = wcfg.Face;
         var panelView = new SettingsView(host) { OnClose = () => { }, Tab = SettingsView.TabGeneral };
+        if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "virtual") return VirtualOnly(host, view, ui, surf, ptr, painter, gpu, cfg, dir);   // VirtualMonitorsTest.cs
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "anim_cyber") return CyberAnimShot.Run(wrist, data, cfg, gpu, dir, kb, view, ui, surf, ptr, painter);
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "cyberui") return CyberUiOnly(view, panelView, ui, surf, ptr, painter, gpu, cfg, wrist, data, kb, dir);
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "cyberperf") return CyberPerfOnly(view, ui, surf, ptr, painter, gpu, cfg, kb);
