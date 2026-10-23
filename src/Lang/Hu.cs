@@ -16,7 +16,9 @@ static class Hu
         ("Desktops", "Monitorok"),
         ("&Undo", "&Visszavonás"),
         ("Recenter when shown", "Középre, amikor megjelenik"),
-        ("Re&center when shown", "&Középre, amikor megjelenik"),
+        ("Re&center when shown", "&Középre megjelenéskor"),
+        ("Distance", "Távolság"),
+        ("Dis&tance:", "&Távolság:"),
         ("Red&o", "Ú&jra"),
         // ---- virtual monitors (Settings > Desktops, Sys/VirtualMonitors.cs) ----
         ("Virtual monitors", "Virtuális monitorok"),

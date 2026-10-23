@@ -210,8 +210,15 @@ public sealed partial class SettingsView
         bool changedBefore = ui.Changed;
         // (10-23) shown again: in front of you, as SteamVR's dashboard - beside the list, which gives it room
         bool rs = C.General.RecenterOnShow;
-        if (ui.Check95("d95.rcshow", 534, 168, "Re&center when shown", ref rs)) C.General.RecenterOnShow = rs;
-        if (ComboRow(ui, "d95.disp", 16, 164, 70, 432, "&Display:", names, ref sel))
+        if (ui.Check95("d95.rcshow", 400, 168, "Re&center when shown", ref rs)) C.General.RecenterOnShow = rs;
+        // how far Recenter / Reset position / Join put the monitors (10-23): an edit box with an up-down, 0.1 m a click
+        float dist = Math.Clamp(C.General.MonitorDistance, OrbitApp.DistanceMin, OrbitApp.DistanceMax);
+        ui.Label95("Dis&tance:", new RectangleF(572, 169, 56, 13));
+        var de = new RectangleF(630, 165, 48, 21);
+        ui.Edit95(de, Lang.F("{0:0.0} m", dist));
+        if (ui.GlyphButton95("d95.dup", new RectangleF(de.Right, de.Y, 16, 11), Up95, dist < OrbitApp.DistanceMax - 0.001f)) SetDistance(dist + 0.1f);
+        if (ui.GlyphButton95("d95.ddn", new RectangleF(de.Right, de.Y + 11, 16, 10), Down95, dist > OrbitApp.DistanceMin + 0.001f)) SetDistance(dist - 0.1f);
+        if (ComboRow(ui, "d95.disp", 16, 164, 70, 300, "&Display:", names, ref sel))
         {
             _selected = mons[sel].Id;
             ui.Changed = changedBefore;         // only a selection, not a setting

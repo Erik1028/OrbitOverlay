@@ -1077,7 +1077,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         var enabled = _desktops.Where(d => d.Cfg.Enabled).ToList();
         var missing = enabled.Where(d => d.Cfg.Place.M == null).ToList();
         if (missing.Count > 0 && missing.Count == enabled.Count)
-            _layout.JoinAll(MathUtil.GazeFrame(_vr.Hmd), RowRadius, -0.12f);     // first run: one curved screen
+            _layout.JoinAll(MathUtil.GazeFrame(_vr.Hmd), MonitorDistance, -0.12f);     // first run: one curved screen
         else if (missing.Count > 0)
             PlaceDesktops(missing);
     }
@@ -1102,7 +1102,10 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         _cfg.MarkDirty();
     }
 
-    const float RowRadius = 1.2f;
+    // how far in front of you Recenter, Reset position and Join put the monitors (Erik 10-23: "lehetne állítani hogy a reset milyen
+    // messzire tegye a monitort"; Settings > Desktops, the Monitors row); it was 1.2 m always
+    public const float DistanceMin = 0.5f, DistanceMax = 3f;
+    float MonitorDistance => Math.Clamp(C.General.MonitorDistance, DistanceMin, DistanceMax);
 
     // The monitors on an arc around the head, laid out like the real desk (left / middle / right).
     void PlaceDesktops(IEnumerable<DesktopPanel> which)
@@ -1113,7 +1116,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         if (enabled.Count == 0) return;
         var anchor = enabled.FirstOrDefault(d => d.Mon.Primary) ?? enabled[enabled.Count / 2];
         float cx0 = anchor.Mon.X + anchor.Mon.W / 2f, cy0 = anchor.Mon.Y + anchor.Mon.H / 2f;
-        const float R = 1.2f;
+        float R = MonitorDistance;
         foreach (var d in which)
         {
             float s = d.Cfg.Width / d.Mon.W;
@@ -1218,11 +1221,17 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
                 if (row.Count > 0) anchor = row[row.Count / 2];
             }
             float r = DesktopLayout.Radius(anchor.Cfg);
-            float dist = float.IsInfinity(r) || r > 4 ? RowRadius : r;
+            float dist = MonitorDistance;
             var desired = Matrix4x4.CreateTranslation(0, -0.12f, -dist) * MathUtil.GazeFrame(_vr.Hmd);
             var delta = MathUtil.Invert(MathUtil.FromArray(anchor.Cfg.Place.M)) * desired;
             foreach (var d in placed)
                 d.Cfg.Place.M = MathUtil.ToArray(MathUtil.FromArray(d.Cfg.Place.M) * delta);
+            // a curved row bent anew round you at that distance (its curve stays centred on your head); a flat one stays flat
+            if (!float.IsInfinity(r) && r <= 4 && MathF.Abs(r - dist) > 0.02f)
+            {
+                _layout.FitCurve(anchor, _vr.Hmd.Translation);
+                _gazeFocus?.Restart();
+            }
             kbUnder = anchor;
             foreach (var w in _windowPanels)
                 if (Placement.IsWorld(w.Cfg.Place) && w.Cfg.Place.M != null)
@@ -1933,7 +1942,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
     public void JoinAllDesktops()
     {
         if (!_vr.Connected || !_vr.HmdValid) return;
-        _layout.JoinAll(MathUtil.GazeFrame(_vr.Hmd), RowRadius, -0.12f);
+        _layout.JoinAll(MathUtil.GazeFrame(_vr.Hmd), MonitorDistance, -0.12f);
     }
 
     public void SeparateDesktops() => _layout.SeparateAll();

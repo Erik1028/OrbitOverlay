@@ -364,7 +364,8 @@ public sealed partial class SettingsView
     {
         var p = ui.P;
         var mons = _h.MonitorList;
-        ui.Section(new RectangleF(232, 80, 400, 22), "Monitors");
+        ui.Section(new RectangleF(232, 80, 200, 22), "Monitors");
+        DistanceStepper(ui, 440, 76);
         // (10-18: the map 26 px lower than it was, the gaze focus switch and its slider under Arrangement; the row hint moved left;
         // 10-21: with virtual monitors to offer, their card at the map's right end)
         var vm = _h.Virtual;
@@ -461,6 +462,24 @@ public sealed partial class SettingsView
         if (ui.Button("d.sep", new RectangleF(rx + 256, 502, 110, 36), "Separate", null, false, true, 14))
             _h.SeparateDesktops();
         DrawFocus(ui, rx, cw, 542);
+    }
+
+    // how far Recenter / Reset position / Join put the monitors (10-23): 0.1 m a click; in VR they move there at once (a Recenter)
+    void DistanceStepper(Ui ui, float x, float y)
+    {
+        var p = ui.P;
+        float d = Math.Clamp(C.General.MonitorDistance, OrbitApp.DistanceMin, OrbitApp.DistanceMax);
+        p.Text("Distance", new RectangleF(x, y, 70, 28), Theme.Dim, 13);
+        if (ui.Button("d.dless", new RectangleF(x + 72, y, 28, 28), "\u2212", null, false, d > OrbitApp.DistanceMin + 0.001f, 15)) SetDistance(d - 0.1f);
+        p.Text(Lang.F("{0:0.0} m", d), new RectangleF(x + 100, y, 60, 28), Theme.Text, 14, FontWeight.SemiBold, TextAlignment.Center);
+        if (ui.Button("d.dmore", new RectangleF(x + 160, y, 28, 28), "+", null, false, d < OrbitApp.DistanceMax - 0.001f, 15)) SetDistance(d + 0.1f);
+    }
+
+    void SetDistance(float d)
+    {
+        C.General.MonitorDistance = MathF.Round(Math.Clamp(d, OrbitApp.DistanceMin, OrbitApp.DistanceMax) * 10) / 10;
+        _h.Cfg.MarkDirty();
+        if (_h.VrConnected) _h.Recenter();
     }
 
     // virtual monitors (Sys/VirtualMonitors.cs, Erik 10-21): how many - or "Add" the first time (a display driver: one Windows prompt)
