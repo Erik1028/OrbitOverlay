@@ -410,6 +410,14 @@ static partial class Tools
                 Shot("pages_taskbar_95.png");
                 Log.Info($"pages_95: a click on the taskbar's third button -> page {tb + 1} (want 3)");
             }
+            // the stick pushed sideways (Erik 10-23): a page a push, none past the last
+            wcfg.Page = 0;
+            wrist.Settle();
+            wrist.Draw(data);
+            var mid = new Vector2(320, 160);
+            var steps = new List<int>();
+            foreach (int sd in new[] { 1, 1, 1, -1 }) { wrist.PointerStep(Hand.Left, sd, mid); steps.Add(wrist.PageNow + 1); }
+            Want($"pages{tag}: the stick right, right, right, left -> pages {string.Join(", ", steps)} (want 2, 3, 3, 2)", string.Join(",", steps) == "2,3,3,2");
             wcfg.Page = 0;
         }
         Style(false);

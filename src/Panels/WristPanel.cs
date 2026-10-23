@@ -576,6 +576,16 @@ public sealed partial class WristPanel : IPointerTarget, IDisposable
         _ptr.Wheel += n;
         _dirty = true;
     }
+    // the stick pushed sideways (Erik 10-23: "a jobb joystickkal ... lapozni, nem csak húzással"): the next / previous page, sliding as a
+    // let-go swipe does; none past the first / last, none while a widget is open (it keeps the stick: the dock's knobs, the photos)
+    public void PointerStep(Hand h, int dir, Vector2 px)
+    {
+        if (!CanSwipe || _swiping || _closing) return;
+        int to = CurPage + Math.Sign(dir);
+        if (to < 0 || to >= WatchPages.Count(C)) return;
+        GoToPage(to, animate: true);
+    }
+
     public bool Grabbable => !C.Locked;
 
     public Matrix4x4 WorldTransform =>

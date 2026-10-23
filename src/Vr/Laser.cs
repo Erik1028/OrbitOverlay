@@ -18,6 +18,7 @@ public interface IPointerTarget
     void PointerLeave(Hand h);
     void PointerButton(Hand h, PtrButton b, bool down, Vector2 px);
     void PointerScroll(Hand h, float notches, Vector2 px);
+    void PointerStep(Hand h, int dir, Vector2 px) { }      // the stick pushed sideways: +1 right, -1 left (the watch: a page)
 
     bool Grabbable { get; }
     Matrix4x4 WorldTransform { get; }
@@ -165,6 +166,9 @@ public sealed class Laser : IDisposable
         _p.End();
         _dot.SetTexture(_dotTex.Tex);
     }
+
+    int _stepDir;                   // the stick's sideways step held now (0: none) and the time to its repeat
+    float _stepWait;
 
     public void Update(VrSession vr, IReadOnlyList<IPointerTarget> targets, bool enabled, float dt, bool haptics)
     {
@@ -402,12 +406,21 @@ public sealed class Laser : IDisposable
                     return;
                 }
             }
+            else if (Math.Abs(hs.Stick.X) > 0.6f && Math.Abs(hs.Stick.X) > Math.Abs(hs.Stick.Y))
+            {
+                // pushed sideways (Erik 10-23: the watch's pages with the stick, not only by a swipe): a step a push; held, again every
+                // 0.4 s after 0.6 s
+                int dir = Math.Sign(hs.Stick.X);
+                if (dir != _stepDir) { _stepDir = dir; _stepWait = 0.6f; _hover.PointerStep(_hand, dir, px); }
+                else if ((_stepWait -= dt) <= 0) { _stepWait = 0.4f; _hover.PointerStep(_hand, dir, px); }
+            }
             else if (Math.Abs(hs.Stick.Y) > 0.25f)
             {
                 // speed grows with deflection, ~12 notches/s at full tilt
                 float s = Math.Sign(hs.Stick.Y) * (Math.Abs(hs.Stick.Y) - 0.25f) / 0.75f;
                 _hover.PointerScroll(_hand, s * 12f * dt, px);
             }
+            if (Math.Abs(hs.Stick.X) < 0.3f) _stepDir = 0;          // back near the middle: the next push is a step again
             Spikes.Mark(Spikes.Pointer);
             if (_eyeOn) { _beam.Hide(); _dot.Hide(); }      // eye tracking only: the Windows cursor alone, no pointer line
             else ShowBeam(vr, o, d, bestDist);
