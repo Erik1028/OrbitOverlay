@@ -199,6 +199,8 @@ public sealed class LightsConfig
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string Bulb { get; set; }                  // the Tapo bulb's IP address as Lumos knows it (null: "Set the bulb")
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string BulbMac { get; set; }               // its MAC (learnt once it answers straight): found again by it when the address moves
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string Key { get; set; }                   // the bulb's key, DPAPI-protected (TapoAccount): straight to the bulb; null: through Lumos
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool ViaLumos { get; set; }                // "Use Lumos" picked: the app does not go straight to the bulb by itself (OrbitApp)

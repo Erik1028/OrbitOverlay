@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.IO.Pipes;
+using System.Linq;
 using System.Net.Http;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
@@ -90,6 +91,15 @@ public sealed class LumosLink : ILampControl, IDisposable
 
     public LampState State => _pub;
 
+    // straight to the bulb, found again where it moved (Erik 10-23: the network went from 192.168.0.x to 192.168.1.x and the saved address
+    // was dead): Config.Lights.BulbMac in, a move or a MAC learnt out - OrbitApp puts it in Config.Lights and sets the address
+    public sealed record Moved(string From, string To, string Mac);
+    public volatile string Mac;
+    public volatile Moved Found;
+    int _misses;
+    DateTime _findAt;
+    bool _macTried;
+
     // a light widget is on a page
     public bool Active
     {
@@ -124,6 +134,8 @@ public sealed class LumosLink : ILampControl, IDisposable
         host = host?.Trim() ?? "";
         if (host == _bulb && (_thread != null || _frozen)) return;
         _bulb = host;
+        _misses = 0;
+        _macTried = false;
         _due = DateTime.MinValue;
         Start();
         _wake.Set();
@@ -258,6 +270,7 @@ public sealed class LumosLink : ILampControl, IDisposable
                 c.s.ToString(CultureInfo.InvariantCulture) + ",\"v\":" + Math.Max(1, _pub.Brightness).ToString(CultureInfo.InvariantCulture) + "}") ?? got;
         if (bright > 0 && got?.Status != LinkStatus.NoApp) got = Ask("POST", "/api/brightness", Json(bulb, "value", bright.ToString(CultureInfo.InvariantCulture))) ?? got;
         if (got == null) got = Ask("GET", "/api/state?host=" + Uri.EscapeDataString(bulb), null);
+        if (_direct != null) got = Follow(bulb, got);
         bool more;
         lock (_lock) more = _power != null || _bright > 0 || _temp > 0 || _hsv != null || _toggle;
         // newer commands wait: the state they will make stays shown until their own answer
@@ -271,6 +284,39 @@ public sealed class LumosLink : ILampControl, IDisposable
         };
         _due = DateTime.UtcNow.AddSeconds(next);
         if (more) _wake.Set();
+    }
+
+    // straight to the bulb: one that stopped answering at its address (twice) is looked for with TP-Link's probe (TapoFind.cs) - by its
+    // MAC once known, else only when it is the one bulb that answers - and taken where it answers to the key; at most every 2 minutes.
+    // A bulb that answers has its MAC learnt once (one probe). Through Lumos none of this: Lumos keeps its own list.
+    LampState Follow(string bulb, LampState got)
+    {
+        var now = DateTime.UtcNow;
+        if (got.Ready)
+        {
+            _misses = 0;
+            if (Mac == null && !_macTried)
+            {
+                _macTried = true;
+                var me = TapoFind.Find().FirstOrDefault(f => f.Ip == bulb);
+                if (me?.Mac != null) { Found = new Moved(bulb, bulb, me.Mac); Log.Info("lights: the bulb's MAC learnt (it is found by it if its address moves)"); }
+            }
+            return got;
+        }
+        if (got.Status is not (LinkStatus.Error or LinkStatus.NoApp) || ++_misses < 2 || now < _findAt) return got;
+        _findAt = now.AddMinutes(2);
+        var bulbs = TapoFind.Find().Where(f => f.Bulb).ToList();
+        string mac = Mac;
+        var pick = mac != null ? bulbs.FirstOrDefault(f => f.Mac == mac && f.Ip != bulb) : bulbs.Count == 1 && bulbs[0].Ip != bulb ? bulbs[0] : null;
+        Log.Info($"lights: the bulb did not answer at {bulb} - {bulbs.Count} bulb(s) answered TP-Link's probe" +
+                 (pick != null ? ", it is at " + pick.Ip : mac != null ? ", none with its MAC" : bulbs.Count > 1 ? ", more than one: not guessed" : ""));
+        if (pick == null) return got;
+        var there = Ask("GET", "/api/state?host=" + Uri.EscapeDataString(pick.Ip), null);
+        if (!there.Ready) { Log.Info($"lights: {pick.Ip} did not answer to the key ({there.Message})"); return got; }
+        _misses = 0;
+        Found = new Moved(bulb, pick.Ip, pick.Mac);
+        Log.Info($"lights: the bulb moved {bulb} -> {pick.Ip}");
+        return there;
     }
 
     static string Json(string bulb, string key, string value) => "{\"host\":" + JsonSerializer.Serialize(bulb) + ",\"" + key + "\":" + value + "}";

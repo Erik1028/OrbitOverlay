@@ -41,7 +41,7 @@ static class Program
         bool has(string a) => args.Contains(a);
         if (has("--tempstest")) { Log.Init("orbit-tool.log"); return TempSensors.Probe(); }      // the real temperature sources read twice, read only (Sys/Temps.cs)
         if (has("--avatartest")) { Log.Init("orbit-tool.log"); return AvatarProbe.Run(); }      // VRChat's real OSC configs read, only counts logged (AvatarViewTest.cs)
-        bool tool = has("--snapshot") || has("--animstrip") || has("--faceshot") || has("--clockshot") || has("--selftest") || has("--scene") || has("--osctest") || has("--tasktest") || has("--filtertest") || has("--focustest") || has("--leaktest") || has("--raytest") || has("--updatetest") || has("--wintest") || has("--docktest") || has("--roomtest") || has("--theatertest") || has("--perfbench") || has("--ovdump") || has("--pacetest") || has("--pacertest") || has("--capturetest") || has("--voltest") || has("--mixertest") || has("--tapotest") || has("--eyetest") || has("--mixtapetest") || has("--virtualstatus");
+        bool tool = has("--snapshot") || has("--animstrip") || has("--faceshot") || has("--clockshot") || has("--selftest") || has("--scene") || has("--osctest") || has("--tasktest") || has("--filtertest") || has("--focustest") || has("--leaktest") || has("--raytest") || has("--updatetest") || has("--wintest") || has("--docktest") || has("--roomtest") || has("--theatertest") || has("--perfbench") || has("--ovdump") || has("--pacetest") || has("--pacertest") || has("--capturetest") || has("--voltest") || has("--mixertest") || has("--tapotest") || has("--eyetest") || has("--mixtapetest") || has("--virtualstatus") || has("--tapofind") || has("--tapofollow");
         if (tool) return RunTool(args);
 
         // install / uninstall (the same exe: named "OrbitSetup.exe" it is the installer)
@@ -172,6 +172,25 @@ static class Program
         return s.Ready && w.Message == "Wrong Tapo account" ? 0 : 1;
     }
 
+    // dev: the bulb found again (Sys/RoomLights.cs Follow): a link with the key, given a dead address (192.168.0.87 when none), READ ONLY -
+    // state reads and TP-Link's probe; want a move to where the bulb is within 60 s. Nothing is put in any config.
+    static int TapoFollow(string dead)
+    {
+        var kept = TapoAccount.Import(out _);
+        if (TapoAccount.Unprotect(kept) == null) { Log.Warn("tapo: no account in Hexpad or Lumos"); return 1; }
+        using var link = new LumosLink();
+        link.SetKey(kept);
+        link.SetBulb(string.IsNullOrEmpty(dead) || dead.StartsWith("--") ? "192.168.0.87" : dead);
+        link.Active = true;
+        link.Watched = true;
+        var t0 = DateTime.UtcNow;
+        for (int i = 0; i < 60 && (link.Found == null || link.Found.From == link.Found.To); i++) Thread.Sleep(1000);
+        var f = link.Found;
+        Log.Info(f == null || f.From == f.To ? "tapofollow: not found in 60 s"
+            : $"tapofollow: {f.From} -> {f.To} ({f.Mac}) in {(DateTime.UtcNow - t0).TotalSeconds:0} s, state {link.State.Status}");
+        return f != null && f.To != f.From ? 0 : 1;
+    }
+
     // dev: the watch's volume control on this PC's default speakers (per-app on Virtual Desktop's, through the mixer as in VR); "dip":
     // 5 % down for 2 s, then back
     static int VolTest(bool dip)
@@ -258,6 +277,18 @@ static class Program
                 return PaceTest.Run(i + 1 < args.Length ? double.Parse(args[i + 1], System.Globalization.CultureInfo.InvariantCulture) : 20);
             }
             if (args.Contains("--virtualstatus")) return VirtualMonitors.Status();      // read only: the driver's device and its settings file
+            if (args.Contains("--tapofollow"))                                          // read only: a dead address found again
+            {
+                int i = Array.IndexOf(args, "--tapofollow");
+                return TapoFollow(i + 1 < args.Length ? args[i + 1] : "");
+            }
+            if (args.Contains("--tapofind"))                                            // read only: the Tapo devices that answer TP-Link's probe
+            {
+                var all = TapoFind.Find(2000);
+                foreach (var f in all) Log.Info("tapofind: " + f);
+                Log.Info($"tapofind: {all.Count} answered");
+                return all.Count > 0 ? 0 : 1;
+            }
             if (args.Contains("--ovdump"))
             {
                 int i = Array.IndexOf(args, "--ovdump");

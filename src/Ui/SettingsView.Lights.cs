@@ -22,7 +22,12 @@ public sealed partial class SettingsView
                 if (text == null) return;
                 text = text.Trim();
                 if (text.Length == 0 && C.Lights?.Key == null) C.Lights = null;
-                else (C.Lights ??= new LightsConfig()).Bulb = text.Length == 0 ? null : text;     // (the key stays)
+                else
+                {
+                    var l = C.Lights ??= new LightsConfig();
+                    if (l.Bulb != text) l.BulbMac = null;           // (perhaps another bulb: its MAC is learnt anew)
+                    l.Bulb = text.Length == 0 ? null : text;        // (the key stays)
+                }
                 _h.Cfg.MarkDirty();
             });
     }

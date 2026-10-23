@@ -727,6 +727,16 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         // the light and the RGB: their apps asked while their widget is on one of the pages (the bulb read again when the watch shows)
         TapoAuto();
         _lumos.SetKey(C.Lights?.Key);
+        if (_lumos.Found is { } mv && C.Lights != null)
+        {
+            // the bulb found again where it moved, or its MAC learnt (Sys/RoomLights.cs Follow)
+            _lumos.Found = null;
+            if (C.Lights.Bulb == mv.From) C.Lights.Bulb = mv.To;
+            C.Lights.BulbMac = mv.Mac ?? C.Lights.BulbMac;
+            _cfg.MarkDirty();
+            _win.Dirty = true;
+        }
+        _lumos.Mac = C.Lights?.BulbMac;
         _lumos.SetBulb(C.Lights?.Bulb);
         _lumos.Active = C.Wrist.Face == "custom" && WatchPages.Any(C.Wrist, "light") || LightAutoWanted;
         _lumos.Watched = _wrist?.Alpha > 0.02f;
