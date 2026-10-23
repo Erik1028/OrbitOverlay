@@ -3,6 +3,25 @@
 This file is built into the app: after an update, the "What's new" window shows every section newer than the
 version you came from. Format: "## <version> | <title>", then "- " points (an indented line continues a point).
 
+## 1.17.0 | Virtual monitors, monitors in front of you, undo in the editor
+- Virtual monitors (Desktops, at the right of the monitor map): screens that exist only in VR, to put windows on. "Add"
+  installs the free Virtual Display Driver once (Windows asks you about its publisher); then "- 1 +" sets how many,
+  up to 4. "Only while in VR" (on): they come with SteamVR and go when it closes, and Windows moves their windows back
+  to your real screens.
+- Your monitors come in front of you each time you show them (the watch's button, both grips twice, the settings, the
+  tray), as SteamVR's dashboard does: Desktops > "Recenter when shown".
+- How far: Desktops > Distance (0.5 - 3 m) - Reset position, Recenter and "Join into one curved screen" put the
+  monitors that far away; a curved row is bent round you again at that distance. In VR a click moves them at once.
+- The watch's pages turn with the stick too: point at the watch and push the stick left or right.
+- The watch editor has Undo and Redo (in the desktop window Ctrl+Z / Ctrl+Y too): every change to the layout, 50 steps.
+- Your Tapo bulb is found again when its address changes (a new router, the network renumbered): OrbitOverlay asks the
+  network with TP-Link's own discovery and goes on at the new address.
+- Focus mode works again after a layout switch (it could stay off until switched off and on).
+- Smoother: the log is written in the background - while the disk was busy it held the overlay up, a few times for
+  seconds.
+- The light and RGB cards of one row: their buttons no longer sit on the brightness bar on a face of several pages.
+- OSC: "Orbit/HeadsetBattery" (0 - 1, -1 when the headset reports none) for avatars that show it.
+
 ## 1.16.0 | Mixtape on the watch, your bulb without Lumos, eye cursor
 - Now playing opens into Mixtape's whole player while Mixtape plays (or is paused with nothing else playing): the queue,
   the song list, albums, playlists and the lyrics, synced; the card's buttons and cover are Mixtape's then. Another

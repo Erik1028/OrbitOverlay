@@ -196,6 +196,27 @@ dotnet publish -c Release -o dist
   és a billentyűzetet számolja; az Orbit saját lebegő beállításpanelje nem (Erik: a DXOverlay
   elindult, amikor csak a beállításokat nyitotta meg).
 
+## 1.17.0 – virtuális monitorok, monitorok eléd, undo a szerkesztőben (2026-10-23)
+
+- **Virtuális monitorok** (`Sys/VirtualMonitors.cs`, `OrbitApp.Virtual.cs`): a részletek lent, a „Virtuális monitorok” fejezetben.
+  Erik gépén 10-23-án élesben: a meghajtó felment (`Root\MttVDD`, ROOT\DISPLAY\0002), a „Virtual monitor” 1920×1080-ban megjelent,
+  beállt a sorba; a 0 letiltotta.
+- **Megjelenítéskor eléd** (`General.RecenterOnShow`, alapból be): `ToggleDesktops` / `QuickToggle` megjelenítéskor `Recenter()`.
+- **Távolság** (`General.MonitorDistance`, 0,5–3 m, alap 1,2 = a régi `RowRadius`): Reset position (`PlaceDesktops` R), Join /
+  első indítás (`JoinAll` sugara), Recenter (a horgony ilyen messze; ívelt sor: `FitCurve` + `Reflow` erre a sugárra, a `GazeFocus`
+  újraindul). Modern: a Monitors sorban „Distance − 1.2 m +”; 95: szerkesztőmező + up-down a Display lista mellett.
+- **Lapozás a karral** (`IPointerTarget.PointerStep`): az órára mutatva oldalra (|X| > 0,6 és > |Y|) egy oldal; tartva 0,6 s után
+  0,4 s-onként. A VRChat a jobb kar oldalirányát fordulásra használja – azt az Orbit nem nyeli el.
+- **Undo / Redo** a szerkesztőben (`Ui/SettingsView.Undo.cs`): az elrendezés JSON-ja (Widgets, Background, Grid, Name, Pages) a
+  változás előtt, 50 lépés; húzás egy lépés; az óra oldala / helye / mérete nem része. `ORBIT_SNAP_ONLY=undo`.
+- **Izzó új címen** (`Sys/TapoFind.cs`, `LumosLink.Follow`): kétszer nem válaszol → TP-Link discovery (UDP 20002, 16 bájtos fejléc
+  CRC32-vel + RSA publikus kulcs), MAC alapján (`Lights.BulbMac`, egyszer megtanulja), MAC nélkül csak ha egy izzó felel; a kulccsal
+  ellenőrzi; legfeljebb 2 percenként. Erik hálózata 10-23-án 192.168.0.x → 192.168.1.x lett (izzó .87 → .114).
+  `--tapofind`, `--tapofollow [halott cím]` (csak olvas).
+- **Fókusz mód** elrendezésváltás után (`GazeFocus.Restart`), **aszinkron napló** (`Log.cs`: saját szál, 100 ms), **lámpa-kártya**
+  gombjai 6 px-re a sáv fölött, **OSC** `Orbit/HeadsetBattery`.
+- Új eszközök: `ORBIT_SNAP_ONLY=tabs` (minden beállításfül pár mp alatt), `ORBIT_SNAP_ONLY=virtual`, `--virtualstatus`.
+
 ## 1.16.0 – Mixtape az órán, izzó Lumos nélkül, szemkurzor (2026-10-20)
 
 - **Mixtape** (`Sys/MixtapeLink.cs`, `Panels/WristMixtape.cs`, protokoll: `docs/mixtape-remote.md`): named pipe `Mixtape.Remote.v1`,
