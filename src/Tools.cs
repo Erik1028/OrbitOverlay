@@ -306,6 +306,7 @@ static partial class Tools
         var wcfg = cfg.Data.Wrist;
         string face0 = wcfg.Face;
         var panelView = new SettingsView(host) { OnClose = () => { }, Tab = SettingsView.TabGeneral };
+        if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "undo") return UndoOnly(view, ui, surf, ptr, painter, gpu, cfg, wrist, data, dir);   // UndoTest.cs
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "virtual") return VirtualOnly(host, view, ui, surf, ptr, painter, gpu, cfg, dir);   // VirtualMonitorsTest.cs
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "anim_cyber") return CyberAnimShot.Run(wrist, data, cfg, gpu, dir, kb, view, ui, surf, ptr, painter);
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "cyberui") return CyberUiOnly(view, panelView, ui, surf, ptr, painter, gpu, cfg, wrist, data, kb, dir);

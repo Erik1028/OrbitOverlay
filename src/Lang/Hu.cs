@@ -14,6 +14,8 @@ static class Hu
     {
         // ---- the settings: the pages, the header, the tray ----
         ("Desktops", "Monitorok"),
+        ("&Undo", "&Visszavonás"),
+        ("Red&o", "Ú&jra"),
         // ---- virtual monitors (Settings > Desktops, Sys/VirtualMonitors.cs) ----
         ("Virtual monitors", "Virtuális monitorok"),
         ("Installs a free display driver (Windows asks once)", "Egy ingyenes kijelzőmeghajtót telepít (a Windows egyszer rákérdez)"),

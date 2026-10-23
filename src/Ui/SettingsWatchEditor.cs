@@ -447,7 +447,11 @@ public sealed partial class SettingsView
                 else WidgetLook(ui, list, sel, rx, (clock || lamp ? 250 : 182) + fy, rw, clock || lamp);
             }
         }
-        if (ui.Button("we.done", new RectangleF(rx, 574, rw, 44), "Done", Theme.IcoCheck, true, true, 15)) { EditingWatch = false; _wadd = false; LeaveFolder(); }
+        // Undo / Redo beside Done (SettingsView.Undo.cs, Erik 10-23)
+        if (ui.Button("we.undo", new RectangleF(rx, 574, 50, 44), "", Theme.IcoUndo, false, CanUndo, 15)) { Undo(); ui.Changed = true; }
+        if (ui.Button("we.redo", new RectangleF(rx + 56, 574, 50, 44), "", Theme.IcoRedo, false, CanRedo, 15)) { Redo(); ui.Changed = true; }
+        if (ui.Button("we.done", new RectangleF(rx + 112, 574, rw - 112, 44), "Done", Theme.IcoCheck, true, true, 15)) { EditingWatch = false; _wadd = false; LeaveFolder(); }
+        UndoTrack(ui);
     }
 
     // the presets "start over" offers: the faces of before pages (6 x 4), then the page presets (on the page's own grid)
@@ -493,6 +497,8 @@ public sealed partial class SettingsView
     public bool TypeKey(char c)
     {
         if (!EditingWatch || InVr) return false;
+        if (c == (char)26) { Undo(); return true; }          // Ctrl+Z
+        if (c == (char)25) { Redo(); return true; }          // Ctrl+Y
         if (c == '\b') { if (_wsearch.Length > 0) _wsearch = _wsearch[..^1]; return true; }
         if (c == (char)27) { if (_wsearch.Length == 0) return false; _wsearch = ""; return true; }
         if (char.IsControl(c) || _wsearch.Length >= 24) return false;
@@ -820,8 +826,13 @@ public sealed partial class SettingsView
         int bg = w.Background == "cards" ? 1 : 0;
         if (ComboRow(ui, "we95.bg", 376, 392, 468, 130, "&Background:", new[] { "Desktop", "Windows only" }, ref bg))
             w.Background = bg == 1 ? "cards" : "panel";
+        if (ui.Button95("we95.undo", new RectangleF(610, Undo95Y, 112, 23), "&Undo", CanUndo && !inert95)) { Undo(); ui.Changed = true; }
+        if (ui.Button95("we95.redo", new RectangleF(610, Undo95Y + 29, 112, 23), "Red&o", CanRedo && !inert95)) { Redo(); ui.Changed = true; }
         if (ui.Button95("we95.done", new RectangleF(659, 405, 75, 23), "&Done", true, true)) { EditingWatch = false; LeaveFolder(); }
         Share95(ui, inert95);
         AvatarDialog95(ui, list);
+        UndoTrack(ui);
     }
+
+    const float Undo95Y = 112;                  // Undo / Redo in the Widgets box's button column, under Add (SettingsView.Undo.cs)
 }

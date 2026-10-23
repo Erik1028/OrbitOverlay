@@ -169,6 +169,7 @@ static class Theme
     public static string IconFont = "Segoe Fluent Icons";
     public const string IcoWindow = "\uE8A7";      // open in new window
     public const string IcoAdd = "\uE710";
+    public const string IcoUndo = "\uE7A7", IcoRedo = "\uE7A6";
     public const string IcoNight = "\uE708";       // crescent moon (quiet hours)
     public const string IcoLayouts = "\uE8A9";     // grid of tiles (view all)
     public const string IcoDownload = "\uE896";

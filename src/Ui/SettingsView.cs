@@ -779,6 +779,7 @@ public sealed partial class SettingsView
     void DrawWrist(Ui ui)
     {
         if (EditingWatch && C.Wrist.Face == "custom") { DrawWristEditor(ui); return; }
+        UndoForget();
         var p = ui.P;
         var w = C.Wrist;
         bool custom = w.Face == "custom";

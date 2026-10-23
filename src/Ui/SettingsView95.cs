@@ -458,6 +458,7 @@ public sealed partial class SettingsView
     void Wrist95(Ui ui)
     {
         if (EditingWatch && C.Wrist.Face == "custom") { Wrist95Editor(ui); return; }
+        UndoForget();
         bool inert95 = Dialog95Begin(ui, _wx95);          // the Weather dialog over the page (SettingsView.Weather.cs)
         var p = ui.P;
         var w = C.Wrist;
