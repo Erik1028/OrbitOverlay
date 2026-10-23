@@ -371,6 +371,9 @@ public sealed partial class SettingsView
         var map = new RectangleF(232, 104, vm == null ? 752 : 520, 92);
         p.Fill(map, Theme.Panel, 12);
         if (vm != null) DrawVirtual(ui, vm, new RectangleF(760, 104, 224, 92));
+        // (10-23) shown again: in front of you, as SteamVR's dashboard - on the section's row, at its right end
+        bool rs = C.General.RecenterOnShow;
+        if (ui.Toggle("d.rcshow", new RectangleF(640, 74, 344, 28), "Recenter when shown", ref rs)) C.General.RecenterOnShow = rs;
         if (mons.Count == 0) { p.Text("No monitors found", map, Theme.Dim, 15, FontWeight.Normal, TextAlignment.Center); return; }
         if (_selected == null || !mons.Any(m => m.Id == _selected)) _selected = mons.FirstOrDefault(m => !m.Virtual)?.Id ?? mons[0].Id;
 

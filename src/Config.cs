@@ -241,6 +241,7 @@ public sealed class GeneralConfig
     public bool PauseWhenOff { get; set; } = true;    // headset taken off: stop capturing and drawing
     public bool HeadsetPacing { get; set; } = true;   // the loop on its own clock at the headset's rate (off: once per game frame)
     public bool HighGpuPriority { get; set; } = true; // Orbit's small GPU jobs go ahead of the game's frames (admin)
+    public bool RecenterOnShow { get; set; } = true;  // the monitors shown again: in front of you, as SteamVR's dashboard opens
     public int VirtualMonitors { get; set; }          // virtual monitors Orbit keeps (Sys/VirtualMonitors.cs); 0: it leaves the driver be
     public bool VirtualOnlyInVr { get; set; } = true; // ... only while SteamVR runs (Windows moves their windows back when they go)
     public string Raycast { get; set; } = "shadow";    // steamvr | shadow (compare, log) | local (no IPC)

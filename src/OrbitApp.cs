@@ -1812,8 +1812,19 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
     {
         if (_theater.On) StopTheater(glide: false);
         C.General.DesktopsVisible = !C.General.DesktopsVisible;
+        if (C.General.DesktopsVisible) RecenterOnShow();
         _cfg.MarkDirty();
         _win.Dirty = true;
+    }
+
+    // shown again - the watch's button, both grips twice, the settings' header, the tray: the whole arrangement in front of you, its
+    // shape kept, the keyboard under it (Recenter), as SteamVR's dashboard opens where you look (Erik 10-23: "az overlay mindig
+    // recenter-elhetne amikor megnyitom, mint a steamvr"). Off in Settings > Desktops: they stay where they were.
+    void RecenterOnShow()
+    {
+        if (!C.General.RecenterOnShow || !_vr.Connected || !_vr.HmdValid) return;
+        Recenter();
+        Log.Info("shown: recentered in front of you");
     }
 
     public int GroupSize(DesktopConfig d) => _layout.GroupSize(d);
@@ -1965,6 +1976,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         {
             C.General.DesktopsVisible = _restoreDesktops || !_restoreKeyboard;
             if (_restoreKeyboard) ToggleKeyboard();
+            RecenterOnShow();
         }
         if (_vr.Connected && C.General.Haptics)
         {

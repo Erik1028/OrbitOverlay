@@ -208,7 +208,10 @@ public sealed partial class SettingsView
             names[i] = $"{i + 1}. {m.Name} ({m.W} x {m.H}){(m.Primary ? Lang.T(", primary") : "")}";
         }
         bool changedBefore = ui.Changed;
-        if (ComboRow(ui, "d95.disp", 16, 164, 70, 664, "&Display:", names, ref sel))
+        // (10-23) shown again: in front of you, as SteamVR's dashboard - beside the list, which gives it room
+        bool rs = C.General.RecenterOnShow;
+        if (ui.Check95("d95.rcshow", 534, 168, "Re&center when shown", ref rs)) C.General.RecenterOnShow = rs;
+        if (ComboRow(ui, "d95.disp", 16, 164, 70, 432, "&Display:", names, ref sel))
         {
             _selected = mons[sel].Id;
             ui.Changed = changedBefore;         // only a selection, not a setting
