@@ -72,6 +72,10 @@ public sealed class VrSession : IDisposable
     // runtimes that don't report it stay "worn"
     public bool HeadsetWorn { get; private set; } = true;
     double _offSince = -1;
+    // worn this very frame (MathUtil.PlacementFrame's lying head, Erik 10-24): HeadsetWorn starts true and goes false 3 s late, so a
+    // headset on its side on the desk as SteamVR starts read as a head on a pillow. False the moment it reports idle / standby; a still
+    // head's "no motion for 0.5 s" still counts as on.
+    public bool OnFace { get; private set; }
 
     void UpdateWorn()
     {
@@ -84,6 +88,7 @@ public sealed class VrSession : IDisposable
             if (_offSince < 0) _offSince = now;
             if (HeadsetWorn && now - _offSince > 3) { HeadsetWorn = false; Log.Info($"headset off ({lvl}) - pausing"); }
         }
+        OnFace = HeadsetWorn && (on || lvl == EDeviceActivityLevel.k_EDeviceActivityLevel_UserInteraction_Timeout);
     }
     public uint HandIndex(Hand h) => h == Hand.Left ? LeftIndex : RightIndex;
     public bool HmdValid => DeviceValid[0];

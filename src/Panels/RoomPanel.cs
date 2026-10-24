@@ -68,7 +68,7 @@ public sealed partial class RoomPanel : IPointerTarget, IDisposable
         if (_vr == null || !_vr.HmdValid) return;
         var local = Matrix4x4.CreateRotationX(-14 * MathF.PI / 180) * Matrix4x4.CreateTranslation(0.25f, -0.12f, -0.65f);
         C.Place.Attach = "world";
-        C.Place.M = MathUtil.ToArray(local * MathUtil.GazeFrame(_vr.Hmd));
+        C.Place.M = MathUtil.ToArray(local * MathUtil.PlacementFrame(_vr.Hmd, _vr.OnFace, "room"));
         _cfg.MarkDirty();
     }
 

@@ -1195,7 +1195,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         var enabled = _desktops.Where(d => d.Cfg.Enabled).ToList();
         var missing = enabled.Where(d => d.Cfg.Place.M == null).ToList();
         if (missing.Count > 0 && missing.Count == enabled.Count)
-            _layout.JoinAll(MathUtil.GazeFrame(_vr.Hmd), MonitorDistance, -0.12f);     // first run: one curved screen
+            _layout.JoinAll(MathUtil.PlacementFrame(_vr.Hmd, _vr.OnFace, "first run"), MonitorDistance, -0.12f);     // first run: one curved screen
         else if (missing.Count > 0)
             PlaceDesktops(missing);
     }
@@ -1208,8 +1208,11 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         if (!_vr.HmdValid) return;
         int k = Math.Max(0, _windowPanels.IndexOf(w)) % 4;
         var local = Matrix4x4.CreateTranslation(0.1f * k, -0.05f - 0.04f * k, -0.8f + 0.03f * k);
-        var world = local * MathUtil.GazeFrame(_vr.Hmd);
         if (forceWorld || w.Cfg.Place.Attach is null) w.Cfg.Place.Attach = "world";
+        // a hand not tracked: nothing placed, so the frame not even asked (this runs every frame meanwhile: lying, PlacementFrame's
+        // "lying" line came once a second until the hand woke)
+        if (w.Cfg.Place.Attach is "left" or "right" && !_vr.TryDeviceWorld(_vr.IndexFor(w.Cfg.Place.Attach), out _)) return;
+        var world = local * MathUtil.PlacementFrame(_vr.Hmd, _vr.OnFace, "window");
         Placement.SetWorld(w.Cfg.Place, _vr, world);
         if (w.Cfg.Place.M == null)
         {
@@ -1229,7 +1232,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
     void PlaceDesktops(IEnumerable<DesktopPanel> which)
     {
         if (!_vr.HmdValid) return;
-        var yaw = MathUtil.GazeFrame(_vr.Hmd);
+        var frame = MathUtil.PlacementFrame(_vr.Hmd, _vr.OnFace, "monitors");
         var enabled = _desktops.Where(d => d.Cfg.Enabled).ToList();
         if (enabled.Count == 0) return;
         var anchor = enabled.FirstOrDefault(d => d.Mon.Primary) ?? enabled[enabled.Count / 2];
@@ -1243,8 +1246,8 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             float ang = xm / R;
             var local = Matrix4x4.CreateRotationY(-ang) *
                         Matrix4x4.CreateTranslation(R * MathF.Sin(ang), ym - 0.12f, -R * MathF.Cos(ang));
-            Placement.SetWorld(d.Cfg.Place, _vr, local * yaw);
-            if (d.Cfg.Place.M == null) { d.Cfg.Place.Attach = "world"; Placement.SetWorld(d.Cfg.Place, _vr, local * yaw); }
+            Placement.SetWorld(d.Cfg.Place, _vr, local * frame);
+            if (d.Cfg.Place.M == null) { d.Cfg.Place.Attach = "world"; Placement.SetWorld(d.Cfg.Place, _vr, local * frame); }
         }
         _cfg.MarkDirty();
     }
@@ -1302,11 +1305,11 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
     void PlaceKeyboard()
     {
         if (!_vr.HmdValid) return;
-        var yaw = MathUtil.GazeFrame(_vr.Hmd);
+        var frame = MathUtil.PlacementFrame(_vr.Hmd, _vr.OnFace, "keyboard");
         var local = Matrix4x4.CreateRotationX(-50 * MathF.PI / 180) * Matrix4x4.CreateTranslation(0, -0.5f, -0.45f);
         if (C.Keyboard.Place.Attach is "head") C.Keyboard.Place.Attach = "world";
-        Placement.SetWorld(C.Keyboard.Place, _vr, local * yaw);
-        if (C.Keyboard.Place.M == null) { C.Keyboard.Place.Attach = "world"; Placement.SetWorld(C.Keyboard.Place, _vr, local * yaw); }
+        Placement.SetWorld(C.Keyboard.Place, _vr, local * frame);
+        if (C.Keyboard.Place.M == null) { C.Keyboard.Place.Attach = "world"; Placement.SetWorld(C.Keyboard.Place, _vr, local * frame); }
         _cfg.MarkDirty();
     }
 
@@ -1323,10 +1326,13 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
     public KeyboardPanel Keyboard => _kb;
 
     // Brings the whole arrangement (rows, custom spots) in front of the user, keeping its shape:
-    // the primary/middle monitor goes straight ahead, everything else moves rigidly with it.
+    // the primary/middle monitor goes straight ahead, everything else moves rigidly with it. Lying on a side (Erik 10-24) in the
+    // head's own roll (MathUtil.PlacementFrame): parallel to the eyes; the rows and windows move with it, the keyboard under them
+    // and the theater's screen are placed from the anchor's own up, so they follow it.
     public void Recenter()
     {
         if (!_vr.Connected || !_vr.HmdValid) return;
+        var frame = MathUtil.PlacementFrame(_vr.Hmd, _vr.OnFace, "recenter");     // (the helpers below decide the same: one pose)
         var placed = _desktops.Where(d => d.Cfg.Enabled && Placement.IsWorld(d.Cfg.Place) && d.Cfg.Place.M != null).ToList();
         DesktopPanel kbUnder = null;
         if (placed.Count > 0)
@@ -1340,7 +1346,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             }
             float r = DesktopLayout.Radius(anchor.Cfg);
             float dist = MonitorDistance;
-            var desired = Matrix4x4.CreateTranslation(0, -0.12f, -dist) * MathUtil.GazeFrame(_vr.Hmd);
+            var desired = Matrix4x4.CreateTranslation(0, -0.12f, -dist) * frame;
             var delta = MathUtil.Invert(MathUtil.FromArray(anchor.Cfg.Place.M)) * desired;
             foreach (var d in placed)
                 d.Cfg.Place.M = MathUtil.ToArray(MathUtil.FromArray(d.Cfg.Place.M) * delta);
@@ -2068,7 +2074,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
     public void JoinAllDesktops()
     {
         if (!_vr.Connected || !_vr.HmdValid) return;
-        _layout.JoinAll(MathUtil.GazeFrame(_vr.Hmd), MonitorDistance, -0.12f);
+        _layout.JoinAll(MathUtil.PlacementFrame(_vr.Hmd, _vr.OnFace, "join"), MonitorDistance, -0.12f);
     }
 
     public void SeparateDesktops() => _layout.SeparateAll();
