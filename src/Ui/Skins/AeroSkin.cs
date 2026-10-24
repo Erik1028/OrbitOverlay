@@ -477,7 +477,8 @@ public sealed partial class AeroSkin : Win95Skin
         p.PopFade();
     }
 
-    void OffFace(Painter p, RectangleF r) => RoundBox(p, r, 3, BtnOffBorder, 0xFFFBFBFB, 0xFFF4F4F4, 0xFFF4F4F4, 0xFFF4F4F4, 0xFFF4F4F4);
+    // a disabled button's face: flat, nearly white, a light grey border (the watch's camera button while VRChat's camera is closed too)
+    public void OffFace(Painter p, RectangleF r) => RoundBox(p, r, 3, BtnOffBorder, 0xFFFBFBFB, 0xFFF4F4F4, 0xFFF4F4F4, 0xFFF4F4F4, 0xFFF4F4F4);
 
     public override void PushButton(Painter p, RectangleF r, string label, W95Icons.Id? icon, bool enabled, bool isDefault, bool down,
         bool latched, bool hover)

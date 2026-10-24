@@ -594,6 +594,7 @@ public sealed partial class WristPanel
     // a button widget: an XP button, its picture over its name when it is big enough
     void ButtonWidgetXp(int id, WatchWidget w, WatchWidgets.Kind k, RectangleF r, PanelData d)
     {
+        if (k.Id == VrcCamera.Id) { CameraButton95(id, w, k, r, d, true); return; }      // closed: XP's disabled button (WristCamera.cs)
         bool click;
         if (k.Id == "layout")
             click = _ui.Button95(Ui.Id("wcb", id), r, Ui.Esc95(Fit(d.LayoutName, r.Width - 8)), true, false, false,

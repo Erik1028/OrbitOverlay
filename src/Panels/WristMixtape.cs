@@ -151,6 +151,7 @@ public sealed partial class WristPanel
     // Mixtape's song
     void Act(string id)
     {
+        if (id == VrcCamera.Id) CameraTapped();             // drawn closed: its hint (WristCamera.cs)
         if (id is "media.prev" or "media.play" or "media.next" && _mtLead && Mixtape is { Status: MixtapeStatus.Connected } m)
         {
             if (id == "media.play") m.Toggle(); else if (id == "media.next") m.Next(); else m.Prev();

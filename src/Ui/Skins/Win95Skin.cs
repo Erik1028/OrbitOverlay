@@ -212,7 +212,7 @@ public class Win95Skin : RetroSkin
             float tw = string.IsNullOrEmpty(label) ? 0 : LabelWidth(p, label) + 4;
             float x = b.X + (b.Width - n - tw) / 2 + o, y = b.Y + (b.Height - n) / 2 + o;
             if (enabled) W95Icons.Draw(p, ic, MathF.Round(x), MathF.Round(y));
-            else p.ImageNearest(W95Icons.Get(p, ic), new RectangleF(MathF.Round(x), MathF.Round(y), n, n));
+            else W95Icons.DrawDisabled(p, ic, MathF.Round(x), MathF.Round(y));      // embossed: grey with a white edge (DrawState's disabled)
             if (tw > 0) Label(p, label, new RectangleF(MathF.Round(x + n + 4), b.Y + o, tw, b.Height), enabled, TextAlignment.Leading, ButtonText, false);
         }
         else

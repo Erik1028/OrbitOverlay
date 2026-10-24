@@ -517,6 +517,30 @@ public static class W95Icons
         return _sizes[i];
     }
 
+    // a disabled control's picture as Windows 95 drew it (DrawState's DSS_DISABLED): its dark pixels as one grey shape over the same
+    // shape in white a pixel down and right - the light ones gone. One pixel bigger than the picture; made once.
+    static readonly Dictionary<(Painter, Id), ID2D1Bitmap> _disabled = new();
+
+    public static void DrawDisabled(Painter p, Id id, float x, float y)
+    {
+        if (!_disabled.TryGetValue((p, id), out var b))
+        {
+            var m = Map(id);
+            int h = m.Length, w = m[0].Length, W = w + 1;
+            var px = new uint[W * (h + 1)];
+            bool Dark(uint c) => c >> 24 != 0 && ((c >> 16 & 0xFF) * 3 + (c >> 8 & 0xFF) * 6 + (c & 0xFF)) / 10 < 0xC0;
+            for (int yy = 0; yy < h; yy++)
+                for (int xx = 0; xx < w; xx++)
+                    if (Dark(Pal(m[yy][xx]))) px[(yy + 1) * W + xx + 1] = 0xFFFFFFFF;
+            for (int yy = 0; yy < h; yy++)
+                for (int xx = 0; xx < w; xx++)
+                    if (Dark(Pal(m[yy][xx]))) px[yy * W + xx] = 0xFF808080;
+            _disabled[(p, id)] = b = p.CreateBitmap(px, W, h + 1);
+        }
+        int n = Size(id);
+        p.ImageNearest(b, new System.Drawing.RectangleF(x, y, n + 1, n + 1));
+    }
+
     // at its own size (or a whole multiple), top-left at x, y
     public static void Draw(Painter p, Id id, float x, float y, int scale = 1)
     {

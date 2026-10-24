@@ -25,6 +25,8 @@ namespace Orbit;
 //    and type. Shown at once and held 1.5 s; then what VRChat reads back wins (a toggle VRChat did not take goes back).
 // A thread of its own, started by the first avatar widget: every 2.5 s while the watch is in view (sooner after a tap, to show what
 // VRChat made of it), every 20 s when not, asleep when no page has the widget. VRChat not running: the widget says so.
+// The camera widget's mode rides along (Erik 10-24, Sys/VrcCamera.cs): /usercamera/Mode from the same service, every second while
+// the watch is in view and a camera widget is on a page, every 20 s when not - on its own when no avatar widget is placed.
 public enum AvatarStatus { Off, Looking, NoVrchat, NoConfig, Ready }
 public enum AvatarSource { None, Live, Log, Newest }
 public enum AvatarKind { Toggle, Stepper, Slider }
@@ -302,10 +304,14 @@ public sealed class AvatarLink : IDisposable
     public double Poll = 2.5, Slow = 20, Confirm = 0.6, Hold = 1.5;      // seconds: watched, not watched, after a tap, a tap shown
     public Func<DateTime> HoldClock = () => DateTime.UtcNow;              // a tap's hold runs on it (--snapshot: a made-up clock, stepped)
 
+    public double CameraPoll = 1;           // seconds: the camera's mode while watched (Slow when not)
+
     readonly AutoResetEvent _wake = new(false);
     readonly object _lock = new();
     Thread _thread;
-    volatile bool _stop, _active, _watched, _frozen;
+    volatile bool _stop, _active, _watched, _frozen, _camActive;
+    volatile int _camMode = VrcCamera.Unknown;
+    DateTime _camDue = DateTime.MinValue;
     volatile AvatarState _pub = new() { Status = AvatarStatus.Off };
     int _version, _hostPort, _queryPort;
     DateTime _due = DateTime.MinValue, _nextScan = DateTime.MinValue;
@@ -345,10 +351,44 @@ public sealed class AvatarLink : IDisposable
             if (value == _watched) return;
             _watched = value;
             if (!value) return;
-            _due = DateTime.MinValue;
+            _due = _camDue = DateTime.MinValue;
             _wake.Set();
         }
     }
+
+    // a camera widget is on a page: VRChat's camera mode is read (the avatar's own reads only while Active)
+    public bool CameraActive
+    {
+        get => _camActive;
+        set
+        {
+            if (value == _camActive) return;
+            _camActive = value;
+            _camDue = DateTime.MinValue;
+            Start();
+            _wake.Set();
+        }
+    }
+
+    // VRChat's camera: VrcCamera.Unknown until the service said a mode, then the last one it said (an answer missed keeps it)
+    public int CameraMode => _camMode;
+
+    // the camera's mode asked again now (a tap while it read closed: it may have been opened since)
+    public void CameraNow()
+    {
+        _camDue = DateTime.MinValue;
+        if (!_camActive) return;
+        Start();
+        _wake.Set();
+    }
+
+    // --snapshot: the camera's mode read as the thread would, now (a made-up OSCQuery)
+    public void ReadCameraNow() { lock (_step) StepCamera(force: true); }
+
+    // --snapshot: a made-up service's port, as if it had been found - asked over HTTP as VRChat's is, and nothing is ever looked for
+    // (the PC's own VRChat is not asked)
+    public void ServiceAt(int port) { lock (_step) { _queryPort = port; _queryV6 = false; _missed = 0; _madeUp = true; } }
+    public bool HasService => _queryPort != 0;          // --snapshot: the service's port is kept
 
     // --snapshot: no thread; the state as given, and a tap only changes it here (and goes to Send, a recorder there)
     public void Freeze(AvatarState s)
@@ -461,9 +501,66 @@ public sealed class AvatarLink : IDisposable
                 _failed = e.Message;
                 _due = DateTime.UtcNow.AddSeconds(5);
             }
-            double wait = _active ? Math.Clamp((_due - DateTime.UtcNow).TotalSeconds, 0.05, 60) : 60;
+            try { lock (_step) StepCamera(false); }
+            catch (Exception e)
+            {
+                if (e.Message != _failed) Log.Warn("camera: " + e.Message);
+                _failed = e.Message;
+                _camDue = DateTime.UtcNow.AddSeconds(5);
+            }
+            // the sooner of the two that are wanted
+            var next = DateTime.MaxValue;
+            if (_active) next = _due;
+            if (_camActive && _camDue < next) next = _camDue;
+            double wait = next == DateTime.MaxValue ? 60 : Math.Clamp((next - DateTime.UtcNow).TotalSeconds, 0.05, 60);
             _wake.WaitOne(TimeSpan.FromSeconds(wait));
         }
+    }
+
+    // VRChat's camera mode: asked from the service the avatar's reads use (found the same way, by the same Ask). No answer - no
+    // OSCQuery yet, a VRChat before 2025.3.3 (no such path), one missed while it loads a world: the last mode said stays. VRChat
+    // quit: its camera went with it (closed) - a mode never read stays not known, and the button works as it always did.
+    void StepCamera(bool force)
+    {
+        if (!force && (!_camActive || DateTime.UtcNow < _camDue)) return;
+        _camDue = DateTime.UtcNow.AddSeconds(_watched ? CameraPoll : Slow);
+        bool hadPort = _queryPort != 0;
+        if (!(Running?.Invoke() ?? (hadPort || VrchatRunning()))) { CameraGone(); return; }
+        string answer = Ask(VrcCamera.ModePath);
+        if (answer == null)
+        {
+            if (hadPort && Running == null && !VrchatRunning()) CameraGone();
+            // one answer missed (the port kept): asked again in a second, as Step does - counted from now, after the wait
+            else if (_queryPort != 0) _camDue = DateTime.UtcNow.AddSeconds(1);
+            return;
+        }
+        int m = ParseMode(answer);
+        if (m != VrcCamera.Unknown) SetCamera(m);
+    }
+
+    void CameraGone() { if (_camMode != VrcCamera.Unknown) SetCamera(VrcCamera.Off); }
+
+    void SetCamera(int m)
+    {
+        if (m == _camMode) return;
+        _camMode = m;
+        Log.Info("camera: VRChat's camera " + (m == VrcCamera.Off ? "closed" : "open, mode " + m.ToString(CultureInfo.InvariantCulture) +
+            " (" + VrcCamera.ModeName(m) + ")"));       // (the log says when it changes, never every read)
+    }
+
+    // /usercamera/Mode's answer: its VALUE, an int (VrcCamera.Unknown: not one)
+    public static int ParseMode(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var r = doc.RootElement;
+            if (r.ValueKind != JsonValueKind.Object || !r.TryGetProperty("VALUE", out var val) || val.ValueKind != JsonValueKind.Array ||
+                val.GetArrayLength() == 0) return VrcCamera.Unknown;
+            var v = val[0];
+            return v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out int m) && m >= 0 ? m : VrcCamera.Unknown;
+        }
+        catch (Exception) { return VrcCamera.Unknown; }
     }
 
     AvatarStatus _said = AvatarStatus.Off;
@@ -566,25 +663,31 @@ public sealed class AvatarLink : IDisposable
         }
         if (_queryPort != 0)
         {
+            // one hang counts once (10-24): for a second after a missed answer nobody asks - the camera's read in the pass where the
+            // avatar's missed, or its own next pass straight after the 2 s wait, counted the same hang twice: the port dropped, the
+            // service not found while VRChat was still busy, 10 s of the log's "no live values"
+            if (_missed > 0 && DateTime.UtcNow < _retryAt) return null;
             string body = Get(_queryPort, _queryV6, path);
-            if (body != null) { _missed = 0; return body; }
+            // (a path the service does not have - an older VRChat's /usercamera - is an answer too: the service is there)
+            if (body != null || _answered) { _missed = 0; return body; }
             // no answer: once is let go (VRChat busy loading a world - Step keeps what it showed); twice, the port is dropped and
             // looked for again at once (a new one: OSC switched off and on)
-            if (++_missed < 2) return null;
+            if (++_missed < 2) { _retryAt = DateTime.UtcNow.AddSeconds(1); return null; }
             _queryPort = _hostPort = _missed = 0;
             _nextScan = DateTime.MinValue;
         }
-        if (DateTime.UtcNow < _nextScan) return null;
+        if (_madeUp || DateTime.UtcNow < _nextScan) return null;
         _nextScan = DateTime.UtcNow.AddSeconds(10);
         _queryPort = FindService(out _hostPort);
         if (_queryPort == 0) return null;
         string first = Get(_queryPort, _queryV6, path);
-        if (first == null) _missed = 1;                     // (found, but no answer yet: once more, then dropped)
+        if (first == null && !_answered) { _missed = 1; _retryAt = DateTime.UtcNow.AddSeconds(1); }     // (found, but no answer yet: once more, then dropped)
         return first;
     }
 
-    bool _queryV6;
+    bool _queryV6, _answered, _madeUp;      // _answered: the last Get had an HTTP answer (any status); _madeUp: --snapshot's (ServiceAt)
     int _missed;
+    DateTime _retryAt;                      // after a missed answer: not asked again before it
 
     // VRChat.exe's localhost TCP listeners, each asked "/?HOST_INFO": the one that says it is VRChat's
     int FindService(out int oscPort)
@@ -633,11 +736,13 @@ public sealed class AvatarLink : IDisposable
         // this PC or not there at all
         _http ??= new HttpClient(new SocketsHttpHandler { UseProxy = false, AllowAutoRedirect = false, ConnectTimeout = TimeSpan.FromMilliseconds(500) })
             { Timeout = TimeSpan.FromSeconds(2) };
+        _answered = false;
         try
         {
             using var req = new HttpRequestMessage(HttpMethod.Get, $"http://{(v6 ? "[::1]" : "127.0.0.1")}:{port.ToString(CultureInfo.InvariantCulture)}{path}");
             using var cts = new CancellationTokenSource(ms);
             using var res = _http.Send(req, cts.Token);
+            _answered = true;
             if (!res.IsSuccessStatusCode) return null;
             using var rd = new StreamReader(res.Content.ReadAsStream(), Encoding.UTF8);
             return rd.ReadToEnd();

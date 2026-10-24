@@ -16,6 +16,16 @@ namespace Orbit;
 // (VrcCamera.Release later, not before) with a false. A second tap while it is pressed sends nothing; a tap on another button sends
 // nothing. Then the kind's layout check (nothing drawn outside its card) in every style. The tap goes the way the app's goes: the
 // watch's OnAction with "camera" to VrcCamera.Shutter (OrbitApp.WristAction) - only the port is the sink's.
+// VRChat's camera open or closed (10-24, Panels/WristCamera.cs): its mode comes from a made-up OSCQuery - VRChat's HOST_INFO and
+// /usercamera/Mode answered as VRChat answered it that day, through the avatar link's own Query, the path the app's reads take
+// (AvatarLink.StepCamera); nothing asks VRChat itself. Not known yet (the pictures above): as before. In every style VRChat says 0:
+// the buttons grey (camera_closed_<style>.png), a tap on each sends nothing at all and the button says where to open it
+// (camera_hint_<style>.png); then 1: the mode's name, a tap takes the photo again (camera_open_<style>.png; all three side by side
+// on camera_states_sheet.png). The pictures must differ where the buttons are (closed from as before, the hint from closed, open
+// from as before - every button, 95's and the Mac's 1x1 too, and with the longest mode's name, camera_open4_<style>.png). Then: the
+// source going quiet keeps the last mode, VRChat quitting leaves it closed, a link that never had an answer stays not known; a hung
+// service (a made-up one over HTTP, on a port of this run's own) is one miss however many reads want it - the port kept - and the
+// sink got nothing but the shutter's two messages (never a Mode).
 static partial class Tools
 {
     // the two messages byte for byte as OSC 1.0 writes them: the address with its NUL padded to 4, the type tag ",T" / ",F" padded
@@ -50,9 +60,10 @@ static partial class Tools
         int port = ((IPEndPoint)sink.Client.LocalEndPoint).Port;
         sink.Client.ReceiveTimeout = 1500;
         Want($"camera: the made-up OSC sink on 127.0.0.1:{port}, not VRChat's 9000 nor 9001 -", port != 9000 && port != 9001);
+        var received = new List<byte[]>();          // everything the sink got (never a Mode: the end's check)
         byte[] Next()
         {
-            try { var from = new IPEndPoint(IPAddress.Any, 0); return sink.Receive(ref from); }
+            try { var from = new IPEndPoint(IPAddress.Any, 0); var b = sink.Receive(ref from); received.Add(b); return b; }
             catch (SocketException) { return null; }
         }
         int Waiting() { System.Threading.Thread.Sleep(120); return sink.Available; }
@@ -64,6 +75,38 @@ static partial class Tools
         var actions = new List<string>();
         double clock = 1000;            // the check's own clock: WARP's frames are slow, the real one would run past the release mid-tap
         wrist.OnAction = a => { actions.Add(a); if (a == VrcCamera.Id) cam.Shutter(clock, port); };
+
+        // VRChat's camera mode: VRChat's own answer of 10-24 parsed, then a made-up OSCQuery serving 'served' (< 0: no answer) while
+        // 'running' - each style starts with a new link (nothing read yet: not known)
+        const string Real0 = "{\"FULL_PATH\":\"/usercamera/Mode\",\"ACCESS\":3,\"TYPE\":\"i\",\"VALUE\":[0]}";
+        int p0 = AvatarLink.ParseMode(Real0), p1 = AvatarLink.ParseMode(Real0.Replace("[0]", "[1]")),
+            pNone = AvatarLink.ParseMode("{\"FULL_PATH\":\"/usercamera/Mode\",\"ACCESS\":3,\"TYPE\":\"i\"}"), pBad = AvatarLink.ParseMode("<html>404</html>");
+        Want($"camera: VRChat's answer parsed - {p0} (want 0), with a 1 {p1} (want 1), no VALUE {pNone}, not JSON {pBad} (want -1, -1) -",
+            p0 == 0 && p1 == 1 && pNone == VrcCamera.Unknown && pBad == VrcCamera.Unknown);
+        int served = VrcCamera.Unknown;
+        bool running = true;
+        string hostInfo = "{\"NAME\":\"VRChat-Client-TEST\",\"OSC_IP\":\"127.0.0.1\",\"OSC_PORT\":" + port + ",\"OSC_TRANSPORT\":\"UDP\"}";
+        AvatarLink NewLink() => new()
+        {
+            Running = () => running,
+            Query = path => path == "/?HOST_INFO" ? hostInfo
+                : path == VrcCamera.ModePath && served >= 0 ? Real0.Replace("[0]", "[" + served + "]") : null,
+        };
+        var camData0 = data.Camera;
+        var camHint0 = wrist.CamHintFor;
+        data.Camera = cam;
+        // pixels that differ between two pictures inside a widget's card
+        int Diff(string a, string b, WatchWidget w)
+        {
+            var c = WatchWidgets.Rect(w, Theme.Classic, WatchPages.Grid(wcfg, wrist.PageNow));
+            using var A = new System.Drawing.Bitmap(a);
+            using var B = new System.Drawing.Bitmap(b);
+            int n = 0;
+            for (int y = (int)(c.Top * S()); y < (int)(c.Bottom * S()) && y < A.Height; y++)
+                for (int x = (int)(c.Left * S()); x < (int)(c.Right * S()) && x < A.Width; x++)
+                    if (A.GetPixel(x, y) != B.GetPixel(x, y)) n++;
+            return n;
+        }
 
         float S() => Theme.Classic ? 2 : 1;
         Vector2 Centre(WatchWidget w)
@@ -97,19 +140,9 @@ static partial class Tools
             return path;
         }
 
-        var styles = new[] { ("modern", "modern"), (CyberHud.Id, "cyber"), ("classic", "95"), ("xp", "xp"), ("aero", "aero"), ("mac", "mac"), ("terminal", "term") };
-        var files = new List<string>();
-        try
+        // a tap that takes the photo: the press now, nothing more before the release, the release on time
+        void Shutters(string where, WatchWidget w)
         {
-            foreach (var (style, tag) in styles)
-            {
-                cfg.Data.Appearance = new AppearanceConfig { Style = style, Clock24h = true };
-                Theme.Apply(cfg.Data.Appearance);
-                Face();
-                files.Add(Shot($"camera_{tag}.png"));
-                foreach (var w in wcfg.Widgets.Where(x => x.Type == VrcCamera.Id).ToList())
-                {
-                    string where = $"camera {tag} {w.W}x{w.H}";
                     actions.Clear();
                     int shots0 = cam.Shots;
                     clock += 10;
@@ -130,31 +163,196 @@ static partial class Tools
                     int after = Waiting();
                     Want($"{where}: {VrcCamera.Release} s later the sink got {Show(release)} (want {Show(CamRelease)}), then {after} byte(s) more (want 0) -",
                         Same(release, CamRelease) && after == 0);
+        }
+
+        var styles = new[] { ("modern", "modern"), (CyberHud.Id, "cyber"), ("classic", "95"), ("xp", "xp"), ("aero", "aero"), ("mac", "mac"), ("terminal", "term") };
+        var files = new List<string>();
+        var states = new List<string>();
+        try
+        {
+            foreach (var (style, tag) in styles)
+            {
+                cfg.Data.Appearance = new AppearanceConfig { Style = style, Clock24h = true };
+                Theme.Apply(cfg.Data.Appearance);
+                cam.Link?.Dispose();
+                cam.Link = NewLink();
+                served = VrcCamera.Unknown;
+                wrist.CamHintFor = 0;
+                Face();
+                string before = Shot($"camera_{tag}.png");
+                files.Add(before);
+                var cams = wcfg.Widgets.Where(x => x.Type == VrcCamera.Id).ToList();
+                Want($"camera {tag}: nothing read yet - mode {cam.Mode}, drawn {wrist.CameraLook(data)} (want -1, Normal: as before) -",
+                    cam.Mode == VrcCamera.Unknown && wrist.CameraLook(data) == "Normal");
+                foreach (var w in cams) Shutters($"camera {tag} {w.W}x{w.H}", w);
+
+                // VRChat says 0: greyed; a tap on each sends nothing and says where (the hint held for its picture)
+                served = VrcCamera.Off;
+                cam.Link.ReadCameraNow();
+                string closed = Shot($"camera_closed_{tag}.png"), lookClosed = wrist.CameraLook(data);
+                foreach (var w in cams)
+                {
+                    actions.Clear();
+                    int shots0 = cam.Shots, refused0 = cam.Refused;
+                    clock += 10;
+                    Tap(Centre(w));
+                    cam.Update(clock + 2 * VrcCamera.Release);
+                    int got = Waiting();
+                    Want($"camera {tag} {w.W}x{w.H} closed: a tap -> actions {string.Join(",", actions)} (want camera), {got} byte(s) in the sink, " +
+                        $"shots {cam.Shots - shots0}, refused {cam.Refused - refused0} (want 0, 0, 1) -",
+                        actions.SequenceEqual(new[] { VrcCamera.Id }) && got == 0 && cam.Shots == shots0 && cam.Refused == refused0 + 1);
                 }
+                wrist.CamHintFor = 600;
+                string hint = Shot($"camera_hint_{tag}.png"), lookHint = wrist.CameraLook(data);
+                layout += LayoutCheckRun(wrist, data, cfg, painter, gpu, dir, tag + "-hint", onlyKind: VrcCamera.Id);      // its longest words
+
+                // VRChat says 1: the mode's name, a tap takes the photo again
+                served = 1;
+                cam.Link.ReadCameraNow();
+                wrist.CamHintFor = 0;
+                Face();
+                string open = Shot($"camera_open_{tag}.png"), lookOpen = wrist.CameraLook(data);
+                // the longest of the modes' names (Multilayer): open all the same at 1x1 - cut to fit, not left out
+                served = 4;
+                cam.Link.ReadCameraNow();
+                string open4 = Shot($"camera_open4_{tag}.png");
+                layout += LayoutCheckRun(wrist, data, cfg, painter, gpu, dir, tag + "-open", onlyKind: VrcCamera.Id);
+                served = 1;
+                cam.Link.ReadCameraNow();
+                Face();
+                states.Add(closed); states.Add(hint); states.Add(open);
+                Want($"camera {tag}: VRChat says 0 -> mode {VrcCamera.Off} drawn {lookClosed}, tapped {lookHint}; says 1 -> mode {cam.Mode} drawn {lookOpen} " +
+                    "(want Closed, Hint; 1 Open) -", lookClosed == "Closed" && lookHint == "Hint" && cam.Mode == 1 && lookOpen == "Open");
+                foreach (var w in cams)
+                {
+                    // (open: 95's and the Mac's 1x1 the picture over the mode's word - the picture alone is how it looks not known)
+                    int dc = Diff(before, closed, w), dh = Diff(closed, hint, w), dopen = Diff(before, open, w),
+                        d4 = Diff(before, open4, w), d41 = Diff(open, open4, w);
+                    Want($"camera {tag} {w.W}x{w.H}: pixels changed in its card - closed {dc}, the hint {dh}, open {dopen}; Multilayer from as before {d4}, " +
+                        $"from Photo {d41} (want > 0 each) -", dc > 0 && dh > 0 && dopen > 0 && d4 > 0 && d41 > 0);
+                }
+                foreach (var w in cams) Shutters($"camera {tag} {w.W}x{w.H} open", w);
                 // another button: its own action, nothing to VRChat's camera
                 actions.Clear();
                 Tap(Centre(wcfg.Widgets.First(x => x.Type == "recenter")));
                 int other = Waiting();
                 Want($"camera {tag}: a tap on Recenter -> actions {string.Join(",", actions)} (want recenter), {other} byte(s) in the sink (want 0) -",
                     actions.SequenceEqual(new[] { "recenter" }) && other == 0);
+                cam.Link.Dispose();
+                cam.Link = null;              // (the layout check as before: not known)
                 layout += LayoutCheckRun(wrist, data, cfg, painter, gpu, dir, tag, onlyKind: VrcCamera.Id);
             }
             CameraSheet(Path.Combine(dir, "camera_sheet.png"), files);
+            CameraSheet(Path.Combine(dir, "camera_states_sheet.png"), states, 3);
 
-            // Hungarian: its words, and the face in three styles (the 2x1's label, Terminal's capitals)
+            // the source going quiet keeps what it said last; closed again; VRChat quitting leaves it closed (not back to not known); open
+            // when VRChat quit: closed; a link that never had an answer: not known
+            cam.Link = NewLink();
+            running = true;
+            served = 2; cam.Link.ReadCameraNow(); int mOpen = cam.Mode;
+            served = VrcCamera.Unknown; cam.Link.ReadCameraNow(); int mQuiet = cam.Mode;
+            served = VrcCamera.Off; cam.Link.ReadCameraNow(); int mClosed = cam.Mode;
+            running = false; cam.Link.ReadCameraNow(); int mGone = cam.Mode;
+            cam.Link.Dispose();
+            cam.Link = NewLink();
+            running = true; served = 6; cam.Link.ReadCameraNow(); int mDrone = cam.Mode;
+            running = false; cam.Link.ReadCameraNow(); int mDroneGone = cam.Mode;
+            cam.Link.Dispose();
+            cam.Link = NewLink();
+            running = true; served = VrcCamera.Unknown; cam.Link.ReadCameraNow(); int mNever = cam.Mode;
+            running = false; cam.Link.ReadCameraNow(); int mNeverGone = cam.Mode;
+            Want($"camera: says 2 -> {mOpen}, then quiet -> {mQuiet} (want 2, 2); 0 -> {mClosed}, VRChat quits -> {mGone} (want 0, 0); " +
+                $"6 then VRChat quits -> {mDrone}, {mDroneGone} (want 6, 0); never an answer -> {mNever}, VRChat quits -> {mNeverGone} (want -1, -1) -",
+                mOpen == 2 && mQuiet == 2 && mClosed == 0 && mGone == 0 && mDrone == 6 && mDroneGone == 0 && mNever == -1 && mNeverGone == -1);
+            Want($"camera: the mode's names - {VrcCamera.ModeName(1)}, {VrcCamera.ModeName(2)}, {VrcCamera.ModeName(6)}, a later one {VrcCamera.ModeName(9)} " +
+                "(want Photo, Stream, Drone, Camera) -", VrcCamera.ModeName(1) == "Photo" && VrcCamera.ModeName(2) == "Stream" &&
+                VrcCamera.ModeName(6) == "Drone" && VrcCamera.ModeName(9) == "Camera");
+            cam.Link.Dispose();
+            cam.Link = null;
+            running = true;
+
+            // one hang counts once (10-24): the service found (a made-up one, asked over HTTP as VRChat's is) and hung - the avatar's read
+            // misses, the port kept; the camera's read in the same pass asks nothing (it asked too: the same hang twice, the port dropped);
+            // a second later it asks and is answered; hung again, its own miss and its next pass straight after (the thread's 0.05 s once
+            // the 2 s wait is over) - asked once, the port kept, the mode as it was
+            using (var svc = new CamService())
+            {
+                var link = new AvatarLink { Running = () => true };
+                link.ServiceAt(svc.Port);
+                svc.Hung = true;
+                link.ReadNow();
+                int g1 = svc.Gets;
+                link.ReadCameraNow();
+                int g2 = svc.Gets;
+                bool kept1 = link.HasService;
+                System.Threading.Thread.Sleep(1100);
+                svc.Mode = 1;
+                svc.Hung = false;
+                link.ReadCameraNow();
+                int g3 = svc.Gets, m3 = link.CameraMode;
+                svc.Hung = true;
+                link.ReadCameraNow();
+                link.ReadCameraNow();
+                int g4 = svc.Gets, m4 = link.CameraMode;
+                bool kept2 = link.HasService;
+                link.Dispose();
+                Want($"camera: a hung service on 127.0.0.1:{svc.Port} - the avatar's read asked {g1}, the camera's after it {g2 - g1}, the port kept {kept1} " +
+                    $"(want 1, 0, True); a second later asked {g3 - g2}, mode {m3} (want 1, 1); hung again, two camera passes asked {g4 - g3}, " +
+                    $"mode {m4}, the port kept {kept2} (want 1, 1, True) -",
+                    g1 == 1 && g2 == 1 && kept1 && g3 == 2 && m3 == 1 && g4 == 3 && m4 == 1 && kept2);
+            }
+
+            // Hungarian: its words, and the face in every style - not known, closed, the hint, open (camera_hu_states_sheet.png)
             Lang.Set("hu");
             Want($"camera: Hungarian - \"{Lang.T("Camera")}\", \"{Lang.T("CAMERA")}\", \"{Lang.T("CAM")}\" (want Kamera, KAMERA, KAM) -",
                 Lang.T("Camera") == "Kamera" && Lang.T("CAMERA") == "KAMERA" && Lang.T("CAM") == "KAM");
-            foreach (var (style, tag) in new[] { ("modern", "modern"), ("classic", "95"), ("terminal", "term") })
+            Want($"camera: Hungarian, open or closed - \"{Lang.T("Open the camera")}\", \"{Lang.T("Closed")}\", \"{Lang.T("Open it in VRChat")}\", " +
+                $"\"{Lang.T("IN VRCHAT")}\", \"{Lang.T("CAM OFF")}\", \"{Lang.T("Stream")}\", \"{Lang.T("PHOTO")}\" " +
+                "(want Nyisd meg a kamerát, Zárva, Nyisd meg a VRChatben, VRCHATBEN, KAM KI, Közvetítés, FOTÓ) -",
+                Lang.T("Open the camera") == "Nyisd meg a kamerát" && Lang.T("Closed") == "Zárva" && Lang.T("Open it in VRChat") == "Nyisd meg a VRChatben" &&
+                Lang.T("IN VRCHAT") == "VRCHATBEN" && Lang.T("CAM OFF") == "KAM KI" && Lang.T("Stream") == "Közvetítés" && Lang.T("PHOTO") == "FOTÓ");
+            // the table's check of the camera's own lines (no English twice, nothing translated twice over; others' lines are not this tag's)
+            string[] mine = { "Open the camera", "short|Open the camera", "Closed", "Open it in VRChat", "short|Open it in VRChat", "short|In VRChat",
+                "Stream", "Emoji", "Multilayer", "Drone", "CAM OFF" };
+            var bad = Lang.Check("hu").Where(b => mine.Any(m => b.Contains("'" + m + "'", StringComparison.Ordinal))).ToList();
+            Want($"camera: the Hungarian table's check of its lines - {bad.Count} problem(s) {string.Join("; ", bad.Take(3))} (want 0) -", bad.Count == 0);
+            var hu = new List<string>();
+            foreach (var (style, tag) in styles)        // (every style: the longer Hungarian words where each has room)
             {
                 cfg.Data.Appearance = new AppearanceConfig { Style = style, Clock24h = true };
                 Theme.Apply(cfg.Data.Appearance);
+                cam.Link = NewLink();
+                served = VrcCamera.Unknown;
+                wrist.CamHintFor = 0;
                 Face();
                 Shot($"camera_hu_{tag}.png");
+                served = VrcCamera.Off;
+                cam.Link.ReadCameraNow();
+                hu.Add(Shot($"camera_hu_closed_{tag}.png"));
+                foreach (var w in wcfg.Widgets.Where(x => x.Type == VrcCamera.Id).ToList()) { clock += 10; Tap(Centre(w)); }
+                wrist.CamHintFor = 600;
+                hu.Add(Shot($"camera_hu_hint_{tag}.png"));
+                served = 2;
+                cam.Link.ReadCameraNow();
+                wrist.CamHintFor = 0;
+                hu.Add(Shot($"camera_hu_open_{tag}.png"));
+                cam.Link.Dispose();
+                cam.Link = null;
             }
+            CameraSheet(Path.Combine(dir, "camera_hu_states_sheet.png"), hu, 3);
+
+            // everything the sink got: the shutter's press and release, nothing else - never a Mode, never anything while closed
+            while (sink.Available > 0 && Next() != null) { }
+            int odd = received.Count(b => !Same(b, CamPress) && !Same(b, CamRelease));
+            bool mode = received.Any(b => Encoding.ASCII.GetString(b).Contains("/usercamera/Mode"));
+            Want($"camera: the sink got {received.Count} message(s), {odd} not the shutter's, a Mode among them {mode} (want 0, False) -", odd == 0 && !mode);
         }
         finally
         {
+            cam.Link?.Dispose();
+            cam.Link = null;
+            data.Camera = camData0;
+            wrist.CamHintFor = camHint0;
             Lang.Set(lang0);
             wrist.OnAction = onAction0;
             (wcfg.Face, wcfg.Widgets, wcfg.Grid, wcfg.Pages, wcfg.Page, wcfg.Background) = keep;
@@ -162,22 +360,82 @@ static partial class Tools
             Theme.Apply(cfg.Data.Appearance);
             System.Globalization.CultureInfo.CurrentCulture = culture;
         }
-        Log.Info($"snapshot (camera only) written to {dir}: {cam.Shots} shutter(s) to the sink");
+        Log.Info($"snapshot (camera only) written to {dir}: {cam.Shots} shutter(s) to the sink, {cam.Refused} tap(s) while closed sent nothing");
         return layout > 0 ? 1 : WantsExit(failed0);
     }
 
-    // the styles' pictures two to a row, each with its name
-    static void CameraSheet(string path, List<string> files)
+    // a made-up OSCQuery service over HTTP on a port of this run's own on 127.0.0.1 (never VRChat's): it counts the GETs and answers
+    // each with /usercamera/Mode's Mode as VRChat words it - or, Hung, with nothing at all (VRChat busy loading a world: the asker's
+    // 2 s run out)
+    sealed class CamService : IDisposable
+    {
+        readonly TcpListener _listen = new(IPAddress.Loopback, 0);
+        readonly List<TcpClient> _open = new();
+        int _gets;
+        public volatile bool Hung;
+        public volatile int Mode;
+        public int Gets => System.Threading.Volatile.Read(ref _gets);
+        public int Port => ((IPEndPoint)_listen.LocalEndpoint).Port;
+
+        public CamService()
+        {
+            _listen.Start();
+            new System.Threading.Thread(Accept) { IsBackground = true, Name = "camera check: made-up OSCQuery" }.Start();
+        }
+
+        void Accept()
+        {
+            try
+            {
+                while (true)
+                {
+                    var c = _listen.AcceptTcpClient();
+                    lock (_open) _open.Add(c);
+                    new System.Threading.Thread(() => Serve(c)) { IsBackground = true }.Start();
+                }
+            }
+            catch (Exception) { }           // (stopped)
+        }
+
+        void Serve(TcpClient c)
+        {
+            try
+            {
+                var s = c.GetStream();
+                var rd = new StreamReader(s, Encoding.ASCII);
+                for (string line; (line = rd.ReadLine()) != null;)
+                {
+                    if (!line.StartsWith("GET ", StringComparison.Ordinal)) continue;
+                    while (!string.IsNullOrEmpty(rd.ReadLine())) { }        // its headers, to the empty line
+                    System.Threading.Interlocked.Increment(ref _gets);
+                    if (Hung) continue;
+                    var body = Encoding.ASCII.GetBytes("{\"FULL_PATH\":\"/usercamera/Mode\",\"ACCESS\":3,\"TYPE\":\"i\",\"VALUE\":[" + Mode + "]}");
+                    s.Write(Encoding.ASCII.GetBytes("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: " + body.Length + "\r\n\r\n"));
+                    s.Write(body);
+                }
+            }
+            catch (Exception) { }           // (the asker gave up and closed it)
+        }
+
+        public void Dispose()
+        {
+            _listen.Stop();
+            lock (_open) foreach (var c in _open) c.Dispose();
+        }
+    }
+
+    // the pictures 'cols' to a row (the styles two, their closed / hint / open three), each with its name
+    static void CameraSheet(string path, List<string> files, int cols = 2)
     {
         const int W = WristPanel.TW, H = WristPanel.TH, Label = 22, Gap = 10;
-        int rows = (files.Count + 1) / 2;
-        using var bmp = new System.Drawing.Bitmap(2 * W + 3 * Gap, rows * (H + Label + Gap) + Gap);
+        int rows = (files.Count + cols - 1) / cols;
+        using var bmp = new System.Drawing.Bitmap(cols * W + (cols + 1) * Gap, rows * (H + Label + Gap) + Gap);
         using var g = System.Drawing.Graphics.FromImage(bmp);
         g.Clear(System.Drawing.Color.FromArgb(255, 40, 44, 52));
         using var font = new System.Drawing.Font("Segoe UI", 11);
         for (int i = 0; i < files.Count; i++)
         {
-            int x = Gap + i % 2 * (W + Gap), y = Gap + i / 2 * (H + Label + Gap);
+            int x = Gap + i % cols * (W + Gap), y = Gap + i / cols * (H + Label + Gap);
             g.DrawString(Path.GetFileNameWithoutExtension(files[i]), font, System.Drawing.Brushes.Gainsboro, x, y);
             using var src = new System.Drawing.Bitmap(files[i]);
             g.DrawImage(src, new System.Drawing.Rectangle(x, y + Label, W, H));

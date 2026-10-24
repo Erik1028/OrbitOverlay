@@ -35,6 +35,7 @@ public sealed class PanelData
     public LumosLink Lamp;               // the room light through Lumos (Sys/RoomLights.cs; null = none)
     public PrismaLink Rgb;               // the PC's RGB through Prisma
     public AvatarLink Avatar;            // the VRChat avatar's toggles (Sys/AvatarToggles.cs; null = none followed)
+    public VrcCamera Camera;             // the camera button's VRChat camera: its mode (Sys/VrcCamera.cs; null = not known)
     public (double pos, double dur)? FakeTimeline;     // --snapshot: where in the track (null: the media session's)
     public uint[] FakeArt;               // --snapshot: a cover with FakeMedia (MediaInfo.ArtSize square, premultiplied)
     public bool StatusLine;              // the chatbox status line is on
@@ -193,6 +194,7 @@ public sealed partial class WristPanel : IPointerTarget, IDisposable
         if (PhotoChanged(d)) _dirty = true;          // a new photo, its metadata, a thumbnail made (WristPhoto.cs)
         if (LightsChanged(d)) _dirty = true;         // the light / the RGB answered or were switched (WristLights.cs)
         if (AvatarChanged(d)) _dirty = true;         // VRChat's values, a tap shown, other buttons picked (WristAvatar.cs)
+        if (CameraChanged(d)) _dirty = true;         // VRChat's camera opened / closed, the closed one's hint over (WristCamera.cs)
         // motion is drawn at the headset's rate (it was 45 fps; laid-out text is kept now, a frame is ~1.5 ms)
         if (_dirty || now >= _nextDraw || Animating)
         {

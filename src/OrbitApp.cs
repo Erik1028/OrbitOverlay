@@ -175,7 +175,8 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             OnSeekTo = s => _media.SeekTo(s),
         };
         _status = new StatusLine(_osc);
-        _camera = new VrcCamera(_osc);
+        _camera = new VrcCamera(_osc) { Link = _avatar };     // its mode read with the avatar's (OrbitApp.Avatar.cs)
+        _data.Camera = _camera;
         _data.Dock = _dockSnap;
         _data.DockFaces = _dockFaces;
         _hexpad.Start();

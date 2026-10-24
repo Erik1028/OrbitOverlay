@@ -11,11 +11,15 @@ public sealed partial class OrbitApp
 
     void UpdateAvatar(double now)
     {
-        bool want = C.Wrist.Face == "custom" && WatchPages.Any(C.Wrist, "avatar") && (VrAfter(7) || now - _photoPreview < 3);
+        bool seen = VrAfter(7) || now - _photoPreview < 3;
+        bool want = C.Wrist.Face == "custom" && WatchPages.Any(C.Wrist, "avatar") && seen;
+        // the camera widget's mode comes from the same link (Sys/VrcCamera.cs): read while one is on a page and the watch can be seen
+        bool cam = C.Wrist.Face == "custom" && WatchPages.Any(C.Wrist, VrcCamera.Id) && seen;
         _avatar.Send ??= (address, value) => _avatarOsc.SendMessage(_avatar.SendPort, address, value);
         _avatar.OscPort = C.General.OscPort;
         _avatar.Active = want;
-        _avatar.Watched = want && (_wrist?.Alpha > 0.02f || now - _photoPreview < 3);
+        _avatar.CameraActive = cam;
+        _avatar.Watched = (want || cam) && (_wrist?.Alpha > 0.02f || now - _photoPreview < 3);
         if (want) _avatar.Flush(now);                // a slider's last value
         _data.Avatar = want ? _avatar : null;
     }
