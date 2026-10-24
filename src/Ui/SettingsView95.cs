@@ -709,6 +709,11 @@ public sealed partial class SettingsView
         if (ui.Button95("vc95.calib", new RectangleF(388, 336, cbw, 23), "Cal&ibrate...", _h.CanCalibrateEyes)) _h.CalibrateEyes();
         if (ui.Button95("vc95.calib0", new RectangleF(394 + cbw, 336, rsw, 23), "&Reset", C.General.EyeCalib != null)) { C.General.EyeCalib = null; ui.Changed = true; }
         ui.Text95(Fit95(ui, CalibLine(C.General.EyeCalib, true), 722 - lx95), new RectangleF(lx95, 341, 722 - lx95, 13), K95);
+        // SlimeVR's alerts (Sys/SlimeAlerts.cs, 10-24), under the eye tracking - never switched: on with a SlimeVR widget
+        ui.Group95(new RectangleF(376, 380, 358, 50), "SlimeVR");         // (its bottom on the Quick gesture box's)
+        bool sa = SlimeAlerts.On(C);
+        if (ui.Check95("vc95.slime", 388, 398, "Sli&meVR alerts", ref sa)) (C.SlimeVr ??= new SlimeVrConfig()).Alerts = sa;
+        Hint(ui, 407, 415, 316, Fit95(ui, "Low battery, a tracker lost; lying down: Yaw reset", 316));
         ui.Group95(new RectangleF(16, 270, 350, 64), "Controllers");
         b = g.BlockGameInput;
         ui.Check95("vc95.block", 28, 290, "&Keep clicks from the game", ref b);

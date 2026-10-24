@@ -74,7 +74,8 @@ static class SlimeVrViewTools
         return new FbObj().Objs(SolarXr.BundleFeed, new FbObj().U8(0, SolarXr.FeedUpdate).Obj(1, new FbObj().Objs(0, devices.ToArray()))).Finish();
     }
 
-    static FbObj Device(SolarXr.Dialect d, int id, FakeTracker t, bool hmd, string display)
+    // (the alerts' checks build their own updates with it: SlimeAlertsTest.cs)
+    internal static FbObj Device(SolarXr.Dialect d, int id, FakeTracker t, bool hmd, string display)
     {
         bool v22 = d == SolarXr.Dialect.V22;
         var hs = new FbObj().U8(0, 1);
@@ -625,6 +626,7 @@ static partial class Tools
         cfg.Data.Appearance = new AppearanceConfig { Clock24h = true };
         Theme.Apply(cfg.Data.Appearance);
         SlimeVrViewTools.PreviewSheet(dir);
+        SlimeAlertsTools.Checks(wrist, data, cfg, gpu, painter, dir);       // its alerts and lying down (SlimeAlertsTest.cs)
         System.Globalization.CultureInfo.CurrentCulture = culture;
         Log.Info($"layout slimevr: {layout} problem(s) in every style");
         Log.Info("snapshot (slimevr only) written to " + dir);

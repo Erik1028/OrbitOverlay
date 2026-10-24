@@ -5,7 +5,8 @@ using Vortice.DirectWrite;
 namespace Orbit;
 
 // A notification in the Classic Mac style: what the Notification Manager put up - a Platinum window titled with the sender,
-// the note icon (or the app's own), the title in Chicago and the words in Geneva.
+// the note icon (or the app's own), the title in Chicago and the words in Geneva. A card's button (Notification.Action): Platinum's push
+// button in the window's bottom right corner, the default ring round it at rest.
 public sealed partial class NotificationPanel
 {
     partial void CardMac(Notification c, float y, ref bool done)
@@ -25,7 +26,8 @@ public sealed partial class NotificationPanel
         float tx = icon.Right + 14, tw = r.Right - tx - 12;
         _p.Text(c.Title, new RectangleF(tx, r.Y + 31, tw, 15), 0xFF000000, Ui.F95, FontWeight.Bold,
             TextAlignment.Leading, ParagraphAlignment.Center, Theme.RetroFont);
-        _p.Text(c.Content, new RectangleF(tx, r.Y + 48, tw, r.Bottom - r.Y - 52), 0xFF000000, Ui.F95, FontWeight.Normal,
+        _p.Text(c.Content, new RectangleF(tx, r.Y + 48, tw - Act95Room(c), r.Bottom - r.Y - 52), 0xFF000000, Ui.F95, FontWeight.Normal,
             TextAlignment.Leading, ParagraphAlignment.Near, Theme.RetroFont, true);
+        if (c.Action != null) Act95(c, new RectangleF(r.Right - 14 - Act95W(c), r.Bottom - 10 - 23, Act95W(c), 23));
     }
 }

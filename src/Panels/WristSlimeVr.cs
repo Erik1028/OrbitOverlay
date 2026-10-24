@@ -17,6 +17,11 @@ namespace Orbit;
 // Power Meter's rows; opened, a details list (tracker, battery, signal, status) and three push buttons, what is asked or counted on the
 // status line beside OK. The Terminal: `slimevr status` (WristSlimeVr.Term.cs). Nothing allocated a frame at rest: the texts are made
 // when the snapshot or the language changes, cut texts kept.
+// Lying down (Erik 10-24: lying twists his hip and legs in SlimeVR; PanelData.SlimeLying - the head has lain ~3 s with SlimeVR connected,
+// OrbitApp.SlimeVr.cs): the card puts the Yaw reset first and highlighted - a strip the width of the card, "Lying down? Yaw reset" (a 1x1:
+// the line under its value), a retro window's default button, the Terminal's lit key - and the opened view lights its Yaw reset with the
+// hint over the buttons (the retro styles: the default button, the hint on the status line; the Terminal: the prompt). A tap on it is the
+// Yaw reset's: the first asks ("Reset?"), the second sends it.
 public sealed partial class WristPanel
 {
     public const string SlimeKindIcon = "\uE805";           // Segoe's walking figure: the widget in the editor's palette
@@ -47,6 +52,11 @@ public sealed partial class WristPanel
     readonly string[] _svNote = new string[2], _svOnNote = new string[2], _svCountNote = new string[3];
     readonly Dictionary<(string, float, float, FontWeight, string), string> _svFits = new();
     static readonly string[] CapSlime = { "SlimeVR" };
+
+    // a tracker's name: its own (SlimeVR's custom name), else where it is worn, else the server's name for it, else "Tracker 3" - the rows
+    // and the alerts' cards (Sys/SlimeAlerts.cs)
+    public static string SlimeName(SlimeVrLink.Tracker t) => t.CustomName.Length > 0 ? t.CustomName : t.Part != SlimeVrLink.Part.None ? Lang.T(PartName(t.Part))
+        : t.DisplayName.Length > 0 ? t.DisplayName : Lang.F("Tracker {0}", t.Num);
 
     // SlimeVR's names for where a tracker is worn (its GUI's English), and the two letters a 2x1's bar has room for
     static string PartName(SlimeVrLink.Part p) => p switch
@@ -118,8 +128,7 @@ public sealed partial class WristPanel
             {
                 var r = _svPool.Count > 0 ? _svPool[^1] : new SvRow();
                 if (_svPool.Count > 0) _svPool.RemoveAt(_svPool.Count - 1);
-                r.Name = t.CustomName.Length > 0 ? t.CustomName : t.Part != SlimeVrLink.Part.None ? Lang.T(PartName(t.Part))
-                    : t.DisplayName.Length > 0 ? t.DisplayName : Lang.F("Tracker {0}", t.Num);
+                r.Name = SlimeName(t);
                 r.NameUp = r.Name.ToUpper(culture);
                 r.Short = t.Part != SlimeVrLink.Part.None ? Lang.C("slimevr", PartShort(t.Part)) : r.NameUp.Length > 2 ? r.NameUp[..2] : r.NameUp;
                 (r.On, r.Charging, r.Battery) = (t.Connected, t.Charging, t.Battery);
@@ -151,6 +160,7 @@ public sealed partial class WristPanel
         _svOfN = listed ? Lang.F("{0} of {1} connected", on, n) : "";
         _svCy = listed ? Upper(_svOfN) : Upper(_svNote[0]);
         _svCyHead = listed ? _svCy + "  //  SOLARXR" : Upper(_svMsg);
+        (_svCyYaw, _svCyLie) = (Upper(Lang.T("Yaw?")), Upper(Lang.T(LieHint)));
         SvTermTexts(culture);                  // the Terminal's lines (WristSlimeVr.Term.cs)
     }
 
@@ -231,12 +241,70 @@ public sealed partial class WristPanel
 
     bool SvCan(PanelData d) => d.SlimeVr is { State: SlimeVrLink.State.Ok, Dialect: not SolarXr.Dialect.Unknown } && _svRows.Count > 0;
 
+    // ================= lying down: the Yaw reset first =================
+
+    const string LieHint = "Lying down? Yaw reset";
+    // the strip's words, a 1x1's line, a retro window's button - each the first that fits whole
+    static readonly string[] SvLieStrips = { LieHint, "Lying? Yaw reset", "Yaw reset?" }, SvLieNotes = { "Lying? Yaw reset", "Yaw reset?", "Yaw?" },
+        SvLie95 = { "Lying? &Yaw Reset", "&Yaw Reset?" }, SvLieNotes95 = { "Yaw reset?", "Yaw?" };
+    string _svCyYaw = "", _svCyLie = "";
+    int _svHints;                              // the lying hints drawn so far (the tools read it)
+
+    // (after SvNow: its rows)
+    bool SvLying(PanelData d) => d.SlimeLying && SvCan(d);
+
+    // the card's strip: the Yaw reset as a button the width of the card - the accent (Cyber cyan), amber while it asks; its words the
+    // hint at rest, else the button's ("Reset?", "3 s", "Done")
+    void SvLieStrip(RectangleF b, PanelData d, int id)
+    {
+        _svHints++;
+        var (label, asking, counting) = SvButton(0, d, false);
+        float ls = MathF.Min(18, MathF.Max(SmallText, b.Height * 0.3f)), room = b.Width - 20 - 8 - 16 - 2;
+        if (!asking && !counting && label == Lang.T(SvResetNames[0])) label = SvFirstFit(SvLieStrips, room, ls);
+        label = SvCut(label, room, ls, FontWeight.SemiBold);      // (kept: Press would cut it on every frame)
+        if (Press(Ui.Id("wsvl", id), b, SvIcons[0], label, true, SvCan(d), 20, false, accentFill: !Theme.Cyber && !asking,
+                fill: asking ? Bento.Warn : CyberHud.Cyan))
+            SvResetTap(0);
+    }
+
+    // a 1x1's line under its value: "Lying? Yaw reset" (shorter where it does not fit) in the accent - a tap opens the view, its Yaw
+    // reset lit
+    void SvLieNote(float x, float by, float iw)
+    {
+        _svHints++;
+        TextAt(SvFirstFit(SvLieNotes, iw, 15), x, by, iw + 2, Bento.Accent, 15, FontWeight.SemiBold);
+    }
+
+    // the first of the forms that fits w whole (semibold; the last one else)
+    string SvFirstFit(string[] forms, float w, float size)
+    {
+        foreach (var f in forms) if (_p.MeasureWidth(f, size, FontWeight.SemiBold) <= w) return f;
+        return forms[^1];
+    }
+
+    // the same in the 95 font (a label's '&' not counted)
+    string SvFirstFit95(string[] forms, float w, bool bold = false)
+    {
+        foreach (var f in forms) if (_ui.LabelWidth95(f, bold) <= w) return f;
+        return forms[^1];
+    }
+
+    // the opened view's line over the resets: the rotate icon and the hint in the accent (Cyber: its yellow monospace capitals)
+    void SvLieLine(RectangleF r)
+    {
+        _svHints++;
+        if (Theme.Cyber) { CyMono(SvCut(_svCyLie, r.Width, CyNote, FontWeight.SemiBold, CyberHud.Mono), r.X, r.Bottom - 8, r.Width + 2, CyY); return; }
+        _p.Icon(SvIcons[0], new RectangleF(r.X - 2, r.Y, 26, r.Height), Bento.Accent, 20);
+        TextAt(SvCut(LieHint, r.Width - 32, 19, FontWeight.SemiBold), r.X + 30, r.Bottom - 8, r.Width - 30, Bento.Accent, 19, FontWeight.SemiBold);
+    }
+
     // ================= Modern =================
 
     void SlimeOrbit(RectangleF r, WatchWidget w, PanelData d, int id)
     {
         SvNow(d);
         int n = _svRows.Count;
+        bool lie = SvLying(d);
         float pad = PadX(r), iw = r.Width - 2 * pad, x = r.X + pad;
         if (w.W == 1 && w.H == 1)
         {
@@ -245,7 +313,8 @@ public sealed partial class WristPanel
             {
                 // no battery to show: the count (or "–") and why under it
                 ValueUnit(x, r.Y + SBase, iw, n > 0 ? _svCount : "–", null, Hero, 20, n > 0 ? Bento.Text : Bento.Faint);
-                Note(x, r.Y + NoteBase, iw, n > 0 ? _svOnNote : _svNote);
+                if (lie) SvLieNote(x, r.Y + NoteBase, iw);
+                else Note(x, r.Y + NoteBase, iw, n > 0 ? _svOnNote : _svNote);
                 return;
             }
             // the emptiest one's percentage as big as every 1x1's value (amber / red when low; on a coloured card a badge), how many are
@@ -254,7 +323,8 @@ public sealed partial class WristPanel
             float dw = e.Lv != StatLevel.Ok && Bento.Badge ? DotW : 0, vs = HeroFit(e.Pct, null, iw - dw).vs;
             float vw = ValueText(x, r.Y + SBase, e.Pct, vs, Bento.Level(e.Lv, Bento.Text), null);
             if (dw > 0) StatusDot(x + vw + 11, r.Y + SBase - vs * DigitH / 2, e.Lv);
-            Note(x, r.Y + NoteBase, iw, _svCountNote);
+            if (lie) SvLieNote(x, r.Y + NoteBase, iw);
+            else Note(x, r.Y + NoteBase, iw, _svCountNote);
             return;
         }
         CaptionRow(r, n > 0 ? _svCount : null, CapSlime);
@@ -264,9 +334,13 @@ public sealed partial class WristPanel
             else SvEmpty(new RectangleF(x, r.Y + 40, iw, r.Bottom - 8 - (r.Y + 40)), _big ? 19 : SmallText, true);
             return;
         }
+        // lying: one row high, the strip in the bars' place; taller, the strip first and the rows under it
+        if (lie && w.H == 1) { SvLieStrip(new RectangleF(x, r.Y + 38, iw, r.Bottom - 10 - (r.Y + 38)), d, id); return; }
         if (w.H == 1) { SvBars(new RectangleF(x, r.Y + 36, iw, r.Bottom - 10 - (r.Y + 36)), id); return; }
+        float top = r.Y + 34;
+        if (lie) { float sh = _big ? 50 : 38; SvLieStrip(new RectangleF(x, top + 2, iw, sh), d, id); top += sh + 10; }
         // tall: a row each - where (a bolt in front while charging), the battery at the right, its line under them
-        var area = new RectangleF(x, r.Y + 34, iw, r.Bottom - 10 - (r.Y + 34));
+        var area = new RectangleF(x, top, iw, r.Bottom - 10 - top);
         const float gapX = 12;
         int maxRows = Math.Max(1, (int)(area.Height / (_big ? 34 : 26))), maxCols = Math.Max(1, (int)((area.Width + gapX) / (100 + gapX)));
         var pick = SvPick(Math.Min(maxRows * maxCols, 12));
@@ -342,10 +416,11 @@ public sealed partial class WristPanel
         if (Theme.Cyber) { CyberSlimeDetail(E, d); return; }
         SvNow(d);
         int n = _svRows.Count;
+        bool lie = SvLying(d);
         float nx = E.X + 24 + _p.MeasureWidth(Lang.T(WatchWidgets.Find("slimevr").Name), 24, FontWeight.SemiBold) + 14, nr = E.Right - 22 - 46 - 14;
         if (n > 0 && nr - nx > 40) TextAt(SvCut(_svOfN, nr - nx, 19, FontWeight.Normal), nx, E.Y + 45, nr - nx + 2, Sub, 19, FontWeight.Normal);
         var B = new RectangleF(E.X + 24, E.Bottom - 22 - 56, E.Width - 48, 56);
-        var L = new RectangleF(E.X + 24, E.Y + 78, E.Width - 48, B.Y - 16 - (E.Y + 78));
+        var L = new RectangleF(E.X + 24, E.Y + 78, E.Width - 48, B.Y - 16 - (lie ? 36 : 0) - (E.Y + 78));      // (lying: the hint's line over the buttons)
         if (n == 0) SvEmpty(L, 22);
         else
         {
@@ -361,6 +436,7 @@ public sealed partial class WristPanel
                 TextAt(SvCut(MoreText(n - shown), cw, SmallText, FontWeight.SemiBold), mr.X, mr.Y + 30, cw + 2, Sub, SmallText, FontWeight.SemiBold);
             }
         }
+        if (lie) SvLieLine(new RectangleF(E.X + 24, B.Y - 44, E.Width - 48, 32));
         SvButtons(B, d);
     }
 
@@ -398,19 +474,22 @@ public sealed partial class WristPanel
         }
     }
 
-    // the three resets: Press - a first tap asks (amber), the second sends, the server's countdown on it (the accent)
+    // the three resets: Press - a first tap asks (amber), the second sends, the server's countdown on it (the accent); lying, the Yaw
+    // reset lit (the accent; Cyber cyan)
     void SvButtons(RectangleF B, PanelData d)
     {
-        bool can = SvCan(d);
+        bool can = SvCan(d), lie = SvLying(d);
         const float gap = 12;
         float bw = (B.Width - 2 * gap) / 3;
         for (int k = 0; k < 3; k++)
         {
             var (label, asking, counting) = SvButton(k, d, false);
+            bool hi = k == 0 && lie && !asking && !counting;
             var rb = new RectangleF(B.X + k * (bw + gap), B.Y, bw, B.Height);
             // (cut here to what Press has beside its icon - 17 px text - and kept: Press would cut it again on every frame)
             label = SvCut(label, bw - 20 - 8 - 16 - 2, MathF.Min(18, MathF.Max(SmallText, B.Height * 0.3f)), FontWeight.SemiBold);
-            if (Press(SvIds[k], rb, SvIcons[k], label, asking || counting, can, 20, false, accentFill: counting, fill: Bento.Warn))
+            if (Press(SvIds[k], rb, SvIcons[k], label, asking || counting || hi, can, 20, false, accentFill: counting || (hi && !Theme.Cyber),
+                    fill: hi ? CyberHud.Cyan : Bento.Warn))
                 SvResetTap(k);
         }
     }
@@ -430,21 +509,24 @@ public sealed partial class WristPanel
             CyberCaption(x, r, iw + pad - CyTagX, CapSlime);
             float barY0 = r.Bottom - (_big ? 18 : 15) - (_big ? 6 : 5), by0 = barY0 - (_big ? 13 : 9);
             var bar0 = new RectangleF(x, barY0, iw, _big ? 6 : 5);
+            bool lie1 = SvLying(d);                 // lying: "YAW?" in the yellow where the count was
+            if (lie1) _svHints++;
             if (_svLow < 0)
             {
                 string v = n > 0 ? _svCount : "–";
                 float vw0 = CyValue(x, by0, v, MathF.Min(34, (by0 - r.Y - 33) / CyCap), n > 0 ? CyW : CyberHud.Faint);
-                string why = Upper(n > 0 ? _svOnNote[1] : _svNote[1]);
-                if (right - (x + vw0 + 8) >= CyMonoW(why)) CyMono(why, x + vw0 + 8, by0, right - x - vw0 - 8, CyG);
+                string why = lie1 ? _svCyYaw : Upper(n > 0 ? _svOnNote[1] : _svNote[1]);
+                if (right - (x + vw0 + 8) >= CyMonoW(why)) CyMono(why, x + vw0 + 8, by0, right - x - vw0 - 8, lie1 ? CyY : CyG);
                 CyberMeter(bar0, -1, CyberHud.Faint, Ui.Id("wsv", id * 16), 5);
                 return;
             }
             var e = _svRows[_svLow];
-            float nw = CyMonoW(_svCount);
+            string tail = lie1 ? _svCyYaw : _svCount;
+            float nw = CyMonoW(tail);
             float vs = CyFit(e.Pct, iw - nw - 6, MathF.Min((by0 - r.Y - 33) / CyCap, _big ? 58 : 40));
             if (vs < 24) { nw = 0; vs = CyFit(e.Pct, iw, MathF.Min((by0 - r.Y - 33) / CyCap, 40)); }
             CyValue(x, by0, e.Pct, vs, e.Lv == StatLevel.Ok ? CyW : CyWarn(), Ui.Id("wsv", id * 16));
-            if (nw > 0) CyMono(_svCount, right, by0, nw + 2, CyG, CyNote, FontWeight.SemiBold, TextAlignment.Trailing);
+            if (nw > 0) CyMono(tail, right, by0, nw + 2, lie1 ? CyY : CyG, CyNote, FontWeight.SemiBold, TextAlignment.Trailing);
             CyberMeter(bar0, e.Frac, CyBattery(e.Frac, e.Lv), Ui.Id("wsv", id * 16), 5);
             return;
         }
@@ -456,6 +538,8 @@ public sealed partial class WristPanel
                 CyMono(SvCut(Upper(_svHint), iw, CyNote, FontWeight.SemiBold, CyberHud.Mono), x, r.Y + MathF.Min(66, r.Height * 0.5f) + 20, iw + 2, CyberHud.Faint);
             return;
         }
+        bool lie = SvLying(d);
+        if (lie && w.H == 1) { SvLieStrip(new RectangleF(x, r.Y + 38, iw, r.Bottom - 12 - (r.Y + 38)), d, id); return; }
         if (w.H == 1)
         {
             // a stack of blocks per tracker, its two letters under it
@@ -482,8 +566,9 @@ public sealed partial class WristPanel
             }
             return;
         }
-        // tall: a row each
+        // tall: a row each (lying: the strip first)
         float top = r.Y + 34, bottom = r.Bottom - 12;
+        if (lie) { float sh = _big ? 50 : 38; SvLieStrip(new RectangleF(x, top + 2, iw, sh), d, id); top += sh + 10; }
         int rows = Math.Max(1, (int)((bottom - top) / (_big ? 36 : 26)));
         var pk = SvPick(Math.Min(rows, 12));
         float rh = MathF.Min(_big ? 54 : 30, (bottom - top) / pk.Count);
@@ -513,8 +598,9 @@ public sealed partial class WristPanel
         float nx = E.X + 24 + CyberHud.TagWidth(_p, Upper(WatchWidgets.Find("slimevr").Name), 18) + 14, nr = E.Right - 22 - 46 - 14;
         if (nr - nx > 40) CyMono(SvCut(_svCyHead, nr - nx, CyNote, FontWeight.SemiBold, CyberHud.Mono), nx, E.Y + 23 + (26 + CyberHud.CapH(_p, CyNote)) / 2,
             nr - nx, n > 0 ? CyC : CyG);
+        bool lie = SvLying(d);
         var B = new RectangleF(E.X + 24, E.Bottom - 22 - 56, E.Width - 48, 56);
-        var L = new RectangleF(E.X + 24, E.Y + 74, E.Width - 48, B.Y - 14 - (E.Y + 74));
+        var L = new RectangleF(E.X + 24, E.Y + 74, E.Width - 48, B.Y - 14 - (lie ? 30 : 0) - (E.Y + 74));
         if (n == 0)
         {
             CyMono(SvCut(Upper(_svMsg ?? "No trackers"), L.Width, 17, FontWeight.SemiBold, CyberHud.Mono), L.X, L.Y + L.Height / 2, L.Width + 2, CyG, 17);
@@ -549,8 +635,9 @@ public sealed partial class WristPanel
                 if (right - sx > 30) CyMono(SvCut(Upper(e.SigLine), right - sx, CyNote, FontWeight.SemiBold, CyberHud.Mono), sx, cy + 14, right - sx, e.SigLv == StatLevel.Ok ? CyG : CyWarn());
                 if (ph >= 68) CyberMeter(new RectangleF(x, p.Bottom - 10, right - x, 4), e.On ? e.Frac : -1, CyBattery(e.Frac, e.Lv), Ui.Id("wdsvm", i), 10);
             }
-            if (shown < n) CyMono(SvCut(Upper(MoreText(n - shown)), L.Width, CyNote, FontWeight.SemiBold, CyberHud.Mono), L.X, B.Y - 4, L.Width, CyG);
+            if (shown < n) CyMono(SvCut(Upper(MoreText(n - shown)), L.Width, CyNote, FontWeight.SemiBold, CyberHud.Mono), L.X, L.Bottom + 10, L.Width, CyG);
         }
+        if (lie) SvLieLine(new RectangleF(E.X + 24, B.Y - 34, E.Width - 48, 30));
         SvButtons(B, d);                           // (Press draws the HUD's buttons in Cyber)
     }
 
@@ -559,7 +646,7 @@ public sealed partial class WristPanel
     // c: the window's inside (the style's frame is drawn). light: 7's glass (white words). A 1x1: the emptiest battery bold, how many are
     // connected under it; one row: an LED bar each (the style's highlight colour, red when low) with its two letters; taller: Power Meter's
     // rows - the place, a progress bar, the percentage
-    void Slime95(RectangleF c, WatchWidget w, PanelData d, bool light = false)
+    void Slime95(RectangleF c, WatchWidget w, PanelData d, bool light = false, int id = 0)
     {
         SvNow(d);
         int n = _svRows.Count;
@@ -569,8 +656,12 @@ public sealed partial class WristPanel
             float vy = MathF.Floor(c.Y + (c.Height - 28) / 2);
             var e = _svLow >= 0 ? _svRows[_svLow] : null;
             string v = e != null ? e.Pct : n > 0 ? _svCount : "--";
+            bool lie1 = SvLying(d);                 // lying: "Yaw reset?" bold in the highlight colour under the value
+            if (lie1) _svHints++;
             _ui.Text95(SvFit95(v, c.Width - 2, true, 13), new RectangleF(c.X, vy, c.Width, 15), e != null && e.Lv != StatLevel.Ok ? low95 : ink, true, TextAlignment.Center, size: 13);
-            _ui.Text95(SvFit95(e != null ? _svCount : n > 0 ? _svOnNote[1] : _svNote[1], c.Width - 2), new RectangleF(c.X, vy + 15, c.Width, 13), grey, false, TextAlignment.Center);
+            _ui.Text95(SvFit95(lie1 ? SvFirstFit95(SvLieNotes95, c.Width - 2, true) : e != null ? _svCount : n > 0 ? _svOnNote[1] : _svNote[1], c.Width - 2, lie1),
+                new RectangleF(c.X, vy + 15, c.Width, 13),
+                lie1 ? (light ? 0xFFFFFFFF : Theme.W95Navy) : grey, lie1, TextAlignment.Center);
             return;
         }
         if (n == 0)
@@ -584,6 +675,19 @@ public sealed partial class WristPanel
             if (!string.IsNullOrEmpty(hint))
                 _ui.Text95(SvFit95(hint, c.Width - 6), new RectangleF(c.X + 3, my + 15, c.Width - 6, 13), grey, false, TextAlignment.Center);
             return;
+        }
+        if (SvLying(d))
+        {
+            // lying: the Yaw reset first - the window's default button (its outline), held in while it asks; what fits under it
+            _svHints++;
+            var (label, asking, counting) = SvButton(0, d, true);
+            if (!asking && !counting && label == Lang.T(SvResetNames95[0])) label = SvFirstFit95(SvLie95, c.Width - 14);
+            float bh = MathF.Min(23, MathF.Floor(c.Height - 4));
+            if (_ui.Button95(Ui.Id("wsvl", id), new RectangleF(c.X + 2, c.Y + 2, c.Width - 4, bh), SvFit95(label, c.Width - 14), SvCan(d), !asking && !counting,
+                    asking || counting))
+                SvResetTap(0);
+            c = new RectangleF(c.X, c.Y + bh + 4, c.Width, c.Height - bh - 4);
+            if (c.Height < 20) return;
         }
         if (c.Height < 56)
         {
@@ -655,14 +759,17 @@ public sealed partial class WristPanel
         SvNow(d);
         int n = _svRows.Count;
         float sw = c.Right - 75 - 8 - c.X;
-        _ui.Text95(SvFit95(SvStatus95(d), sw), new RectangleF(c.X, c.Bottom + 10, sw, 13), SvArmed95() ? 0xFF800000 : Blk95);
+        bool lie = SvLying(d);                 // lying: the hint on the status line (bold), Yaw Reset the default button
+        if (lie) _svHints++;
+        _ui.Text95(SvFit95(SvStatus95(d), sw, lie && !SvArmed95()), new RectangleF(c.X, c.Bottom + 10, sw, 13), SvArmed95() ? 0xFF800000 : Blk95, lie && !SvArmed95());
         // the resets along the bottom of the inside
         bool can = SvCan(d);
         float bw = MathF.Floor((c.Width - 12) / 3), by = c.Bottom - 23;
         for (int k = 0; k < 3; k++)
         {
             var (label, asking, counting) = SvButton(k, d, true);
-            if (_ui.Button95(SvIds[k], new RectangleF(c.X + k * (bw + 6), by, bw, 23), label, can, false, asking || counting)) SvResetTap(k);
+            if (_ui.Button95(SvIds[k], new RectangleF(c.X + k * (bw + 6), by, bw, 23), label, can, k == 0 && lie && !asking && !counting, asking || counting))
+                SvResetTap(k);
         }
         var box = new RectangleF(c.X, c.Y, c.Width, by - 6 - c.Y);
         if (n == 0)
@@ -721,6 +828,7 @@ public sealed partial class WristPanel
                 return t;
             }
         }
+        if (SvLying(d)) return Lang.T(LieHint);
         return _svRows.Count > 0 ? _svOfN : Lang.T(_svMsg ?? "No trackers");
     }
 
@@ -734,4 +842,17 @@ public sealed partial class WristPanel
     public string SlimeRow(PanelData d, int i) { SvNow(d); return i < _svRows.Count ? $"{_svRows[i].Name} {_svRows[i].Value} {_svRows[i].Signal} {_svRows[i].Status}" : null; }
     public string SlimeLowest(PanelData d) { SvNow(d); return _svLow >= 0 ? _svRows[_svLow].Pct : "–"; }
     public string SlimeMessage(PanelData d) { SvNow(d); return _svMsg; }
+
+    // the lying hints drawn so far (face or opened, any style); where the face's Yaw reset strip / button is (null: none drawn)
+    public int SlimeHints => _svHints;
+    public System.Numerics.Vector2? SlimeLiePoint(PanelData d)
+    {
+        RectangleF? at = null;
+        _ui.HitSpy = (k, r) => { if (at == null && k.StartsWith("wsvl", StringComparison.Ordinal)) at = r; };
+        try { Draw(d); }
+        finally { _ui.HitSpy = null; }
+        if (at is not { } a) return null;
+        float s = Theme.Classic ? 2 : 1;
+        return new System.Numerics.Vector2((a.X + a.Width / 2) * s, (a.Y + a.Height / 2) * s);
+    }
 }

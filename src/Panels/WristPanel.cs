@@ -30,6 +30,7 @@ public sealed class PanelData
     public WeatherReport Weather;        // the weather widget's report (Sys/Weather.cs; null = none asked for)
     public FriendsWatcher.Snapshot Friends;  // VRCX's friends online (the friends widget; null = not followed)
     public SlimeVrLink.Snapshot SlimeVr;     // SlimeVR's trackers (the SlimeVR widget, Sys/SlimeVrLink.cs; null = not followed)
+    public bool SlimeLying;                  // the head has lain ~3 s with SlimeVR connected: its widget offers Yaw reset first (OrbitApp.SlimeVr.cs)
     public SessionRecap Recap;           // the last session's recap (the recap widget; null = none yet)
     public TodayLog.Snapshot Today;      // the day in VRChat, while the opened recap shows Today (Sys/TodayLog.cs; null = not read)
     public LumosLink Lamp;               // the room light through Lumos (Sys/RoomLights.cs; null = none)

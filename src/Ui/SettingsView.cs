@@ -1247,9 +1247,16 @@ public sealed partial class SettingsView
         b = rm.BuzzFriends;
         if (ui.Toggle("vc.buzz", new RectangleF(rx + rw / 2 + 4, 276, rw / 2 - 4, 44), "Buzz for friends", ref b, null, rm.Enabled && rm.NotifyFriends))
             rm.BuzzFriends = b;
-        if (ui.Button("vc.open", new RectangleF(rx + 10, 336, 220, 38), rm.Visible ? "Hide the Room panel" : "Show the Room panel", "\uE716", false,
-                _h.VrConnected && rm.Enabled, 14))
+        // the Room panel's button and beside it SlimeVR's alerts (Sys/SlimeAlerts.cs, Erik 10-24: a tracker's low battery or one lost - a
+        // card and a buzz -, the Yaw reset offered while you lie down; never switched: on with a SlimeVR widget). The button's words a size
+        // smaller where a language makes them longer than it (the row has no more room)
+        string roomL = rm.Visible ? "Hide the Room panel" : "Show the Room panel";
+        float rfs = 14;
+        while (rfs > 12 && p.MeasureWidth(roomL, rfs, FontWeight.SemiBold) + rfs + 8 + 16 > 180) rfs--;
+        if (ui.Button("vc.open", new RectangleF(rx + 10, 336, 180, 38), roomL, "\uE716", false, _h.VrConnected && rm.Enabled, rfs))
             _h.ToggleRoom();
+        b = SlimeAlerts.On(C);
+        if (ui.Toggle("vc.slime", new RectangleF(rx + 194, 333, rw - 194, 44), "SlimeVR alerts", ref b)) (C.SlimeVr ??= new SlimeVrConfig()).Alerts = b;
     }
 
     // General > Language: English (null in the config, nothing written) or another one; every panel is drawn again in it

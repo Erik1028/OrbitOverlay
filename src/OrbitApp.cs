@@ -959,7 +959,8 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
     List<IPointerTarget> Targets()
     {
         if (_targets != null) return _targets;
-        _targets = new List<IPointerTarget>(_desktops.Count + _windowPanels.Count + 8) { _eyeCalib, _settingsPanel, _dockPanel, _roomPanel, _whatsNewPanel, _wrist, _kb, _theaterBar };
+        _targets = new List<IPointerTarget>(_desktops.Count + _windowPanels.Count + 9) { _eyeCalib, _settingsPanel, _dockPanel, _roomPanel, _whatsNewPanel, _wrist, _kb, _theaterBar,
+            _notifyPanel };         // (only while a card with a button shows: SlimeVR's Yaw reset, OrbitApp.SlimeVr.cs)
         _targets.AddRange(_windowPanels);
         _targets.AddRange(_desktops);
         return _targets;

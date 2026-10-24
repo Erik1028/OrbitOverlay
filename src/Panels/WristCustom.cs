@@ -2456,7 +2456,7 @@ public sealed partial class WristPanel
                 case "memory": Photo95(r, c, w, d, id); break;
                 case "temps": Temps95(c, d, w); break;
                 case "avatar": Avatar95(r, c, w, d, id); break;          // (WristAvatar95.cs)
-                case "slimevr": Slime95(c, w, d); break;                 // (WristSlimeVr.cs)
+                case "slimevr": Slime95(c, w, d, id: id); break;         // (WristSlimeVr.cs)
                 case "perf": Status95(d, new RectangleF(c.X, MathF.Floor(c.Y + (c.Height - 24) / 2), c.Width, 24)); break;
                 case "session":
                     string sv = SessionText(d);

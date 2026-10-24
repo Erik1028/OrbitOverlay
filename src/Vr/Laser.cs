@@ -39,6 +39,10 @@ public interface IPointerTarget
     // the beam and its dot are not drawn on it (the eye calibration's board: a laser's dot beside the target pulls the eyes off it)
     bool HidesLaser => false;
 
+    // the point the ray hit (texture px) is really on it: false lets the beam through to what is behind (the notifications' see-through
+    // panel: only its cards with a button count - review 10-24)
+    bool HitsAt(Vector2 px) => true;
+
     // A drag held on 'from' reaches this panel: true = it carries on here (the next monitor of the same Windows desktop),
     // false = 'from' keeps the beam on its edge (pointer capture)
     bool TakesDragFrom(IPointerTarget from, Hand h) => false;
@@ -323,7 +327,7 @@ public sealed class Laser : IDisposable
             // the very edge - Erik 10-19's log: "the cursor on nothing" with the eyes on a monitor)
             float dist; Vector2 uv; Vector3 pt, nrm;
             bool h = _eyeOn ? t.Overlay.RaycastLocal(vr, o, d, out dist, out uv, out pt, out nrm) : Hit(vr, t.Overlay, o, d, out dist, out uv, out pt, out nrm);
-            if (h && dist < bestDist && dist < 8f)
+            if (h && dist < bestDist && dist < 8f && t.HitsAt(uv * t.TextureSize))
             {
                 best = t; bestDist = dist; bestUv = uv; bestPoint = pt; bestNormal = nrm;
             }
@@ -569,7 +573,7 @@ public sealed class Laser : IDisposable
         {
             var t = targets[i];
             if (t == null || !t.Interactive || t.Overlay == null) continue;
-            if (t.Overlay.RaycastLocal(vr, o, d, out float dist, out _, out var pt, out _) && dist < nearest && dist < 8f)
+            if (t.Overlay.RaycastLocal(vr, o, d, out float dist, out var uv, out var pt, out _) && dist < nearest && dist < 8f && t.HitsAt(uv * t.TextureSize))
             {
                 nearest = dist;
                 at = pt;
@@ -663,7 +667,7 @@ public sealed class Laser : IDisposable
         {
             var t = targets[i];
             if (t == null || !t.Interactive || t.Overlay == null) continue;
-            if (t.Overlay.RaycastLocal(vr, o, d, out float dist, out var uv, out _, out _) && dist < nearest && dist < 8f)
+            if (t.Overlay.RaycastLocal(vr, o, d, out float dist, out var uv, out _, out _) && dist < nearest && dist < 8f && t.HitsAt(uv * t.TextureSize))
             {
                 nearest = dist;
                 what = t.WarpTarget ? 1 : 2;

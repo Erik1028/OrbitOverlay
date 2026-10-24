@@ -151,6 +151,7 @@ static partial class Tools
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "avatar") return AvatarOnly(wrist, data, cfg, painter, gpu, dir);
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "camera") return CameraOnly(wrist, data, cfg, painter, gpu, dir);     // the camera button's shutter in a made-up OSC sink (CameraTest.cs)
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "slimevr") return SlimeVrOnly(wrist, data, cfg, painter, gpu, dir);    // SlimeVR's widget and link (SlimeVrTest.cs)
+        if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "slimealerts") return SlimeAlertsTools.Only(wrist, data, cfg, painter, gpu, dir);     // its alerts, lying down (SlimeAlertsTest.cs)
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "backdrops") return BackdropsOnly(cfg, painter, gpu, dir);    // theater's backdrops (ToolsBackdrops.cs)
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "citylife") return CityLifeOnly(cfg, painter, gpu, dir);     // Cyber's night city alive (CityLifeTest.cs)
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "ambilight") return AmbilightOnly(cfg, painter, gpu, dir);     // theater's glow (AmbilightTest.cs)

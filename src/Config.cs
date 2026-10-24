@@ -176,6 +176,16 @@ public sealed class FocusConfig
     public bool Laser { get; set; } = true;          // a laser on a monitor focuses it too (off: only the look - Erik 10-18, with eye tracking)
 }
 
+// SlimeVR (Sys/SlimeAlerts.cs, OrbitApp.SlimeVr.cs; Erik 10-24): its alerts - a card and a buzz for a tracker's low battery or one lost,
+// and the Yaw reset offered on a card while you lie down. Null in Config = never switched, written only once set.
+public sealed class SlimeVrConfig
+{
+    // null = on while a SlimeVR widget is on a watch page (whoever put it there runs SlimeVR; without it Orbit leaves SlimeVR's port alone),
+    // true / false = switched in the settings
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? Alerts { get; set; }
+}
+
 // The VRChat chatbox as a status line (Sys/StatusLine.cs)
 public sealed class ChatboxConfig
 {
@@ -385,6 +395,8 @@ public sealed class Config
     public AvatarsConfig Avatars { get; set; }         // the avatar toggles' picks per avatar (null = none picked)
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public FocusConfig Focus { get; set; }             // Desktops > Focus the monitor you look at (null = off)
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public SlimeVrConfig SlimeVr { get; set; }         // VRChat > SlimeVR alerts (null = never switched: on with a SlimeVR widget)
 
     public static List<LayoutProfile> DefaultLayouts() => new()
     {

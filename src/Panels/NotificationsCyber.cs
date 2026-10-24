@@ -7,7 +7,8 @@ namespace Orbit;
 // Notifications in the Cyber style: HUD alerts - a dark card with the watch's dark-red edge and a yellow bar down its left side,
 // the source as a yellow tag in monospace, INCOMING in cyan at its top-right, the icon in a bracketed well, the title in the
 // condensed bold, the text under it. Motion: a new one scans in - a cyan line runs down the card and reveals it, the corners lock
-// on (Full; Reduced: it fades in); one going folds up into its top edge as it fades.
+// on (Full; Reduced: it fades in); one going folds up into its top edge as it fades. A card's button (Notification.Action): the HUD's plate
+// at its bottom right - lit cyan, yellow while it asks, dark once done.
 public sealed partial class NotificationPanel
 {
     static readonly string CyBell = ((char)0xEA8F).ToString();
@@ -47,8 +48,16 @@ public sealed partial class NotificationPanel
             float tx = icon.Right + 26, tw = r.Right - tx - 26;
             _p.Text(c.Title, new RectangleF(tx, r.Y + 52, tw, 42), A(CyberHud.White), 31, FontWeight.Bold, TextAlignment.Leading, ParagraphAlignment.Center,
                 Theme.Display);
-            _p.Text(c.Content, new RectangleF(tx, r.Y + 98, tw, 80), A(Theme.Mix(CyberHud.White, CyberHud.Grey, 0.35f)), 22, FontWeight.Normal,
+            _p.Text(c.Content, new RectangleF(tx, r.Y + 98, tw - ActRoom(c), 80), A(Theme.Mix(CyberHud.White, CyberHud.Grey, 0.35f)), 22, FontWeight.Normal,
                 TextAlignment.Leading, ParagraphAlignment.Near, null, true);
+            if (c.Action != null)
+            {
+                var (label, asking, done) = ActNow(c);
+                if (a < 0.999f) _p.PushFade(a);
+                if (_ui.HudButton(ActId(c), new RectangleF(r.Right - 26 - ActW, r.Bottom - 22 - 50, ActW, 50), label, c.Glyph, !done, !done, 20, onCyan: !asking))
+                    ActTap(c);
+                if (a < 0.999f) _p.PopFade();
+            }
             if (scan)
             {
                 _p.PopClip();
