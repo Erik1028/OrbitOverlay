@@ -334,7 +334,7 @@ public sealed partial class WristPanel
             case "rgb": Rgb95(r, c, w, d, id); break;
             case "temps": Temps95(c, d, w); break;
             case "avatar": Avatar95(r, c, w, d, id); break;
-            case "slimevr": Slime95(c, w, d); break;           // the shared bodies: XP's progress bars and buttons
+            case "slimevr": Slime95(c, w, d, id: id); break;   // the shared bodies: XP's progress bars and buttons
             case "perf": Status95(d, new RectangleF(c.X, MathF.Floor(c.Y + (c.Height - 24) / 2), c.Width, 24)); break;
             case "session":
                 string sv = SessionText(d);

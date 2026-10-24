@@ -7,7 +7,8 @@ namespace Orbit;
 
 // A notification in Windows XP: the notification area's balloon tip - the pale yellow InfoBk balloon with its black rounded edge
 // and its stem pointing down at the tray, the information icon and the title in bold, the text under them, the close box in the
-// corner; Tahoma 8 pt.
+// corner; Tahoma 8 pt. A card's button (Notification.Action): XP's push button at the balloon's bottom right, the balloon as tall as the
+// card then.
 public sealed partial class NotificationPanel
 {
     const uint XpInfoBk = 0xFFFFFFE1, XpInfoText = 0xFF000000;
@@ -28,8 +29,9 @@ public sealed partial class NotificationPanel
         var r = new RectangleF(10, y, TW / 2 - 20, CardH / 2);
         const float stem = 12;
         // as tall as its text (a balloon fits what it says), at most the card
-        float textH = string.IsNullOrEmpty(c.Content) ? 0 : _p.MeasureHeight(c.Content, Ui.F95, FontWeight.Normal, r.Width - 20, Theme.RetroFont);
-        float bh = Math.Clamp(MathF.Ceiling(8 + 16 + 6 + textH + 9), 44, r.Height - stem);
+        float aw = Act95Room(c);
+        float textH = string.IsNullOrEmpty(c.Content) ? 0 : _p.MeasureHeight(c.Content, Ui.F95, FontWeight.Normal, r.Width - 20 - aw, Theme.RetroFont);
+        float bh = c.Action != null ? r.Height - stem : Math.Clamp(MathF.Ceiling(8 + 16 + 6 + textH + 9), 44, r.Height - stem);
         var body = new RectangleF(r.X, r.Y, r.Width, bh);
         // the balloon: GDI's round rect (aliased, as XP drew its region), then the stem under it near the right end
         _p.FillRound(body, XpInfoBk, 7);
@@ -73,10 +75,11 @@ public sealed partial class NotificationPanel
             _p.Text(src, new RectangleF(tr - sw, iy + 1, sw, 14), 0xFF7A7865, Ui.F95, FontWeight.Normal, TextAlignment.Leading,
                 ParagraphAlignment.Center, Theme.RetroFont);
         // the text, from the balloon's left margin
-        _p.PushClip(new RectangleF(body.X + 10, iy + 22, body.Width - 20, body.Bottom - 6 - (iy + 22)));
-        _p.Text(c.Content, new RectangleF(body.X + 10, iy + 22, body.Width - 20, body.Bottom - 6 - (iy + 22)), XpInfoText, Ui.F95,
+        _p.PushClip(new RectangleF(body.X + 10, iy + 22, body.Width - 20 - aw, body.Bottom - 6 - (iy + 22)));
+        _p.Text(c.Content, new RectangleF(body.X + 10, iy + 22, body.Width - 20 - aw, body.Bottom - 6 - (iy + 22)), XpInfoText, Ui.F95,
             FontWeight.Normal, TextAlignment.Leading, ParagraphAlignment.Near, Theme.RetroFont, true);
         _p.PopClip();
+        if (c.Action != null) Act95(c, new RectangleF(body.Right - 10 - Act95W(c), body.Bottom - 8 - 23, Act95W(c), 23));
     }
 
     // XP's 16 x 16 information icon: a blue ball, lighter at the top left, a white "i"

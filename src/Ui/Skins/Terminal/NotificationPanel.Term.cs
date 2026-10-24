@@ -9,7 +9,8 @@ namespace Orbit;
 // A notification on a green terminal: the way a message reaches every terminal of a Unix box (wall / write) - a little CRT with
 // "Broadcast message from VRCX (tty1) (Fri Oct 16 18:39):", the title in capitals under it and the text. No pictures: the app's
 // icon is a bitmap, the tube has none. In VR it switches on as the card comes, the message types in (Full) with the cursor
-// running ahead of it, and the tube collapses as the card goes.
+// running ahead of it, and the tube collapses as the card goes. A card's button (Notification.Action): the style's push button at the
+// bottom right (bright while it asks), there once the message has typed.
 public sealed partial class NotificationPanel
 {
     partial void CardTerm(Notification c, float y, ref bool done)
@@ -58,9 +59,10 @@ public sealed partial class NotificationPanel
             ty += 13;
         }
         if (!string.IsNullOrEmpty(c.Content))
-            sk.Put(_p, Typed(c.Content, -1, 0), new RectangleF(x, ty, w, r.Bottom - 6 - ty), T.INK, 1, false, TextAlignment.Leading,
+            sk.Put(_p, Typed(c.Content, -1, 0), new RectangleF(x, ty, w - Act95Room(c), r.Bottom - 6 - ty), T.INK, 1, false, TextAlignment.Leading,
                 ParagraphAlignment.Near, true);
         if (typing && curX >= 0 && left == 0 && curX + 6 <= g.Right) _p.Fill(new RectangleF(curX + 1, curY + 2, 5, 9), T.INK);
+        if (c.Action != null && !typing) Act95(c, new RectangleF(r.Right - 10 - Act95W(c), r.Bottom - 8 - 23, Act95W(c), 23));
         T.Apply(_p, g, tube, x);
         T.Scanlines(_p, RectangleF.Inflate(r, -3, -3));
     }

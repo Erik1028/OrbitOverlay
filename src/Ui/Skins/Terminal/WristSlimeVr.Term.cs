@@ -11,10 +11,12 @@ namespace Orbit;
 // line each - "LT [#####---] 41%". Opened, `slimevr status`: TRACKER, BATT, RSSI, PING, STATUS in columns, the low and the troubled
 // bright; under it the three resets as F-keys - [Y] YAW, [F] FULL, [M] MOUNT - a first tap lights it "SURE?", the second sends it, the
 // server's countdown on the prompt line. Nothing made a frame at rest: the lines are made with the snapshot, the bars' runs once.
+// Lying down (WristSlimeVr.cs): the box's first line a lit key, "LYING? [Y] YAW"; opened, the [Y] YAW key lit with LYING? under it and
+// the hint on the prompt line.
 public sealed partial class WristPanel
 {
-    // the box's first line ("5/6 UP  LOW 23%", shorter "5/6 23%"); the opened view's prompt line at rest
-    string _svT1 = "", _svT1Short = "", _svTPrompt = "";
+    // the box's first line ("5/6 UP  LOW 23%", shorter "5/6 23%"); the opened view's prompt line at rest; lying: the key's words
+    string _svT1 = "", _svT1Short = "", _svTPrompt = "", _svTLieKey = "", _svTLie = "";
     static readonly string[] SvTKeys = { "[Y] YAW", "[F] FULL", "[M] MOUNT" };
     static readonly string[] _hashes = Runs('#'), _dashes = Runs('-');
 
@@ -32,6 +34,8 @@ public sealed partial class WristPanel
         _svT1 = n == 0 ? "" : (_svLow >= 0 ? Lang.F("{0} up  low {1}", _svCount, _svRows[_svLow].Pct) : Lang.F("{0} up", _svCount)).ToUpper(culture);
         _svT1Short = n == 0 ? "" : _svLow >= 0 ? _svCount + " " + _svRows[_svLow].Pct : _svCount;
         _svTPrompt = "> " + (n > 0 ? _svOfN : Lang.T(_svMsg ?? "No trackers")).ToUpper(culture);
+        _svTLieKey = Lang.T("LYING?");
+        _svTLie = _svTLieKey + " " + Lang.T(SvTKeys[0]);
     }
 
     // a text cut to w in the terminal's font, kept with the other cut texts
@@ -59,14 +63,16 @@ public sealed partial class WristPanel
     }
 
     // c: the box's inside, under its SLIMEVR line
-    void TSlime(RectangleF c, WatchWidget w, PanelData d)
+    void TSlime(RectangleF c, WatchWidget w, PanelData d, int id = 0)
     {
         SvNow(d);
         int n = _svRows.Count;
         if (w.W == 1 && w.H == 1 || c.Width < 70)
         {
             var e = _svLow >= 0 ? _svRows[_svLow] : null;
-            TValue(c, e != null ? e.Pct : n > 0 ? _svCount : "--", T.Up(Lang.T(e != null ? _svCount : n > 0 ? _svOnNote[1] : _svNote[1])),
+            bool lie1 = SvLying(d);                 // lying: YAW? under the value
+            if (lie1) _svHints++;
+            TValue(c, e != null ? e.Pct : n > 0 ? _svCount : "--", lie1 ? _svCyYaw : T.Up(Lang.T(e != null ? _svCount : n > 0 ? _svOnNote[1] : _svNote[1])),
                 e != null && e.Lv != StatLevel.Ok ? T.HOT : n > 0 ? T.INK : T.DIM);
             return;
         }
@@ -79,6 +85,16 @@ public sealed partial class WristPanel
             TCaps(SvTFit(msg, c.Width - 6), c.X + 3, my, T.DIM);
             if (hint != null) TCaps(SvTFit(hint, c.Width - 6), c.X + 3, my + 11, T.FAINT);
             return;
+        }
+        if (SvLying(d))
+        {
+            // lying: the Yaw reset first - a lit key over the lines ("SURE?" after a first tap, then the server's countdown)
+            _svHints++;
+            var (label, asking, counting) = SvButton(0, d, true);
+            string key = asking ? Lang.T("SURE?") : !counting && label == Lang.T(SvResetNames95[0]) ? _svTLie : T.Up(label);
+            if (TKey(Ui.Id("wsvl", id), new RectangleF(c.X + 2, c.Y + 1, c.Width - 4, 13), SvTFit(key, c.Width - 8), true, SvCan(d))) SvResetTap(0);
+            c = new RectangleF(c.X, c.Y + 16, c.Width, c.Height - 16);
+            if (c.Height < 24) return;
         }
         if (c.Height < 40)
         {
@@ -168,18 +184,22 @@ public sealed partial class WristPanel
                 _p.Fill(new RectangleF(c.Right - 4, ty, 4, th), T.INK);
             }
         }
-        // the prompt: what is asked or counted, else how many are up
+        // the prompt: what is asked or counted, else (lying) the hint, else how many are up
+        bool lie = SvLying(d);
+        if (lie) _svHints++;
         string prompt = SvArmed95() || (d.SlimeVr is { ResetState: 0 } s && s.ResetKind >= 0 && s.ResetLeftMs / 1000.0 - (Clock.Now - s.ResetAt) > 0)
-            ? SvTPrompt(SvStatus95(d)) : _svTPrompt;
-        TPut(SvTFit(prompt, c.Width), c.X, promptY, SvArmed95() ? T.HOT : T.INK);
-        // the keys: [Y] YAW, [F] FULL, [M] MOUNT - "SURE?" while one asks, the countdown while the server counts
+            ? SvTPrompt(SvStatus95(d)) : lie ? SvTPrompt(Lang.T(LieHint)) : _svTPrompt;
+        TPut(SvTFit(prompt, c.Width), c.X, promptY, SvArmed95() || lie ? T.HOT : T.INK);
+        // the keys: [Y] YAW, [F] FULL, [M] MOUNT - "SURE?" while one asks, the countdown while the server counts; lying, [Y] YAW lit
+        // with LYING? under it
         bool can = SvCan(d);
         float kw = MathF.Floor((c.Width - 8) / 3);
         for (int k = 0; k < 3; k++)
         {
             var (label, asking, counting) = SvButton(k, d, true);
-            string line2 = asking ? Lang.T("SURE?") : counting ? T.Up(label) : null;
-            if (TKey(SvIds[k], new RectangleF(c.X + k * (kw + 4), keyY, kw, 22), SvTKeys[k], asking || counting, can, line2)) SvResetTap(k);
+            bool hi = k == 0 && lie && !asking && !counting;
+            string line2 = asking ? Lang.T("SURE?") : counting ? T.Up(label) : hi ? _svTLieKey : null;
+            if (TKey(SvIds[k], new RectangleF(c.X + k * (kw + 4), keyY, kw, 22), SvTKeys[k], asking || counting || hi, can, line2)) SvResetTap(k);
         }
     }
 

@@ -398,7 +398,7 @@ public sealed partial class WristPanel
                 case "rgb": Rgb95(r, c, w, d, id); break;
                 case "temps": Temps95(c, d, w, true); break;
                 case "avatar": Avatar95(r, c, w, d, id); break;
-                case "slimevr": Slime95(c, w, d, true); break;     // white on the glass
+                case "slimevr": Slime95(c, w, d, true, id); break;     // white on the glass
                 case "perf": Status95(d, new RectangleF(c.X, MathF.Floor(c.Y + (c.Height - 24) / 2), c.Width, 24)); break;
                 case "session":
                     string sv = SessionText(d);

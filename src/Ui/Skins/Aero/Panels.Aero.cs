@@ -197,16 +197,17 @@ public sealed partial class NotificationPanel
         _p.Text(c.Title, new RectangleF(tx, i.Y + 7, tw, 20), 0xFF000000, 12, FontWeight.Bold, TextAlignment.Leading, ParagraphAlignment.Center, sk.Font);
         // the balloon's close box: a small grey cross
         _p.Pixels(new[] { "k...k", ".k.k.", "..k..", ".k.k.", "k...k" }, i.Right - 16, i.Y + 10, 0xFF7A7A7A);
-        float lh = sk.LineH(Ui.F95), ty = i.Y + 29;
-        foreach (var line in sk.WrapLines(_p, c.Content ?? "", i.Right - tx - 12, false, Ui.F95))
+        float lh = sk.LineH(Ui.F95), ty = i.Y + 29, aw = Act95Room(c);       // (a button: the text leaves it the bottom right)
+        foreach (var line in sk.WrapLines(_p, c.Content ?? "", i.Right - tx - 12 - aw, false, Ui.F95))
         {
             if (ty + lh > i.Bottom - (string.IsNullOrEmpty(c.Source) ? 4 : 18)) break;
-            _p.Text(line, new RectangleF(tx, ty - 2, i.Right - tx - 12, lh + 4), 0xFF333333, Ui.F95, FontWeight.Normal, TextAlignment.Leading,
+            _p.Text(line, new RectangleF(tx, ty - 2, i.Right - tx - 12 - aw, lh + 4), 0xFF333333, Ui.F95, FontWeight.Normal, TextAlignment.Leading,
                 ParagraphAlignment.Center, sk.Font);
             ty += lh;
         }
         if (!string.IsNullOrEmpty(c.Source))
-            _p.Text(c.Source, new RectangleF(tx, i.Bottom - 19, i.Right - tx - 12, 18), 0xFF6D6D6D, Ui.F95, FontWeight.Normal, TextAlignment.Leading,
+            _p.Text(c.Source, new RectangleF(tx, i.Bottom - 19, i.Right - tx - 12 - aw, 18), 0xFF6D6D6D, Ui.F95, FontWeight.Normal, TextAlignment.Leading,
                 ParagraphAlignment.Center, sk.Font);
+        if (c.Action != null) Act95(c, new RectangleF(i.Right - 12 - Act95W(c), i.Bottom - 7 - 23, Act95W(c), 23));
     }
 }

@@ -470,7 +470,7 @@ public sealed partial class WristPanel
             case "light": TLight(r, c, w, d, id); break;         // (WristLights.Term.cs)
             case "rgb": TRgb(r, c, w, d, id); break;
             case "avatar": TAvatar(r, c, w, d, id); break;     // (WristAvatar.Term.cs)
-            case "slimevr": TSlime(c, w, d); break;             // `slimevr status` (WristSlimeVr.Term.cs)
+            case "slimevr": TSlime(c, w, d, id); break;         // `slimevr status` (WristSlimeVr.Term.cs)
             case "perf":
                 if (c.Width >= 280) TStatus(d, c.X + 3, MathF.Floor(c.Y + (c.Height - 7) / 2), c.Width - 6, false);
                 else TPerfTwo(d, c);

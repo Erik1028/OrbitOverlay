@@ -20,6 +20,13 @@ public sealed class Notification
     public float Timeout = 3, Volume = 0.7f;
     public uint[] Icon;                         // premultiplied BGRA, IconSize x IconSize
     public string Glyph;                        // without an Icon: this symbol instead of the bell (a friend: a heart)
+    // a button on the card (SlimeVR's Yaw reset while you lie: OrbitApp.SlimeVr.cs, Erik 10-24): its words; Ask: what a first tap asks
+    // (4 s) before the second does it (null: the first does it); Act: what it does (true: done; null in the tools: only counted). While a
+    // card with one shows, the panel takes the laser (NotificationPanel's IPointerTarget)
+    public string Action, Ask;
+    public Func<bool> Act;
+    public double AskedAt = -10, ActedAt = -10;  // (main thread)
+    public bool ActOk;
     // display state (main thread)
     public double Shown = -1;
     public float Vis;
@@ -150,12 +157,19 @@ public sealed class NotificationListener : IDisposable
     public void Dispose() => Stop();
 }
 
-// Shows notifications as cards in the lower part of the view (head-locked), up to three stacked.
-public sealed partial class NotificationPanel : IDisposable
+// Shows notifications as cards in the lower part of the view (head-locked), up to three stacked. A card with a button (Notification.Action:
+// SlimeVR's Yaw reset while you lie) has it at its bottom right in every style - the modern accent, Cyber's HUD plate, the retro styles'
+// own push button - and the laser can press it while it shows (nothing to grab: the cards go with the head).
+public sealed partial class NotificationPanel : IPointerTarget, IDisposable
 {
     public const int TW = 960, TH = 640;
     const float CardH = 190, CardGap = 14;
+    const float ActW = 230;                      // the button's width on a modern / Cyber card
+    const double AskLen = 4, ActedLen = 1.5;     // s a first tap's question stays; the card stays after the second
     readonly Painter _p;
+    readonly Ui _ui;
+    readonly PointerState _ptr = new();
+    Hand? _owner;
     readonly ConfigStore _cfg;
     readonly Surface _surf;
     readonly List<Notification> _cards = new();
@@ -187,6 +201,7 @@ public sealed partial class NotificationPanel : IDisposable
     public NotificationPanel(Gpu g, Painter p, ConfigStore cfg)
     {
         _p = p; _cfg = cfg;
+        _ui = new Ui(p);
         _surf = new Surface(g, TW, TH);
     }
 
@@ -196,12 +211,14 @@ public sealed partial class NotificationPanel : IDisposable
         _ov.SetFlag(VROverlayFlags.IsPremultiplied, true);
         _ov.SetSortOrder(180);
         _ov.SetWidth(Width);
+        _ov.SetMouseScale(TW, TH);
         _placedAngle = float.NaN;
         _sound.Warm();
     }
 
     public void DestroyOverlay()
     {
+        _ptr.Leave(); _owner = null;
         _ov?.Dispose(); _ov = null;
         foreach (var c in _cards) c.Bitmap?.Dispose();
         _cards.Clear();
@@ -241,6 +258,11 @@ public sealed partial class NotificationPanel : IDisposable
         for (int i = _cards.Count - 1; i >= 0; i--)
         {
             var c = _cards[i];
+            if (c.Action != null && !c.Leaving)
+            {
+                if (now - c.AskedAt <= AskLen) c.Shown = Math.Max(c.Shown, now - c.Timeout + 1);      // asking: it stays
+                if (c.ActedAt > 0 && now - c.ActedAt > ActedLen) c.Leaving = true;                  // done: it goes a moment later
+            }
             if (!c.Leaving && now - c.Shown > c.Timeout) c.Leaving = true;
             float nv = Motion.Step(c.Vis, !c.Leaving, dt, c.Leaving ? 0.3f : 0.22f);       // Motion off: at once
             if (nv != c.Vis) { c.Vis = nv; _dirty = true; }
@@ -263,7 +285,7 @@ public sealed partial class NotificationPanel : IDisposable
         {
             Draw();
             _ov.SetTexture(_surf.Tex);
-            _dirty = false;
+            _dirty = _ui.Animating || _ui.Interacting;         // a button easing or held: the next frame too
             _wake = AnimWake.Take();
         }
         _ov.Show();
@@ -275,6 +297,7 @@ public sealed partial class NotificationPanel : IDisposable
     void Draw95()
     {
         _canvas95 ??= new Surface(_p.Gpu, TW / 2, TH / 2);
+        _ui.Canvas95 = new SizeF(TW / 2, TH / 2);
         _p.BeginPixel(_canvas95.Bitmap, 0x00000000);
         float y = 0;
         foreach (var c in _cards)
@@ -291,8 +314,15 @@ public sealed partial class NotificationPanel : IDisposable
 
     public void Draw()
     {
-        if (Theme.Classic) { Draw95(); return; }
-        if (Theme.Cyber) { DrawCyber(); return; }        // HUD alerts (NotificationsCyber.cs)
+        _ui.Begin(_ptr, Theme.Classic ? 2 : 1);             // (a card's button: the retro styles draw at half size)
+        if (Theme.Classic) Draw95();
+        else if (Theme.Cyber) DrawCyber();                  // HUD alerts (NotificationsCyber.cs)
+        else DrawModern();
+        _ui.End();
+    }
+
+    void DrawModern()
+    {
         _p.Begin(_surf.Bitmap, 0x00000000);
         float y = 0;
         foreach (var c in _cards)
@@ -317,8 +347,9 @@ public sealed partial class NotificationPanel : IDisposable
             if (!string.IsNullOrEmpty(c.Source))
                 _p.Text(c.Source, new RectangleF(tx, r.Y + 18, tw, 26), A(Theme.Dim), 18);
             _p.Text(c.Title, new RectangleF(tx, r.Y + 42, tw, 44), A(Theme.Text), 30, FontWeight.SemiBold);
-            _p.Text(c.Content, new RectangleF(tx, r.Y + 90, tw, 84), A(Theme.Text), 23, FontWeight.Normal,
+            _p.Text(c.Content, new RectangleF(tx, r.Y + 90, tw - ActRoom(c), 84), A(Theme.Text), 23, FontWeight.Normal,
                 TextAlignment.Leading, ParagraphAlignment.Near, null, true);
+            if (c.Action != null) ActModern(c, new RectangleF(r.Right - 24 - ActW, r.Bottom - 24 - 56, ActW, 56), e);
             y += CardH + CardGap;
             if (y > TH - CardH) break;
         }
@@ -347,13 +378,147 @@ public sealed partial class NotificationPanel : IDisposable
         float tx = icon.Right + 14, tw = r.Right - tx - 12;
         _p.Text(c.Title, new RectangleF(tx, cap.Bottom + 10, tw, 15), Theme.W95Dark, Ui.F95, FontWeight.Bold,
             TextAlignment.Leading, ParagraphAlignment.Center, Theme.RetroFont);
-        _p.Text(c.Content, new RectangleF(tx, cap.Bottom + 27, tw, r.Bottom - cap.Bottom - 31), Theme.W95Dark, Ui.F95, FontWeight.Normal,
+        _p.Text(c.Content, new RectangleF(tx, cap.Bottom + 27, tw - Act95Room(c), r.Bottom - cap.Bottom - 31), Theme.W95Dark, Ui.F95, FontWeight.Normal,
             TextAlignment.Leading, ParagraphAlignment.Near, Theme.RetroFont, true);
+        if (c.Action != null) Act95(c, new RectangleF(r.Right - 12 - Act95W(c), r.Bottom - 9 - 23, Act95W(c), 23));
+    }
+
+    // ---------------- a card's button ----------------
+
+    // the room the text leaves it at the right (0: no button)
+    static float ActRoom(Notification c) => c.Action == null ? 0 : ActW + 16;
+    float Act95W(Notification c) => c.Action == null ? 0 : MathF.Max(75, MathF.Ceiling(_ui.LabelWidth95(c.Action)) + 16);
+    float Act95Room(Notification c) => c.Action == null ? 0 : Act95W(c) + 8;
+
+    string ActId(Notification c) => Ui.Id("nact", _cards.IndexOf(c));
+
+    // the button now: its words (the action; its question for AskLen s after a first tap; the answer once done), asking, done
+    (string label, bool asking, bool done) ActNow(Notification c)
+    {
+        double now = Clock.Now;
+        if (c.ActedAt > 0) return (c.ActOk ? "Sent" : "Not sent", false, true);
+        if (c.Ask != null && now - c.AskedAt <= AskLen) { AnimWake.At(c.AskedAt + AskLen + 0.02); return (c.Ask, true, false); }
+        return (c.Action, false, false);
+    }
+
+    // a tap on it: the first asks, the second does it (Act) - the card goes a moment later (Update)
+    void ActTap(Notification c)
+    {
+        double now = Clock.Now;
+        _dirty = true;
+        if (c.ActedAt > 0) return;
+        if (c.Ask != null && now - c.AskedAt > AskLen) { c.AskedAt = now; return; }
+        (c.AskedAt, c.ActedAt) = (-10, now);
+        c.ActOk = c.Act?.Invoke() ?? true;
+        Acts++;
+        AnimWake.At(now + ActedLen + 0.02);
+    }
+
+    // the second taps so far (the tools' count)
+    public int Acts { get; private set; }
+
+    // modern: the accent, amber while it asks, grey once done; the card's glyph and the words in its middle, a little smaller while held
+    void ActModern(Notification c, RectangleF b, float e)
+    {
+        var (label, asking, done) = ActNow(c);
+        bool click = _ui.Clickable(ActId(c), b, out bool hover, out bool held);
+        uint fill = done ? Theme.Panel3 : asking ? Theme.Warn : Theme.Accent;
+        if (!done && hover && !held) fill = Theme.Mix(fill, 0xFFFFFFFF, 0.12f);
+        if (!done && held) { fill = Theme.Mix(fill, 0xFF000000, 0.2f); b = RectangleF.Inflate(b, -4, -3); }
+        _p.Fill(b, Theme.WithAlpha(fill, e), 16);
+        uint fg = Theme.WithAlpha(done ? Theme.Text : Theme.Luma(fill) > 0.55f ? 0xFF0B1220 : 0xFFFFFFFF, e);
+        float tw = _p.MeasureWidth(label, 22, FontWeight.SemiBold), iw = c.Glyph != null ? 34 : 0, x = b.X + (b.Width - iw - tw) / 2;
+        if (c.Glyph != null) _p.Icon(c.Glyph, new RectangleF(x, b.Y, 24, b.Height), fg, 22);
+        _p.Text(label, new RectangleF(x + iw, b.Y, tw + 4, b.Height), fg, 22, FontWeight.SemiBold);
+        if (click && !done) ActTap(c);
+    }
+
+    // a retro style: its own push button (Ui.Button95 in the style's skin) - the default button's outline at rest, held in while it asks
+    void Act95(Notification c, RectangleF b)
+    {
+        var (label, asking, done) = ActNow(c);
+        if (_ui.Button95(ActId(c), b, label, !done, isDefault: !asking && !done, latched: asking)) ActTap(c);
     }
 
     // snapshot tool: draw a sample card
     public void AddForPreview(Notification n) { n.Vis = 1; n.Shown = 0; _cards.Add(n); }
     public Surface Surface => _surf;
+
+    // --snapshot: where the first card's button is (texture px; null: none drawn)
+    public Vector2? ActionPoint()
+    {
+        RectangleF? at = null;
+        _ui.HitSpy = (k, r) => { if (at == null && k.StartsWith("nact", StringComparison.Ordinal)) at = r; };
+        try { Draw(); }
+        finally { _ui.HitSpy = null; }
+        if (at is not { } a) return null;
+        float s = Theme.Classic ? 2 : 1;
+        return new Vector2((a.X + a.Width / 2) * s, (a.Y + a.Height / 2) * s);
+    }
+
+    // ---------------- the laser: only while a card with a button shows ----------------
+
+    public VrOverlay Overlay => _ov;
+
+    public bool Interactive
+    {
+        get
+        {
+            if (_ov == null || !_ov.Visible) return false;
+            foreach (var c in _cards) if (c.Action != null && !c.Leaving && c.Vis > 0.8f) return true;
+            return false;
+        }
+    }
+
+    public bool AcceptsFrom(Hand h) => true;
+    public Vector2 TextureSize => new(TW, TH);
+
+    public void PointerMove(Hand h, Vector2 px)
+    {
+        _owner ??= h;
+        if (_owner != h) return;
+        _ptr.Move(px.X, px.Y);
+        if (_ptr.Down || _ui.NeedsRedrawForMove(_ptr, Theme.Classic ? 2 : 1)) _dirty = true;
+    }
+
+    public void PointerLeave(Hand h)
+    {
+        if (_owner != h) return;
+        _owner = null;
+        _ptr.Leave();
+        _dirty = true;
+    }
+
+    public void PointerButton(Hand h, PtrButton b, bool down, Vector2 px)
+    {
+        if (b != PtrButton.Primary) return;
+        if (down)
+        {
+            if (_owner != h && _ptr.Down) return;
+            _owner = h;
+            _ptr.Move(px.X, px.Y);
+            _ptr.Press();
+        }
+        else
+        {
+            if (_owner != h) return;
+            _ptr.Move(px.X, px.Y);
+            _ptr.Release();
+        }
+        _dirty = true;
+    }
+
+    public void PointerScroll(Hand h, float notches, Vector2 px) { }
+
+    public bool Grabbable => false;
+    public Matrix4x4 WorldTransform => Matrix4x4.Identity;
+    public void GrabBegin(bool detach) { }
+    public void GrabMove(Matrix4x4 world) { }
+    public void GrabStickX(float v, float dt) { }
+    public void GrabTwoHandBegin() { }
+    public void GrabTwoHandScale(float ratio) { }
+    public bool GrabSnapPreview => false;
+    public void GrabEnd() { }
 
     // no retro style on a while (OrbitApp.GpuSweep, Erik 10-24: Orbit's VRAM): its half-size canvas let go, made again by the next retro draw
     public void ReleaseStyle() { if (!Theme.Classic) { _canvas95?.Dispose(); _canvas95 = null; } }

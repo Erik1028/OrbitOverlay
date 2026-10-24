@@ -1835,6 +1835,25 @@ static class Hu
         ("slimevr|Timed out", "Időtúllépés"),
         ("slimevr|Sleeping", "Alszik"),
         ("slimevr|No status", "Nincs állapot"),
+        // its alerts and lying down (Sys/SlimeAlerts.cs, OrbitApp.SlimeVr.cs, the notification card's button, the settings)
+        ("Lying down? Yaw reset", "Fekszel? Irány-reset"),
+        ("Lying? Yaw reset", "Fekszel? Irány-reset"),
+        ("Yaw reset?", "Irány-reset?"),
+        ("Yaw?", "Irány?"),
+        ("Lying? &Yaw Reset", "Fekszel? &Irány-reset"),
+        ("&Yaw Reset?", "&Irány-reset?"),
+        ("LYING?", "FEKSZEL?"),
+        ("Lying twists the hips and legs - a yaw reset sets them straight.", "Fekve elcsavarodik a csípő és a láb - az irány-reset kiegyenesíti."),
+        ("{0} lost", "{0} kiesett"),
+        ("{0} back", "{0} újra megvan"),
+        ("Timed out - out of range?", "Időtúllépés - hatótávon kívül?"),
+        ("Gone from SlimeVR's list.", "Eltűnt a SlimeVR listájáról."),
+        ("Disconnected - its battery, or out of range?", "Nincs kapcsolat - lemerült, vagy hatótávon kívül?"),
+        ("Connected again.", "Újra csatlakozva."),
+        ("Not sent", "Nem ment el"),
+        ("SlimeVR alerts", "SlimeVR-jelzés"),
+        ("Sli&meVR alerts", "Sli&meVR-jelzések"),
+        ("Low battery, a tracker lost; lying down: Yaw reset", "Lemerülő akku, kiesett tracker; fekve: irány-reset"),
 
     };
 }
