@@ -11,8 +11,10 @@ namespace Orbit;
 // --snapshot's part for the photo view's gallery and Delete (WristGallery.cs, Sys/PhotoAlbum.cs), on made-up photos only: Gallery opens
 // the grid, the stick scrolls it, a tap opens a photo big, its arrow steps through all of them, Gallery goes back to the grid and to the
 // photo again; Delete asks on its first tap, on the second hands the photo to the app (a made-up hand-over: nothing is ever deleted by a
-// tool) and the view steps off it, a refusal says why; the album itself on a folder of made-up PNGs; what the bin refuses. Pictures:
-// wrist_gallery_<case><tag>.png and gallery_preview.png (every style's grid and Delete asking).
+// tool) and the view steps off it, a refusal says why; the album itself on a folder of made-up PNGs; what the bin refuses; the photo
+// view's Send, slideshow and zoom in every style that has them (ViewChecks; ORBIT_SNAP_ONLY=photoview runs those alone). Pictures:
+// wrist_gallery_<case><tag>.png, gallery_preview.png (every style's grid and Delete asking) and gallery_actions.png (Send asking, the
+// slideshow, the zoom).
 static class GalleryViewTools
 {
     static void Draw2(WristPanel wrist, PanelData data) { wrist.Draw(data); wrist.Draw(data); }
@@ -120,7 +122,7 @@ static class GalleryViewTools
             wrist.OnOpenPhoto = _ => { };
             Checks(wrist, data, wcfg, tag);
             FilterChecks(wrist, data, wcfg, gpu, dir, tag);
-            if (!Theme.Classic) ViewChecks(wrist, data, wcfg, gpu, dir, tag);
+            ViewChecks(wrist, data, wcfg, gpu, dir, tag);
             Pictures(wrist, data, wcfg, gpu, dir, tag);
         }
         catch (Exception e) { Log.Error("gallery view" + tag + ": " + e); }
@@ -314,9 +316,18 @@ static class GalleryViewTools
 
     public static readonly List<(string tag, string world, string people)> FilterPreview = new();
 
-    // modern / Cyber's photo view: Send (VR Gallery's newest only - a made-up hand-over, nothing is sent), the slideshow, the zoom
+    // The photo view's Send (VR Gallery's newest only - a made-up hand-over, nothing is sent), the slideshow and the zoom, in each style
+    // its way: modern / Cyber over the photo (a tap on it zooms); 95 Imaging Send and the zoom - its Zoom menu word the switch, a tap on
+    // the photo then zooms (no slideshow: Imaging had none); XP's Start Slide Show and Zoom In / Zoom Out; 7's Play orb and magnifier;
+    // the Mac's magnifier and slideshow. The Terminal has none of them (its keys are full)
+    public static readonly List<(string tag, string send, string show, string zoom)> ActionsPreview = new();
+
     static void ViewChecks(WristPanel wrist, PanelData data, WristConfig wcfg, Gpu gpu, string dir, string tag)
     {
+        var style = Theme.Retro;
+        if (style == RetroStyle.Terminal) { Log.Info($"gallery view{tag}: the Terminal's viewer has no Send, slideshow or zoom (its keys are full)"); return; }
+        bool classic = Theme.Classic, hasShow = style != RetroStyle.Win95;
+        string prevId = classic ? "wph95p" : "wphprev";
         var snap = PhotoFake.Snap(5);
         data.Photos = snap;
         data.Album = Album(snap);
@@ -342,41 +353,96 @@ static class GalleryViewTools
             TapId(wrist, data, "wphsend");
             bool asks = sent == 0;
             Settle(wrist, data);
-            wrist.Surf.SavePng(gpu, Path.Combine(dir, $"wrist_gallery_send{tag}.png"));
+            string sendPic = Path.Combine(dir, $"wrist_gallery_send{tag}.png");
+            wrist.Surf.SavePng(gpu, sendPic);
             TapId(wrist, data, "wphsend");
             Draw2(wrist, data);
             bool handed = sent == 1 && wrist.GalleryNote == "Sent to Discord";
-            // not on an older one (VR Gallery sends its newest only)
-            TapId(wrist, data, "wphprev");
+            // not on an older one (VR Gallery sends its newest only; 7's command bar greys its Send there)
+            TapId(wrist, data, prevId);
             Draw2(wrist, data);
-            bool notOlder = wrist.ControlPoint(data, "wphsend") == null;
-            // the slideshow: on to the older one each SlideSeconds, Stop ends it
-            string before = wrist.PhotoOpenShown;
-            bool playTap = TapId(wrist, data, "wphplay");
-            bool playing = playTap && wrist.GalleryShowing;
-            Thread.Sleep(1150);
-            Draw2(wrist, data);
-            int i0 = snap.Recent.FindIndex(x => x.Path == before);
-            bool advanced = i0 >= 0 && i0 + 1 < snap.Recent.Count && wrist.PhotoOpenShown == snap.Recent[i0 + 1].Path;
-            bool stopTap = TapId(wrist, data, "wphstop");
-            bool stopped = stopTap && !wrist.GalleryShowing;
-            // the zoom: a tap on the photo - zoomed there, the sharp copy asked for; it comes, it is drawn; a tap again - whole
-            var at = wrist.ControlPoint(data, "wphzoom");
-            if (at is { } zp) Tap(wrist, data, zp);
-            bool zoomed = at != null && wrist.GalleryZoomShown && hiAsked == wrist.PhotoOpenShown;
+            bool notOlder = wrist.ControlPoint(data, "wphsend") == null && !wrist.SendShown(data);
+            // the slideshow: on to the older one each SlideSeconds (a retro viewer's too: PhotoFrame's tick), Stop ends it
+            string showLine = "", showPic = null;
+            if (hasShow)
+            {
+                string before = wrist.PhotoOpenShown;
+                bool playTap = TapId(wrist, data, "wphplay");
+                bool playing = playTap && wrist.GalleryShowing;
+                Thread.Sleep(400);                      // (modern / Cyber: the first slide faded in; a slide steps on in a frame drawn only)
+                Draw2(wrist, data);
+                showPic = Path.Combine(dir, $"wrist_gallery_show{tag}.png");
+                wrist.Surf.SavePng(gpu, showPic);
+                Thread.Sleep(750);
+                Draw2(wrist, data);
+                int i0 = snap.Recent.FindIndex(x => x.Path == before);
+                bool advanced = i0 >= 0 && i0 + 1 < snap.Recent.Count && wrist.PhotoOpenShown == snap.Recent[i0 + 1].Path;
+                bool stopTap = TapId(wrist, data, "wphstop");
+                bool stopped = stopTap && !wrist.GalleryShowing;
+                showLine = $"the slideshow played {playing} (want True), stepped on {advanced} (want True), Stop ended it {stopped} (want True); ";
+            }
+            // the zoom - zoomed in, the sharp copy asked for; it comes, it is drawn; whole again: modern / Cyber a tap on the photo and another;
+            // 95 its Zoom switched on, then the same (the photo no control before); XP Zoom In, Zoom Out; 7 and the Mac the magnifier twice
+            bool unarmed = style != RetroStyle.Win95 || wrist.ControlPoint(data, "wphzoom") == null;
+            string[] zoomOn = style switch { RetroStyle.Win95 => new[] { "wph95zoom", "wphzoom" }, RetroStyle.XP => new[] { "wphzin" }, _ => new[] { "wphzoom" } };
+            string[] zoomOff = style == RetroStyle.XP ? new[] { "wphzout" } : new[] { "wphzoom" };
+            bool onTaps = true, offTaps = true;
+            foreach (var id in zoomOn) onTaps &= TapId(wrist, data, id);
+            bool zoomed = onTaps && wrist.GalleryZoomShown && hiAsked == wrist.PhotoOpenShown;
             if (hiAsked != null)
             {
                 var (px, w, h) = PhotoFake.Pixels(snap.Recent.Find(x => x.Path == hiAsked) is { } hp && hp.TW < hp.TH ? 5 : 1, 1280, 720);
                 wrist.Hi = new WristPanel.HiPicture { Path = hiAsked, Px = px, W = w, H = h };
             }
             Settle(wrist, data);
-            wrist.Surf.SavePng(gpu, Path.Combine(dir, $"wrist_gallery_zoom{tag}.png"));
-            if (at is { } zp2) Tap(wrist, data, zp2);
-            bool whole = !wrist.GalleryZoomShown;
+            string zoomPic = Path.Combine(dir, $"wrist_gallery_zoom{tag}.png");
+            wrist.Surf.SavePng(gpu, zoomPic);
+            foreach (var id in zoomOff) offTaps &= TapId(wrist, data, id);
+            bool whole = offTaps && !wrist.GalleryZoomShown;
+            // a step while zoomed in (XP, 7, the Mac): the zoom's button pressed, the stick steps on, the button let go in the frame after
+            // the step - the new photo is whole before the toolbar is drawn, so the button zooms it (the toolbar was drawn zoomed for a
+            // frame: XP's Zoom In greyed, 7's and the Mac's magnifier in - the tap did nothing)
+            string stepLine = "";
+            if (style is RetroStyle.XP or RetroStyle.Aero or RetroStyle.Mac)
+            {
+                string zid = style == RetroStyle.XP ? "wphzin" : "wphzoom";
+                bool zin = TapId(wrist, data, zid) && wrist.GalleryZoomShown;
+                string from = wrist.PhotoOpenShown;
+                bool stepZoom = false;
+                if (zin && wrist.ControlPoint(data, zid) is { } zp)
+                {
+                    wrist.PointerMove(Hand.Left, zp); wrist.Draw(data);
+                    wrist.PointerButton(Hand.Left, PtrButton.Primary, true, zp); wrist.Draw(data);
+                    wrist.PointerScroll(Hand.Left, -1, zp);                 // (the stick, a notch: the one before)
+                    wrist.PointerButton(Hand.Left, PtrButton.Primary, false, zp); wrist.Draw(data);
+                    wrist.PointerLeave(Hand.Left); wrist.Draw(data);
+                    stepZoom = wrist.PhotoOpenShown != from && wrist.GalleryZoomShown && hiAsked == wrist.PhotoOpenShown;
+                }
+                stepLine = $", after a step its button zoomed the new one {stepZoom} (want True)";
+            }
+            // the slideshow, then the photo's world (its link stays live while it plays): the grid of that world's photos, the slideshow
+            // ended (it went on under the grid, a redraw every frame, and a photo picked there stepped on)
+            string gridLine = "";
+            if (hasShow)
+            {
+                wrist.GalleryNoteForTest();             // (Send's "Sent to Discord" gone: in XP, 7 and the Mac it holds the line the world is in)
+                bool play2 = TapId(wrist, data, "wphplay") && wrist.GalleryShowing;
+                bool worldTap = TapId(wrist, data, "wphworld");
+                Draw2(wrist, data);
+                bool ended = play2 && worldTap && wrist.GalleryGridShown && !wrist.GalleryShowing;
+                gridLine = $"; a world tapped while it played - its grid, the slideshow ended {ended} (want True)";
+            }
+            string toolLine = "";
+            if (style == RetroStyle.Win95)
+            {
+                bool toolOff = TapId(wrist, data, "wph95zoom") && !wrist.ZoomToolShown && wrist.ControlPoint(data, "wphzoom") == null;
+                toolLine = $"; before Zoom was on the photo did not zoom {unarmed} (want True), Zoom off again neither {toolOff} (want True)";
+            }
             wrist.CloseForTest();
             Log.Info($"gallery view{tag}: Send on the newest {shown} (want True), it asked first {asks} (want True), then handed it over {handed} (want True), " +
-                     $"none on an older one {notOlder} (want True); the slideshow played {playing} (want True), stepped on {advanced} (want True), Stop ended it " +
-                     $"{stopped} (want True); a tap zoomed in {zoomed} (want True), another made it whole {whole} (want True)");
+                     $"none on an older one {notOlder} (want True); {showLine}zoomed in {zoomed} (want True), whole again {whole} (want True){stepLine}{toolLine}{gridLine}");
+            ActionsPreview.RemoveAll(x => x.tag == tag);
+            ActionsPreview.Add((tag, sendPic, showPic, zoomPic));
         }
         finally
         {
@@ -479,9 +545,83 @@ static class GalleryViewTools
         }
     }
 
+    // ORBIT_SNAP_ONLY=photoview: the photo view's Send, slideshow and zoom in every style (ViewChecks) and their pictures side by side
+    // (gallery_actions.png) - in seconds, on made-up photos
+    public static int ViewOnly(WristPanel wrist, PanelData data, ConfigStore cfg, Gpu gpu, string dir)
+    {
+        var culture = System.Globalization.CultureInfo.CurrentCulture;
+        System.Globalization.CultureInfo.CurrentCulture = Tools.SnapCulture;
+        var wcfg = cfg.Data.Wrist;
+        var keep = (wcfg.Face, wcfg.Widgets, wcfg.Grid, wcfg.Pages, wcfg.Page, wcfg.Background);
+        var photos0 = data.Photos;
+        var album0 = data.Album;
+        var open0 = wrist.OnOpenPhoto;
+        try
+        {
+            wcfg.Face = "custom";
+            wcfg.Background = "panel";
+            wcfg.Grid = null;
+            wcfg.Pages = null;
+            wcfg.Page = 0;
+            wrist.OnOpenPhoto = _ => { };
+            foreach (var (style, tag) in new[] { ("modern", ""), ("classic", "_95"), ("xp", "_xp"), ("aero", "_aero"), ("mac", "_mac"), ("terminal", "_term"), (CyberHud.Id, "_cyber") })
+            {
+                cfg.Data.Appearance = new AppearanceConfig { Style = style, Clock24h = true };
+                Theme.Apply(cfg.Data.Appearance);
+                try { ViewChecks(wrist, data, wcfg, gpu, dir, tag); }
+                catch (Exception e) { Log.Error("gallery view" + tag + ": " + e); }
+            }
+            ActionsSheet(dir);
+        }
+        finally
+        {
+            wrist.CloseForTest();
+            wrist.PointerLeave(Hand.Left);
+            wrist.OnOpenPhoto = open0;
+            data.Photos = photos0;
+            data.Album = album0;
+            (wcfg.Face, wcfg.Widgets, wcfg.Grid, wcfg.Pages, wcfg.Page, wcfg.Background) = keep;
+            System.Globalization.CultureInfo.CurrentCulture = culture;
+        }
+        Log.Info("snapshot (photo view only) written to " + dir);
+        return 0;
+    }
+
+    // every style's Send asking, its slideshow and its zoom, side by side: gallery_actions.png
+    static void ActionsSheet(string dir)
+    {
+        if (ActionsPreview.Count == 0) return;
+        const int W = 480, H = 330, Gap = 12, Label = 26;
+        using var sheet = new Bitmap(3 * W + 4 * Gap, ActionsPreview.Count * (H + Label + Gap) + Gap);
+        using (var g = Graphics.FromImage(sheet))
+        {
+            g.Clear(Color.FromArgb(255, 32, 34, 40));
+            g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+            using var font = new Font("Segoe UI", 12, FontStyle.Bold, GraphicsUnit.Pixel);
+            for (int i = 0; i < ActionsPreview.Count; i++)
+            {
+                var (t, send, show, zoom) = ActionsPreview[i];
+                float y = Gap + i * (H + Label + Gap);
+                g.DrawString($"{(t.Length == 0 ? "modern" : t[1..])}: Send asking, the slideshow playing, the zoom", font, Brushes.White, Gap, y + 4);
+                int k = 0;
+                foreach (var f in new[] { send, show, zoom })
+                {
+                    float x = Gap + k++ * (W + Gap);
+                    if (f == null) { g.DrawString("(no slideshow in this style)", font, Brushes.Gray, x + 12, y + Label + H / 2f - 8); continue; }
+                    using var b = new Bitmap(f);
+                    g.DrawImage(b, x, y + Label, W, H);
+                }
+            }
+        }
+        string path = Path.Combine(dir, "gallery_actions.png");
+        sheet.Save(path, ImageFormat.Png);
+        Log.Info($"gallery view: the styles' Send, slideshow and zoom side by side: {path}");
+    }
+
     // every style's grid and its Delete asking, side by side: gallery_preview.png
     public static void PreviewSheet(string dir)
     {
+        ActionsSheet(dir);
         if (Preview.Count == 0) return;
         const int W = 640, H = 440, Gap = 12, Label = 26;
         using var sheet = new Bitmap(2 * W + 3 * Gap, Preview.Count * (H + Label + Gap) + Gap);

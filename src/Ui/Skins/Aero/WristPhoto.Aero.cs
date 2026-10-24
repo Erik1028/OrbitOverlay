@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.Numerics;
 using Vortice.Direct2D1;
 using Vortice.DirectWrite;
 
@@ -7,14 +8,17 @@ namespace Orbit;
 
 // The latest photo in Windows 7 (WristPhoto.cs has the rest). The widget: the Slide Show gadget - the photo in its thin black frame
 // with a soft shadow, and (two cells and up) the gadget's dark glass strip along its foot with how long ago and the world. Opened:
-// Windows Photo Viewer - the glass window, the dark blue command bar (File, Print, E-mail, Burn, and its Open menu: Open in VR
-// Gallery), the photo whole on the viewer's light ground, when and where under it, and the dark blue control bar with the round
-// Previous / Next buttons and which one it is between them.
+// Windows Photo Viewer - the glass window, the dark blue command bar (File, Print, Send - its E-mail -, Burn, and its Open menu: Open
+// in VR Gallery), the photo whole on the viewer's light ground, when and where under it, and the dark blue control bar: the magnifier
+// (the zoom) and the gallery at its left, the round Previous / Next buttons round the big blue Play slide show, which one it is, Delete.
 public sealed partial class WristPanel
 {
     const uint ViewerBar1 = 0xFF2C4F7E, ViewerBar2 = 0xFF0F2848, ViewerGround = 0xFFF4F7FC;
-    static readonly string[] ViewerMenu = { "File", "Print", "E-mail", "Burn" };
+    const string SendCmd = "Send";
+    static readonly string[] ViewerMenu = { "File", "Print", SendCmd, "Burn" };
     static readonly string[] DropAero = { "kkkkk", ".kkk.", "..k.." };
+    static readonly string[] PlayBigAero = { "kk.....", "kkkk...", "kkkkkk.", "kkkkkkk", "kkkkkkk", "kkkkkk.", "kkkk...", "kk....." };
+    static readonly string[] PauseBigAero = { "kk..kk", "kk..kk", "kk..kk", "kk..kk", "kk..kk", "kk..kk", "kk..kk", "kk..kk" };
 
     void PhotoTileAero(RectangleF r, WatchWidget w, PanelData d, int id)
     {
@@ -83,12 +87,14 @@ public sealed partial class WristPanel
         bool x = _ui.Clickable("wd95x", RectangleF.Inflate(rc, 4, 4), out bool xh, out bool xd);
         AeroSkin.CaptionBox(_p, rc, CaptionKind.Close, true, xd, xh);
         if (x) { CloseDetail(); return; }
-        // the command bar: the viewer's menus (its words only), then its Open menu - Open in VR Gallery
+        // the command bar: the viewer's menus (its words only) - its E-mail Send here, VR Gallery's Send to Discord (SendAero) -, then
+        // its Open menu - Open in VR Gallery
         var cmd = new RectangleF(cl.X, cl.Y, cl.Width, 20);
         _p.GradientRaw(cmd, ViewerBar1, ViewerBar2);
         float mx = cmd.X + 8;
         foreach (var m in ViewerMenu)
         {
+            if (m == SendCmd) { mx = SendAero(mx, cmd, grid ? null : p); continue; }
             float mw = WAero(m, 11);
             _p.Text(m, new RectangleF(mx, cmd.Y, mw + 4, cmd.Height), 0xFFE8F0FB, 11, FontWeight.Normal, TextAlignment.Leading, ParagraphAlignment.Center, Ae.Font);
             mx += mw + 14;
@@ -108,14 +114,19 @@ public sealed partial class WristPanel
             TextAlignment.Leading, ParagraphAlignment.Center, Ae.Font);
         _p.Pixels(DropAero, gal.Right - 9, MathF.Floor(gal.Y + gal.Height / 2) - 1, gc);
         if (go) PhotoOpen(p);
-        // the control bar: the gallery at its left (where the viewer's display size was), Previous, which one, Next; Delete's red X at
-        // its right, as the viewer had it
+        // the control bar, the viewer's own (Erik 10-24, "mehet mind"): at its left "Change the display size" - the magnifier, the zoom
+        // (lit while zoomed, greyed over the grid) - and the gallery where its Actual size was; Previous, the big blue Play slide show
+        // (Pause while it plays) and Next in the middle; which one where its rotate buttons were; Delete's red X at its right
         var bar = new RectangleF(cl.X, cl.Bottom - 30, cl.Width, 30);
         _p.GradientRaw(bar, ViewerBar1, ViewerBar2);
         _p.Fill(new RectangleF(bar.X, bar.Y, bar.Width, 1), 0xFF6F8DB5);
         int n = PhotoCount;
         float cx = MathF.Floor(bar.X + bar.Width / 2), cy = MathF.Floor(bar.Y + bar.Height / 2);
-        if (OrbAero("wphall", bar.X + 22, cy, Grid95, true)) GalleryToggle(p);
+        if (FlatAero("wphzoom", new RectangleF(bar.X + 6, bar.Y + 3, 28, 24), Lens95, 0xFFE8F0FB, !grid && p != null, _galZoom))
+        {
+            if (_galZoom) ZoomOut(); else ZoomIn(p, new Vector2(0.5f, 0.5f));
+        }
+        if (OrbAero("wphall", bar.X + 53, cy, Grid95, true)) GalleryToggle(p);
         if (grid)
         {
             if (HeartAero("wgfav", new RectangleF(bar.Right - 34, bar.Y + 3, 28, 24))) GalFilter(!_galFav, _galWorld, _galPerson, null);
@@ -123,11 +134,12 @@ public sealed partial class WristPanel
         else if (DelAero("wphdel", new RectangleF(bar.Right - 34, bar.Y + 3, 28, 24), p != null && !DeleteBusy, DeleteArmed(p))) DeleteTap(p);
         if (grid)
         {
-            if (TextAero("wgdays", new RectangleF(bar.X + 42, bar.Y + 4, WAero(Lang.T("Days"), 11) + 18, bar.Height - 8), "Days", C.GalleryDays)) GalSetDays(!C.GalleryDays);
+            float dx = bar.X + 73, dw = WAero(Lang.T("Days"), 11) + 18;
+            if (TextAero("wgdays", new RectangleF(dx, bar.Y + 4, dw, bar.Height - 8), "Days", C.GalleryDays)) GalSetDays(!C.GalleryDays);
             if (GalFilterText() is { } ft)
             {
                 // the filter in the count's place: tapped - all again
-                float fx = bar.X + 42 + WAero(Lang.T("Days"), 11) + 18 + 10, fw = bar.Right - 40 - fx;      // (between Days and the heart)
+                float fx = dx + dw + 10, fw = bar.Right - 40 - fx;      // (between Days and the heart)
                 var fr = new RectangleF(fx, bar.Y + 4, fw, bar.Height - 8);
                 bool click = TextAero("wgclear", fr, PhotoCut(ft, fw - 8, 11, FontWeight.Normal, Ae.Font), true);
                 if (click) GalClearFilter();
@@ -138,10 +150,17 @@ public sealed partial class WristPanel
         }
         else
         {
-            if (OrbAero("wph95p", cx - 42, cy, PrevAero, _phIndex < n - 1)) PhotoStep(1);
-            if (OrbAero("wph95n", cx + 42, cy, NextAero, _phIndex > 0)) PhotoStep(-1);
+            if (OrbAero("wph95p", cx - 36, cy, PrevAero, _phIndex < n - 1)) PhotoStep(1);
+            bool show = _galShow;
+            if (ShowOrbAero(show ? "wphstop" : "wphplay", cx, cy, show ? PauseBigAero : PlayBigAero, show || _phIndex < n - 1))
+            {
+                if (show) ShowStop(); else ShowStart();
+            }
+            if (OrbAero("wph95n", cx + 36, cy, NextAero, _phIndex > 0)) PhotoStep(-1);
+            float x0 = cx + 36 + 13 + 6, x1 = bar.Right - 34 - 6;
             if (p != null)
-                _p.Text(words.Count, new RectangleF(cx - 28, bar.Y, 56, bar.Height), 0xFFE8F0FB, 11, FontWeight.Normal, TextAlignment.Center, ParagraphAlignment.Center, Ae.Font);
+                _p.Text(PhotoCut(words.Count, x1 - x0, 11, FontWeight.Normal, Ae.Font), new RectangleF(x0, bar.Y, x1 - x0, bar.Height), 0xFFE8F0FB, 11,
+                    FontWeight.Normal, TextAlignment.Center, ParagraphAlignment.Center, Ae.Font);
         }
         // the photo whole on the viewer's ground; when and where under it
         var view = new RectangleF(cl.X + 8, cmd.Bottom + 6, cl.Width - 16, bar.Y - 18 - (cmd.Bottom + 6));
@@ -164,8 +183,7 @@ public sealed partial class WristPanel
         var pic = PhotoFit(aw, ah, view, true);
         _p.Fill(new RectangleF(pic.X + 1, pic.Y + 2, pic.Width, pic.Height), Theme.WithAlpha(0xFF000000, 0.2f));
         var bmp = PhotoBitmap(p);
-        if (bmp != null) _p.ImagePart(bmp, pic, new RectangleF(0, 0, p.TW, p.TH));
-        else _p.Fill(pic, 0xFFDCE6F2);
+        PhotoImage95(pic, p, bmp, 0xFFDCE6F2, false);       // (whole or zoomed: WristGallery.cs)
         PhotoFlash95(pic);
         if (ds != null) return;
         float iy = bar.Y - 15, iw = view.Width;
@@ -225,18 +243,56 @@ public sealed partial class WristPanel
     }
 
     // the control bar's Delete: flat, its red X; under the pointer (and asking) the bar's soft glass glow
-    bool DelAero(string id, RectangleF r, bool enabled, bool asking)
+    bool DelAero(string id, RectangleF r, bool enabled, bool asking) => FlatAero(id, r, Del95, 0xFFF05A3C, enabled, asking, asking ? 0xFFFF6040 : 0xFFFFFFFF);
+
+    // a flat button of the control bar (Delete, the magnifier): its picture; under the pointer, held or on, the bar's soft glass glow
+    bool FlatAero(string id, RectangleF r, string[] glyph, uint ink, bool enabled, bool on, uint glow = 0xFFFFFFFF)
     {
         bool click = _ui.Clickable(id, r, out bool hover, out bool held) && enabled;
-        if ((hover || held || asking) && enabled)
+        if ((hover || held || on) && enabled)
         {
             _p.Smooth(true);
-            _p.FillRound(r, Theme.WithAlpha(asking ? 0xFFFF6040 : 0xFFFFFFFF, held || asking ? 0.28f : 0.18f), 3);
+            _p.FillRound(r, Theme.WithAlpha(glow, held || on ? 0.28f : 0.18f), 3);
             _p.StrokeRound(new RectangleF(r.X + 0.5f, r.Y + 0.5f, r.Width - 1, r.Height - 1), Theme.WithAlpha(0xFFFFFFFF, 0.5f), 1, 3);
             _p.Smooth(false);
         }
-        _p.Pixels(Del95, MathF.Floor(r.X + (r.Width - 7) / 2), MathF.Floor(r.Y + (r.Height - 7) / 2), enabled ? 0xFFF05A3C : 0xFF7C8EA8);
+        _p.Pixels(glyph, MathF.Floor(r.X + (r.Width - glyph[0].Length) / 2), MathF.Floor(r.Y + (r.Height - glyph.Length) / 2), enabled ? ink : 0xFF7C8EA8);
         return click;
+    }
+
+    // the big blue Play slide show in the middle of the control bar (its Pause while the slideshow plays)
+    bool ShowOrbAero(string id, float cx, float cy, string[] glyph, bool enabled)
+    {
+        bool click = _ui.Clickable(id, new RectangleF(cx - 15, cy - 15, 30, 30), out bool hover, out bool held) && enabled;
+        AeroSkin.Orb(_p, cx, cy, 13, true, hover && enabled, held && enabled, glyph, enabled);
+        return click;
+    }
+
+    // the command bar's Send - the viewer's E-mail, saying what it does here (VR Gallery sends its newest photo to its Discord webhook):
+    // live on that photo only, greyed on the others; asking ("Send?") the bar's glass stays on it, its answer in the line under the
+    // photo. Returns where the next word goes
+    float SendAero(float mx, RectangleF cmd, PhotoWatcher.Photo p)
+    {
+        bool can = CanSend(p), armed = can && SendArmed(p), busy = can && _sendBusy;
+        string label = busy ? "Sending..." : armed ? SendAsk : SendCmd;
+        float mw = WAero(label, 11);
+        if (can)
+        {
+            _sendSeen = true;
+            var r = new RectangleF(mx - 4, cmd.Y + 1, mw + 8, cmd.Height - 2);
+            bool click = _ui.Clickable("wphsend", r, out bool h, out bool d) && !busy;
+            if (h || d || armed)
+            {
+                _p.Smooth(true);
+                _p.FillRound(r, Theme.WithAlpha(0xFFFFFFFF, d ? 0.12f : armed ? 0.28f : 0.22f), 3);
+                _p.StrokeRound(new RectangleF(r.X + 0.5f, r.Y + 0.5f, r.Width - 1, r.Height - 1), Theme.WithAlpha(0xFFFFFFFF, 0.5f), 1, 3);
+                _p.Smooth(false);
+            }
+            if (click) SendTap(p);
+        }
+        _p.Text(label, new RectangleF(mx, cmd.Y, mw + 4, cmd.Height), can ? 0xFFFFFFFF : 0xFF7C8EA8, 11, FontWeight.Normal, TextAlignment.Leading,
+            ParagraphAlignment.Center, Ae.Font);
+        return mx + mw + 14;
     }
 
     // a round silver button of the viewer's control bar (Media Player's orb, small)
