@@ -95,6 +95,37 @@ static class MathUtil
         return Basis(x, up, z, head.Translation);
     }
 
+    // Lying on a side (Erik 10-24: "ha az oldalamon fekszek akkor is a szememmel párhuzamosan jelenjen meg az overlay") the head is
+    // rolled 60-90°: past this the placement frame is the head's own. Sitting, a tilted head stays under it (resting on a hand, a look
+    // at the watch: 10-25°; the neck's own side bend ends at ~45°).
+    public const float LieRollDeg = 40;
+    static long _lieLogMs;
+
+    // Where Recenter, Reset position, Join and "bring here" put things: GazeFrame as ever (upright a nod or a slight tilt ignored,
+    // reclined it follows the look), unless the head is rolled past LieRollDeg - then its full rotation, so the monitors lie parallel
+    // to the eyes and what goes under them goes towards the chin. Roll = atan2(right.y, up.y): both scale with cos(pitch), so it reads
+    // the same at any pitch; near straight up / down they vanish, but GazeFrame takes the headset's own up there anyway (the same
+    // frame). Decided once, at the moment of placement (nothing follows the head after). worn = false (the headset off, maybe on its
+    // side on the desk): never rolled. what: names the placement in the log line when the head lay (a line a second at most:
+    // Recenter's helpers ask again).
+    public static Matrix4x4 PlacementFrame(in Matrix4x4 head, bool worn, string what = null)
+    {
+        if (!worn) return GazeFrame(head);
+        Vector3 r = Right(head), u = Up(head), z = Back(head);
+        float roll = MathF.Atan2(r.Y, u.Y) * 180 / MathF.PI;
+        if (MathF.Abs(roll) <= LieRollDeg || z.LengthSquared() < 1e-6f) return GazeFrame(head);
+        z = Vector3.Normalize(z);
+        Vector3 x = Vector3.Cross(u, z);
+        if (x.LengthSquared() < 1e-6f) return GazeFrame(head);
+        x = Vector3.Normalize(x);
+        if (what != null && Environment.TickCount64 - _lieLogMs > 1000)
+        {
+            _lieLogMs = Environment.TickCount64;
+            Log.Info($"{what}: lying (roll {roll:0} deg) - placed parallel to the eyes");
+        }
+        return Basis(x, Vector3.Cross(z, x), z, head.Translation);
+    }
+
     public static float Smoothstep(float a, float b, float x)
     {
         float t = Math.Clamp((x - a) / (b - a), 0f, 1f);

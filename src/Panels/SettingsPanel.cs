@@ -75,7 +75,7 @@ public sealed class SettingsPanel : IPointerTarget, IDisposable
             // 0.7 m ahead, a little below the eyes, tilted back slightly
             var local = Matrix4x4.CreateRotationX(-12 * MathF.PI / 180) * Matrix4x4.CreateTranslation(0, -0.12f, -0.7f);
             C.Place.Attach = "world";
-            C.Place.M = MathUtil.ToArray(local * MathUtil.GazeFrame(_vr.Hmd));
+            C.Place.M = MathUtil.ToArray(local * MathUtil.PlacementFrame(_vr.Hmd, _vr.HeadsetWorn, "settings"));
             _cfg.MarkDirty();
         }
     }

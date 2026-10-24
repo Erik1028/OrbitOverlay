@@ -147,8 +147,9 @@ public sealed class DesktopLayout
         Reflow(o);
     }
 
-    // One seamless curved screen around the head, monitors in desk order.
-    public void JoinAll(in Matrix4x4 yawFrame, float radius, float yOffset)
+    // One seamless curved screen around the head, monitors in desk order. frame: MathUtil.PlacementFrame (lying on a side the
+    // whole row rolls with it, Erik 10-24).
+    public void JoinAll(in Matrix4x4 frame, float radius, float yOffset)
     {
         var row = _panels.Where(p => p.Cfg.Enabled).OrderBy(p => p.Mon.X).ThenBy(p => p.Mon.Y).ToList();
         if (row.Count == 0) return;
@@ -162,7 +163,7 @@ public sealed class DesktopLayout
             var local = Matrix4x4.CreateRotationY(-th) *
                         Matrix4x4.CreateTranslation(radius * MathF.Sin(th), yOffset, -radius * MathF.Cos(th));
             c.Place.Attach = "world";
-            c.Place.M = MathUtil.ToArray(local * yawFrame);
+            c.Place.M = MathUtil.ToArray(local * frame);
             c.Curvature = CurvatureFor(c.Width, radius);
             c.Group = g;
             c.GroupIndex = i;
@@ -183,7 +184,12 @@ public sealed class DesktopLayout
         if (!IsWorld(p)) return;
         var w = World(p);
         var d = w.Translation - head;
-        d.Y = 0;
+        // the radius across the panel's own up (SteamVR bends it round that axis): upright that is the level distance as before; a row
+        // parallel to rolled eyes (Erik 10-24) or overhead lying back was measured nearly along its axis (lying back: a 0.3 m bend)
+        var up = MathUtil.Up(w);
+        float ul = up.Length();
+        if (ul > 1e-3f && MathF.Abs(up.Y / ul) < 0.9999f) { up /= ul; d -= Vector3.Dot(d, up) * up; }
+        else d.Y = 0;                                           // (upright: to the bit as before)
         float dist = Math.Max(0.3f, d.Length());
         p.Cfg.Curvature = CurvatureFor(p.Cfg.Width, dist);
         Reflow(p);

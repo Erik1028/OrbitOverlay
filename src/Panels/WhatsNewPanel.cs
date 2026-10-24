@@ -53,7 +53,8 @@ public sealed class WhatsNewPanel : IPointerTarget, IDisposable
     public void DestroyOverlay() { _ptr.Leave(); Ov?.Dispose(); Ov = null; _vr = null; _vis = 0; }
 
     // 0.8 m ahead, a little below the eyes, tilted back slightly. It appears by itself (not from the watch), so where
-    // you look at that moment is where you are facing.
+    // you look at that moment is where you are facing. GazeFrame, not PlacementFrame: it comes as the headset goes on, the
+    // head's roll at that moment means nothing.
     void BringHere()
     {
         if (_vr == null || !_vr.HmdValid) return;
