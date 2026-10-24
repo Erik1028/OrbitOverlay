@@ -45,29 +45,41 @@ public sealed unsafe class MonitorCapture : IDisposable
         try { _session.IsCursorCaptureEnabled = on; } catch (Exception e) { Log.Warn("cursor capture: " + e.Message); }
     }
 
-    public MonitorCapture(Gpu g, IDirect3DDevice device, MonitorInfo m) : this(g, device, CreateItem(m.Handle, forWindow: false)) { }
+    public MonitorCapture(Gpu g, IDirect3DDevice device, MonitorInfo m) : this(g, device, TimedItem(m.Handle, forWindow: false)) { }
 
     public static MonitorCapture ForWindow(Gpu g, IDirect3DDevice device, IntPtr hwnd) =>
-        new(g, device, CreateItem(hwnd, forWindow: true));
+        new(g, device, TimedItem(hwnd, forWindow: true));
 
+    // Each piece of a capture's making timed (Erik 10-24, the boot: line's #2: the first monitor's 110 ms against the next ones' 16 - what
+    // of it is still the first time once the warm-up has run, BootWarm). The main loop's only (Spikes): the warm-up calls CreateItem.
     MonitorCapture(Gpu g, IDirect3DDevice device, GraphicsCaptureItem item)
     {
         _g = g;
         _device = device;
         _item = item;
+        long p0 = System.Diagnostics.Stopwatch.GetTimestamp();
         _item.Closed += (_, _) => Closed = true;
         _size = _item.Size;
+        Spikes.Piece("capture: the item's event + size", p0);
         // a minimised window can report 0 x 0; the first real frame resizes everything
         if (_size.Width < 1 || _size.Height < 1) _size = new Windows.Graphics.SizeInt32 { Width = 16, Height = 16 };
         try
         {
+            p0 = System.Diagnostics.Stopwatch.GetTimestamp();
             Target = new Surface(g, _size.Width, _size.Height);
+            Spikes.Piece("capture: target texture", p0);
+            p0 = System.Diagnostics.Stopwatch.GetTimestamp();
             _pool = Direct3D11CaptureFramePool.CreateFreeThreaded(_device, DirectXPixelFormat.B8G8R8A8UIntNormalized, Buffers, _size);
+            Spikes.Piece("capture: frame pool", p0);
+            p0 = System.Diagnostics.Stopwatch.GetTimestamp();
             _session = _pool.CreateCaptureSession(_item);
             _poolAbi = QueryAbi(_pool, IID_IDirect3D11CaptureFramePool);
             try { _session.IsCursorCaptureEnabled = true; } catch (Exception e) { Log.Warn("cursor capture: " + e.Message); }
             try { _session.IsBorderRequired = false; } catch (Exception e) { Log.Warn("capture border can't be disabled: " + e.Message); }
+            Spikes.Piece("capture: session", p0);
+            p0 = System.Diagnostics.Stopwatch.GetTimestamp();
             _session.StartCapture();
+            Spikes.Piece("capture: start", p0);
         }
         catch
         {
@@ -106,6 +118,36 @@ public sealed unsafe class MonitorCapture : IDisposable
         finally { Marshal.Release(p); }
     }
 
+    // ---- the warm-up (Sys/BootWarm.cs, its own thread) ----
+    // The first capture of a run did once what no other capture does again: the capture's classes and DLLs loaded, CsWinRT's wrappers for
+    // the item, its event, the pool and the session made, the device marshalled - 90 of its 110 ms (Erik 10-24). The warm-up's thread does
+    // that first time here on a capture of its own: the item, its Closed event and size while SteamVR connects (no device needed), then
+    // once the GPU is made a one-buffer 16 x 16 pool and a session on that item, NEVER started (no capture runs, no yellow border), closed
+    // at once. Only free-threaded objects: the item, the pool and the session are agile, the D3D device is used through its own thread-safe
+    // methods only (the pool's one small texture), its immediate context never. No Spikes here (the main loop's only).
+    public static GraphicsCaptureItem WarmItem(IntPtr monitor)
+    {
+        var item = CreateItem(monitor, forWindow: false);
+        Windows.Foundation.TypedEventHandler<GraphicsCaptureItem, object> closed = (_, _) => { };
+        item.Closed += closed;           // (the generic event's first run)
+        item.Closed -= closed;
+        _ = item.Size;
+        return item;
+    }
+
+    public static void WarmSession(Gpu g, GraphicsCaptureItem item)
+    {
+        // its own WinRT device, never closed: d3d11 may hand back one wrapper per device (the very one the main loop's captures use), and
+        // a closed one makes no captures - the GC lets it go
+        var dev = CreateWinRtDevice(g);
+        using var pool = Direct3D11CaptureFramePool.CreateFreeThreaded(dev, DirectXPixelFormat.B8G8R8A8UIntNormalized, 1,
+            new Windows.Graphics.SizeInt32 { Width = 16, Height = 16 });
+        using var session = pool.CreateCaptureSession(item);
+        Marshal.Release(QueryAbi(pool, IID_IDirect3D11CaptureFramePool));
+        try { session.IsCursorCaptureEnabled = true; } catch { }
+        try { session.IsBorderRequired = false; } catch { }
+    }
+
     static GraphicsCaptureItem CreateItem(IntPtr handle, bool forWindow)
     {
         const string cls = "Windows.Graphics.Capture.GraphicsCaptureItem";
@@ -128,6 +170,14 @@ public sealed unsafe class MonitorCapture : IDisposable
             finally { Marshal.Release(factory); }
         }
         finally { Native.WindowsDeleteString(hs); }
+    }
+
+    static GraphicsCaptureItem TimedItem(IntPtr handle, bool forWindow)
+    {
+        long p0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        var item = CreateItem(handle, forWindow);
+        Spikes.Piece("capture: item", p0);
+        return item;
     }
 
     static IntPtr TexturePointer(IntPtr surface)

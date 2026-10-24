@@ -456,6 +456,35 @@ public sealed class Painter : IDisposable
         return f;
     }
 
+    // The warm-up's fonts (Sys/BootWarm.cs, on its own thread): each family of the style in the weights the panels draw with, laid out
+    // once on the shared factory - the font files opened, the faces made, the shaper and the system fallback started, the glyphs' boxes
+    // read - so the watch's first draw finds them loaded (Erik 10-24: its "time" took 75 ms, the run's first text). Static: only the
+    // DirectWrite factory, which is thread-safe - nothing of the Painter's (its caches, the D2D context: the main loop's). Asked for as
+    // Format asks (the family resolved by the caller); the formats and layouts go into 'keep', the factory keeps a face while it is held.
+    static readonly FontWeight[] WarmWeights = { FontWeight.Bold, FontWeight.SemiBold, FontWeight.Normal };
+    const string WarmSample = "0123456789:% AMPM SEC UTC+02:00 ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz " +
+        "áéíóöőúüű ÁÉÍÓÖŐÚÜŰ";
+    const string WarmIcons = Theme.IcoKeyboard + Theme.IcoMonitor + Theme.IcoRecenter + Theme.IcoSettings + Theme.IcoHide + Theme.IcoShow +
+        Theme.IcoWatch + Theme.IcoBack + Theme.IcoEnter + Theme.IcoShift;
+
+    public static int WarmFonts(IDWriteFactory dw, List<(string family, FontStretch stretch, bool icon)> fonts, List<IDisposable> keep)
+    {
+        int n = 0;
+        foreach (var (family, stretch, icon) in fonts)
+            foreach (var w in WarmWeights)
+            {
+                if (icon && w != FontWeight.Normal) continue;          // (icons: one weight)
+                var f = dw.CreateTextFormat(family, null, w, Vortice.DirectWrite.FontStyle.Normal, stretch, 20, "en-us");
+                keep.Add(f);
+                var lay = dw.CreateTextLayout(icon ? WarmIcons : WarmSample, f, 4000, 200);
+                keep.Add(lay);
+                _ = lay.Metrics;
+                _ = lay.OverhangMetrics;
+                n++;
+            }
+        return n;
+    }
+
     static Vortice.RawRectF Raw(RectangleF r) => new(r.Left, r.Top, r.Right, r.Bottom);
 
     public void Fill(RectangleF r, uint c, float radius = 0)
