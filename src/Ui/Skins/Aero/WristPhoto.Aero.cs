@@ -130,7 +130,7 @@ public sealed partial class WristPanel
                 float fx = bar.X + 42 + WAero(Lang.T("Days"), 11) + 18 + 10, fw = bar.Right - 40 - fx;      // (between Days and the heart)
                 var fr = new RectangleF(fx, bar.Y + 4, fw, bar.Height - 8);
                 bool click = TextAero("wgclear", fr, PhotoCut(ft, fw - 8, 11, FontWeight.Normal, Ae.Font), true);
-                if (click) GalFilter(_galFav, null, null, null);
+                if (click) GalClearFilter();
             }
             else if (_ph is { Recent.Count: > 0 } a)
                 _p.Text(GalCountText(a.Recent.Count), new RectangleF(cx - 80, bar.Y, 160, bar.Height), 0xFFE8F0FB, 11, FontWeight.Normal, TextAlignment.Center,

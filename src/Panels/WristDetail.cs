@@ -12,6 +12,7 @@ namespace Orbit;
 public sealed partial class WristPanel
 {
     WatchWidget _open;                  // the widget shown big (null = none)
+    WatchWidget _openTransient;         // a photo view opened for Today's link with no photo widget on the page (WristToday.cs): shown as one
     bool _closing;
     double _openStart = -10;
     int _calOffset;                     // months browsed away from today in the opened calendar
@@ -123,7 +124,7 @@ public sealed partial class WristPanel
     {
         if (_open == null) return;
         list = FolderBehind(d, list);       // opened from a folder: the folder open under it, its widgets the list (WristFolder.cs)
-        var k = list.Contains(_open) ? WatchWidgets.Find(_open.Type) : null;
+        var k = list.Contains(_open) || ReferenceEquals(_open, _openTransient) ? WatchWidgets.Find(_open.Type) : null;
         string kind = k == null ? null : OpenKindOf(k.Id);
         if (kind == null) { _open = null; return; }
         float e = _ui.Spring(OpenKey, _closing ? 0 : 1, 240, 24);
@@ -589,7 +590,7 @@ public sealed partial class WristPanel
     {
         if (_open == null) return;
         list = FolderBehind95(d, list);     // opened from a folder: the folder's window under it, its widgets the list (WristFolder95.cs)
-        var k = list.Contains(_open) ? WatchWidgets.Find(_open.Type) : null;
+        var k = list.Contains(_open) || ReferenceEquals(_open, _openTransient) ? WatchWidgets.Find(_open.Type) : null;
         string kind = k == null ? null : OpenKindOf(k.Id);
         if (kind == null) { _open = null; return; }
         if (kind == "folder") { FolderWindow95(d, k); return; }         // each style's folder window (WristFolder95.cs)

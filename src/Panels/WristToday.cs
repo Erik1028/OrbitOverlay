@@ -60,6 +60,7 @@ public sealed partial class WristPanel
         public string Name = "", CyName = "", At = "", Range = "", CyRange = "", Stay = "", CyStay = "", People = "", Photos = "", PhotosText = "", CyPhotos = "",
             Sub = "", CySub = "", Who95 = "";
         public DateTime Start, End;              // local (the visit's are instants)
+        public int PhotoN;                       // the photos taken there (a tap opens them: TodayPhotos)
         public double Minutes;
         public float Frac;
         public bool Longest, Here;
@@ -163,6 +164,7 @@ public sealed partial class WristPanel
             r.CyStay = r.Stay.ToUpper(culture);
             r.People = v.People.ToString(culture);
             r.Photos = v.Photos >= 0 ? v.Photos.ToString(culture) : "–";
+            r.PhotoN = v.Photos;
             r.PhotosText = v.Photos > 0 ? RecapPhotos(v.Photos) : "";
             r.CyPhotos = r.PhotosText.ToUpper(culture);
             string who = TdWho(v.Names, v.People);
@@ -223,12 +225,14 @@ public sealed partial class WristPanel
         if (_ui.Wheel != 0 && !_ui.Inert) { _rcScroll -= _ui.Wheel * RowH; _dirty = true; }
         _rcScroll = Math.Clamp(_rcScroll, 0, max);
         float rw = max > 0 ? L.Width - 14 : L.Width;
+        TdRow tapped = null;
         _p.PushClip(L);
         for (int i = 0; i < n; i++)
         {
             float y = L.Y - _rcScroll + i * RowH;
             if (y + RowH < L.Y || y > L.Bottom) continue;
             var row = t.Rows[i];
+            if (TdTap(i, row, new RectangleF(L.X - 6, y, rw + 12, RowH - 3), L, Theme.WithAlpha(Bento.Text, 0.06f))) tapped = row;
             var wt = row.Longest ? FontWeight.SemiBold : FontWeight.Normal;
             // the world (a green dot: you are there now), from - to, how long
             float sw = _p.MeasureWidth(row.Stay, SmallText, FontWeight.SemiBold);
@@ -247,6 +251,7 @@ public sealed partial class WristPanel
             if (i < n - 1) _p.Fill(new RectangleF(L.X, y + RowH - 3, rw, 1), Bento.Track);
         }
         _p.PopClip();
+        if (tapped != null) { TodayPhotos(tapped); return; }
         if (max > 0)
         {
             float bh = MathF.Max(24, L.Height * L.Height / content), by = L.Y + (L.Height - bh) * (_rcScroll / max);
@@ -295,12 +300,14 @@ public sealed partial class WristPanel
         if (_ui.Wheel != 0 && !_ui.Inert) { _rcScroll -= _ui.Wheel * RowH; _dirty = true; }
         _rcScroll = Math.Clamp(_rcScroll, 0, max);
         float rw = max > 0 ? L.Width - 12 : L.Width, nameW = MathF.Floor(rw * 0.4f), segX = L.X + nameW + 12;
+        TdRow tapped = null;
         _p.PushClip(L);
         for (int i = 0; i < n; i++)
         {
             float y = L.Y - _rcScroll + i * RowH;
             if (y + RowH < L.Y || y > L.Bottom) continue;
             var row = t.Rows[i];
+            if (TdTap(i, row, new RectangleF(L.X - 4, y, rw + 8, RowH - 2), L, Theme.WithAlpha(CyC, 0.08f))) tapped = row;
             float by = y + 17, by2 = y + 35, nx = L.X;
             if (row.Here) { _p.Fill(new RectangleF(nx, by - 11, 6, 6), CyC); nx += 12; }
             TextAt(FrCut(row.CyName, L.X + nameW - nx, 18, FontWeight.SemiBold, Theme.Display), nx, by, L.X + nameW - nx + 2, row.Longest ? CyY : CyW, 18,
@@ -316,6 +323,7 @@ public sealed partial class WristPanel
             if (ww > 30) CyMono(FrCut(row.CySub, ww, CyNote, FontWeight.SemiBold, CyberHud.Mono), L.X, by2, ww + 2, CyG);
         }
         _p.PopClip();
+        if (tapped != null) { TodayPhotos(tapped); return; }
         if (t.CyMet.Length > 0)
             CyMono(FrCut(t.CyMet, c.Width, CyNote, FontWeight.SemiBold, CyberHud.Mono), c.X, c.Bottom - 6, c.Width + 2, CyG);
     }
@@ -363,6 +371,12 @@ public sealed partial class WristPanel
         (_tdDraw95, _tdAtX95, _tdStayX95, _tdPplX95, _tdPicX95) = (t, atX, atX + AtW, atX + AtW + StayW, atX + AtW + StayW + PplW);
         _tdRow95 ??= TdRow95;
         int hit = _ui.List95(TodayList95, box, t.Rows.Count, _tdSel, _tdRow95);
+        _tdBox95 = box;
+        if (hit >= 0 && hit < t.Rows.Count && t.Rows[hit].PhotoN > 0 && _ui.Mouse.X >= _tdPicX95)
+        {
+            TodayPhotos(t.Rows[hit]);               // (its Photos column: the photos taken there - WristGallery.cs)
+            return;
+        }
         if (hit >= 0)
         {
             _tdSel = hit == _tdSel ? -1 : hit;          // the same row again: who you met today again
@@ -387,6 +401,50 @@ public sealed partial class WristPanel
     {
         w = MathF.Min(r.Right, x + w) - x - 4;
         if (w > 8) _ui.Text95(FrFit95(s, w), new RectangleF(x + 2, r.Y, w, r.Height), ink);
+    }
+
+    // ---- a visit tapped: its photos ----
+
+    readonly RectangleF[] _tdTapR = new RectangleF[64];
+    RectangleF _tdBox95;
+
+    // a row with photos is a link (modern / Cyber): lit under the pointer
+    bool TdTap(int i, TdRow row, RectangleF r, RectangleF clip, uint lit)
+    {
+        if (i < _tdTapR.Length) _tdTapR[i] = RectangleF.Empty;
+        if (row.PhotoN <= 0) return false;
+        var hit = RectangleF.Intersect(r, clip);
+        if (hit.Height < 8) return false;
+        if (i < _tdTapR.Length) _tdTapR[i] = hit;
+        bool click = _ui.Clickable(Ui.Id("tdw", i), hit, out bool hover, out _) && !_ui.Inert;
+        if (hover && !_ui.Inert) _p.Fill(r, lit, 8);
+        return click;
+    }
+
+    // The photo view's gallery with the photos taken there and then (Erik 10-24: "a Ma nézetből a galériába"): grown out of a photo
+    // widget of the page, else out of the recap's own card (a photo view that is no widget there: _openTransient)
+    void TodayPhotos(TdRow row)
+    {
+        var w = WatchPages.Widgets(C, CurPage)?.Find(x => x?.Type == "photo");
+        if (w == null && _open != null) w = _openTransient = new WatchWidget { Type = "photo", X = _open.X, Y = _open.Y, W = _open.W, H = _open.H };
+        if (w == null) return;
+        OpenDetail(w);
+        GalleryOpenSpan(row.Name, row.Start.AddSeconds(-1), row.End.AddSeconds(1));
+    }
+
+    // --snapshot: where a visit's tap goes (modern / Cyber: its row; a retro style: its Photos column), in the panel's pixels
+    public System.Numerics.Vector2? TodayPhotosPoint(PanelData d, int i)
+    {
+        Draw(d);
+        float k = Theme.Classic ? 2 : 1;
+        if (Theme.Classic)
+        {
+            if (_tdBox95.IsEmpty) return null;
+            return new System.Numerics.Vector2((_tdPicX95 + 12) * k, (_tdBox95.Y + 2 + i * 16 + 8) * k);
+        }
+        if (i < 0 || i >= _tdTapR.Length || _tdTapR[i].IsEmpty) return null;
+        var r = _tdTapR[i];
+        return new System.Numerics.Vector2((r.X + r.Width / 2) * k, (r.Y + r.Height / 2) * k);
     }
 
     // ---- --snapshot's hooks ----

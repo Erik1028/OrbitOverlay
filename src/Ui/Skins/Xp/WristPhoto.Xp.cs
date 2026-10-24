@@ -142,7 +142,7 @@ public sealed partial class WristPanel
                 string fc = PhotoCut(ft, iw, Ui.F95, FontWeight.Normal, null, 1);
                 var fr = new RectangleF(body.X + 8, iy, MathF.Min(iw, _ui.Width95(fc) + 2), 14);
                 _ui.Text95(fc, fr, 0xFF0066CC);
-                if (GalTapLine("wgclear", fr, 0xFF0066CC)) GalFilter(_galFav, null, null, null);
+                if (GalTapLine("wgclear", fr, 0xFF0066CC)) GalClearFilter();
             }
             return;
         }

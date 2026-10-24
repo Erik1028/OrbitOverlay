@@ -65,7 +65,7 @@ public sealed partial class WristPanel
     {
         _gal = _galGrid = _galPicked = false;
         _galFav = false;
-        _galWorld = _galPerson = null;
+        _galWorld = _galPerson = _galSpan = null;
         _galPeople = null;
         _galShow = _galZoom = false;
         _galAnchor = null;
@@ -129,19 +129,22 @@ public sealed partial class WristPanel
 
     bool _galFav;
     string _galWorld, _galPerson;
+    string _galSpan;                        // a visit of the recap's Today (WristToday.cs): its world's name, the photos taken from - to
+    DateTime _galFrom, _galTo;
     PhotoWatcher.Snapshot _gvIn, _gvOut;
-    (bool, string, string) _gvKey;
+    (bool, string, string, long) _gvKey;
     PhotoWatcher.Photo _galPeople;          // whose people the picker shows (null: closed)
 
-    bool GalFiltered => _galFav || _galWorld != null || _galPerson != null;
-    public string GalleryFilterShown => _galWorld ?? _galPerson ?? (_galFav ? "favourites" : null);      // --snapshot
+    bool GalFiltered => _galFav || _galWorld != null || _galPerson != null || _galSpan != null;
+    string GalFilterName => _galWorld ?? _galPerson ?? _galSpan;
+    public string GalleryFilterShown => GalFilterName ?? (_galFav ? "favourites" : null);      // --snapshot
     public bool GalleryPeopleShown => _galPeople != null;
     public void GalleryNoteForTest() => _delNote = null;
 
     PhotoWatcher.Snapshot GalView(PhotoWatcher.Snapshot all)
     {
         if (all == null || !GalFiltered) return all;
-        var key = (_galFav, _galWorld, _galPerson);
+        var key = (_galFav, _galWorld, _galPerson, _galSpan != null ? _galFrom.Ticks ^ _galTo.Ticks : 0);
         if (ReferenceEquals(all, _gvIn) && key == _gvKey) return _gvOut;
         var s = new PhotoWatcher.Snapshot { Version = all.Version, Ready = all.Ready, FolderFound = all.FolderFound, Folder = all.Folder, Source = all.Source };
         foreach (var p in all.Recent)
@@ -149,6 +152,7 @@ public sealed partial class WristPanel
             if (_galFav && !p.Favorite) continue;
             if (_galWorld != null && p.World != _galWorld) continue;
             if (_galPerson != null && !HasPerson(p, _galPerson)) continue;
+            if (_galSpan != null && (p.Taken < _galFrom || p.Taken > _galTo)) continue;
             s.Recent.Add(p);
         }
         (_gvIn, _gvKey, _gvOut) = (all, key, s);
@@ -164,12 +168,33 @@ public sealed partial class WristPanel
     // a filter set (from the grid's heading, a photo's world or person): the grid, the photo it came from (or the one at the top) kept in view
     void GalFilter(bool fav, string world, string person, string keep)
     {
+        if (world != null || person != null) _galSpan = null;        // (a visit's span stays under Favourites; a world or a person replaces it)
         (_galFav, _galWorld, _galPerson) = (fav, world, person);
         if (keep != null) _galAnchor = keep; else _galAnchorTop = _galTopPhoto;
         _gal = _galGrid = true;
         _galPicked = false;
         _galPeople = null;
         _delArmed = null;
+        _dirty = true;
+    }
+
+    // the filter's chip / status line tapped: every photo again (Favourites stays as it is)
+    void GalClearFilter()
+    {
+        _galSpan = null;
+        GalFilter(_galFav, null, null, null);
+    }
+
+    // Today's visit tapped (WristToday.cs; the photo view open already): the gallery with the photos taken there and then
+    void GalleryOpenSpan(string name, DateTime from, DateTime to)
+    {
+        (_galSpan, _galFrom, _galTo) = (string.IsNullOrEmpty(name) ? "?" : name, from, to);
+        _galFav = false;
+        _galWorld = _galPerson = null;
+        _gal = _galGrid = true;
+        _galPicked = false;
+        _galAnchor = _galAnchorTop = null;
+        _galScroll = 0;
         _dirty = true;
     }
 
@@ -272,7 +297,7 @@ public sealed partial class WristPanel
     int _galFiltLang = -1;
     string GalFilterText()
     {
-        string f = _galWorld ?? _galPerson;
+        string f = GalFilterName;
         if (f == null) return null;
         if (!ReferenceEquals(f, _galFiltOf) || _galFiltLang != Lang.Version) { (_galFiltOf, _galFiltLang) = (f, Lang.Version); _galFiltText = Lang.F("Showing: {0} - tap to show all", f); }
         return _galFiltText;
@@ -286,7 +311,7 @@ public sealed partial class WristPanel
         {
             bool click = _ui.Clickable("wgclear", st, out _, out _) && !_ui.Inert;
             _ui.Pane95(st, PhotoCut(f, st.Width - 8, Ui.F95, FontWeight.Normal, null, 1));
-            if (click) GalFilter(_galFav, null, null, null);
+            if (click) GalClearFilter();
             return;
         }
         _ui.Pane95(st, PhotoCut(Lang.T(ds ?? "Tap a photo to open it"), st.Width - 8, Ui.F95, FontWeight.Normal, null, 1));
@@ -916,12 +941,12 @@ public sealed partial class WristPanel
     // the world / person shown (in the count's place): a chip, its X shows all again; false: none
     bool GalFilterChip(float x, float right, float y)
     {
-        string f = _galWorld ?? _galPerson;
+        string f = GalFilterName;
         if (f == null || right - x < 60) return f != null;
-        string icon = _galWorld != null ? "\uE909" : "\uE77B";             // the globe / a person
+        string icon = _galWorld != null ? "\uE909" : _galPerson != null ? "\uE77B" : "\uE787";      // the globe / a person / a calendar (Today's visit)
         float w = MathF.Min(right - x, MathF.Ceiling(_p.MeasureWidth(f, 17, FontWeight.SemiBold) + 18 + 8 + 30 + 22));
         var r = new RectangleF(x, y, w, 40);
-        if (Press("wgclear", r, icon, f, true, true, 16)) GalFilter(_galFav, null, null, null);
+        if (Press("wgclear", r, icon, f, true, true, 16)) GalClearFilter();
         return true;
     }
 
@@ -1212,10 +1237,10 @@ public sealed partial class WristPanel
         string cnt = n > 0 ? Upper(GalCountText(n)) : null;
         float cw = cnt != null ? TerminalSkin.W(cnt) : 0;
         if (cnt != null) TCapsR(cnt, c.Right, c.Y + 2, TerminalSkin.DIM);
-        string grep = _galWorld ?? _galPerson;
+        string grep = GalFilterName;
         string cmd = grep == null ? GalTitle("> ls {0}") : TName("", GalTitle("> ls {0}") + " | grep \"" + grep + "\"");
         TCaps(PhotoCut(cmd, c.Width - cw - 10, Ui.F95, FontWeight.Normal, null, 2), c.X, c.Y + 2, grep != null ? TerminalSkin.HOT : TerminalSkin.MID);
-        if (grep != null && GalTapLine("wgclear", new RectangleF(c.X, c.Y, c.Width - cw - 10, 11), TerminalSkin.MID)) GalFilter(_galFav, null, null, null);
+        if (grep != null && GalTapLine("wgclear", new RectangleF(c.X, c.Y, c.Width - cw - 10, 11), TerminalSkin.MID)) GalClearFilter();
         var area = new RectangleF(c.X, c.Y + 13, c.Width, c.Height - 13);
         if (s == null || !s.Ready || n == 0)
         {

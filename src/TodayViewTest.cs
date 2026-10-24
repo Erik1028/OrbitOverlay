@@ -311,6 +311,28 @@ static class TodayViewTools
         if (sp is { } q) SocialViewTools.Tap(wrist, data, q);
         SocialViewTools.Settle(wrist, data);
         bool back = sp != null && !wrist.RecapTodayShown && !wrist.RecapTodayOn;
+        // Today again: a visit with photos tapped - the photo view's gallery with that visit's photos (no photo widget on the page: grown
+        // out of the recap's card) (the Terminal lists the day as text: no link)
+        bool linked = true;
+        string linkNote = "n/a (Terminal)";
+        if (!term)
+        {
+            var tp2 = wrist.ControlPoint(data, todayId);
+            if (tp2 is { } p2) SocialViewTools.Tap(wrist, data, p2);
+            SocialViewTools.Settle(wrist, data);
+            var album0 = data.Album;
+            data.Album = GalleryViewTools.Album(PhotoFake.Snap(5));
+            var at = wrist.TodayPhotosPoint(data, 0);
+            if (at is { } a2) SocialViewTools.Tap(wrist, data, a2);
+            SocialViewTools.Draw2(wrist, data);
+            linked = at != null && wrist.GalleryGridShown && wrist.DetailKind == "photo" && wrist.GalleryFilterShown == "Lantern Harbor";
+            linkNote = $"{linked} (filter '{wrist.GalleryFilterShown}', open {wrist.DetailKind})";
+            wrist.CloseForTest();
+            data.Album = album0;
+            wrist.Settle();
+            wrist.OpenForTest("recap");
+            SocialViewTools.Draw2(wrist, data);
+        }
         var x = wrist.ControlPoint(data, xId);
         if (x is { } xp) SocialViewTools.Tap(wrist, data, xp);
         bool shut = x != null && !wrist.IsOpen;
@@ -318,8 +340,8 @@ static class TodayViewTools
         wrist.CloseForTest();
         Tools.Want($"today view{tag}: the recap opened {opened} on its session {session}, its Today control switched it {today} (the reader asked for: RecapTodayOn), " +
                    $"{rows} worlds listed (want 4) - '{shown}'; a frame while it shows makes {bytes} B of garbage (want 0; the session's side {sessionBytes} B); " +
-                   $"Session again {back}, its X closed it {shut} -",
-                   opened && session && today && rows == 4 && bytes == 0 && back && shut);
+                   $"Session again {back}, its X closed it {shut}; a visit tapped opened its photos {linkNote} -",
+                   opened && session && today && rows == 4 && bytes == 0 && back && shut && linked);
     }
 
     static void Pictures(WristPanel wrist, PanelData data, WristConfig wcfg, Gpu gpu, string dir, string tag)
