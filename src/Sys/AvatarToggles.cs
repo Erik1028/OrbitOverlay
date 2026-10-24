@@ -385,6 +385,11 @@ public sealed class AvatarLink : IDisposable
     // --snapshot: the camera's mode read as the thread would, now (a made-up OSCQuery)
     public void ReadCameraNow() { lock (_step) StepCamera(force: true); }
 
+    // --snapshot: a made-up service's port, as if it had been found - asked over HTTP as VRChat's is, and nothing is ever looked for
+    // (the PC's own VRChat is not asked)
+    public void ServiceAt(int port) { lock (_step) { _queryPort = port; _queryV6 = false; _missed = 0; _madeUp = true; } }
+    public bool HasService => _queryPort != 0;          // --snapshot: the service's port is kept
+
     // --snapshot: no thread; the state as given, and a tap only changes it here (and goes to Send, a recorder there)
     public void Freeze(AvatarState s)
     {
@@ -525,6 +530,8 @@ public sealed class AvatarLink : IDisposable
         if (answer == null)
         {
             if (hadPort && Running == null && !VrchatRunning()) CameraGone();
+            // one answer missed (the port kept): asked again in a second, as Step does - counted from now, after the wait
+            else if (_queryPort != 0) _camDue = DateTime.UtcNow.AddSeconds(1);
             return;
         }
         int m = ParseMode(answer);
@@ -656,26 +663,31 @@ public sealed class AvatarLink : IDisposable
         }
         if (_queryPort != 0)
         {
+            // one hang counts once (10-24): for a second after a missed answer nobody asks - the camera's read in the pass where the
+            // avatar's missed, or its own next pass straight after the 2 s wait, counted the same hang twice: the port dropped, the
+            // service not found while VRChat was still busy, 10 s of the log's "no live values"
+            if (_missed > 0 && DateTime.UtcNow < _retryAt) return null;
             string body = Get(_queryPort, _queryV6, path);
             // (a path the service does not have - an older VRChat's /usercamera - is an answer too: the service is there)
             if (body != null || _answered) { _missed = 0; return body; }
             // no answer: once is let go (VRChat busy loading a world - Step keeps what it showed); twice, the port is dropped and
             // looked for again at once (a new one: OSC switched off and on)
-            if (++_missed < 2) return null;
+            if (++_missed < 2) { _retryAt = DateTime.UtcNow.AddSeconds(1); return null; }
             _queryPort = _hostPort = _missed = 0;
             _nextScan = DateTime.MinValue;
         }
-        if (DateTime.UtcNow < _nextScan) return null;
+        if (_madeUp || DateTime.UtcNow < _nextScan) return null;
         _nextScan = DateTime.UtcNow.AddSeconds(10);
         _queryPort = FindService(out _hostPort);
         if (_queryPort == 0) return null;
         string first = Get(_queryPort, _queryV6, path);
-        if (first == null && !_answered) _missed = 1;       // (found, but no answer yet: once more, then dropped)
+        if (first == null && !_answered) { _missed = 1; _retryAt = DateTime.UtcNow.AddSeconds(1); }     // (found, but no answer yet: once more, then dropped)
         return first;
     }
 
-    bool _queryV6, _answered;               // _answered: the last Get had an HTTP answer (any status)
+    bool _queryV6, _answered, _madeUp;      // _answered: the last Get had an HTTP answer (any status); _madeUp: --snapshot's (ServiceAt)
     int _missed;
+    DateTime _retryAt;                      // after a missed answer: not asked again before it
 
     // VRChat.exe's localhost TCP listeners, each asked "/?HOST_INFO": the one that says it is VRChat's
     int FindService(out int oscPort)

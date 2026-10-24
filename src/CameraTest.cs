@@ -22,8 +22,10 @@ namespace Orbit;
 // the buttons grey (camera_closed_<style>.png), a tap on each sends nothing at all and the button says where to open it
 // (camera_hint_<style>.png); then 1: the mode's name, a tap takes the photo again (camera_open_<style>.png; all three side by side
 // on camera_states_sheet.png). The pictures must differ where the buttons are (closed from as before, the hint from closed, open
-// from as before where the button has words). Then: the source going quiet keeps the last mode, VRChat quitting leaves it closed,
-// a link that never had an answer stays not known - and the sink got nothing but the shutter's two messages (never a Mode).
+// from as before - every button, 95's and the Mac's 1x1 too, and with the longest mode's name, camera_open4_<style>.png). Then: the
+// source going quiet keeps the last mode, VRChat quitting leaves it closed, a link that never had an answer stays not known; a hung
+// service (a made-up one over HTTP, on a port of this run's own) is one miss however many reads want it - the port kept - and the
+// sink got nothing but the shutter's two messages (never a Mode).
 static partial class Tools
 {
     // the two messages byte for byte as OSC 1.0 writes them: the address with its NUL padded to 4, the type tag ",T" / ",F" padded
@@ -210,16 +212,24 @@ static partial class Tools
                 wrist.CamHintFor = 0;
                 Face();
                 string open = Shot($"camera_open_{tag}.png"), lookOpen = wrist.CameraLook(data);
+                // the longest of the modes' names (Multilayer): open all the same at 1x1 - cut to fit, not left out
+                served = 4;
+                cam.Link.ReadCameraNow();
+                string open4 = Shot($"camera_open4_{tag}.png");
+                layout += LayoutCheckRun(wrist, data, cfg, painter, gpu, dir, tag + "-open", onlyKind: VrcCamera.Id);
+                served = 1;
+                cam.Link.ReadCameraNow();
+                Face();
                 states.Add(closed); states.Add(hint); states.Add(open);
                 Want($"camera {tag}: VRChat says 0 -> mode {VrcCamera.Off} drawn {lookClosed}, tapped {lookHint}; says 1 -> mode {cam.Mode} drawn {lookOpen} " +
                     "(want Closed, Hint; 1 Open) -", lookClosed == "Closed" && lookHint == "Hint" && cam.Mode == 1 && lookOpen == "Open");
                 foreach (var w in cams)
                 {
-                    // (95 and the Mac: a 1x1 is its picture alone, open or not known alike)
-                    bool words = w.W >= 2 || tag is not ("95" or "mac");
-                    int dc = Diff(before, closed, w), dh = Diff(closed, hint, w), dopen = Diff(before, open, w);
-                    Want($"camera {tag} {w.W}x{w.H}: pixels changed in its card - closed {dc}, the hint {dh}, open {dopen}{(words ? "" : " (a picture alone)")} " +
-                        "(want > 0 each) -", dc > 0 && dh > 0 && (dopen > 0 || !words));
+                    // (open: 95's and the Mac's 1x1 the picture over the mode's word - the picture alone is how it looks not known)
+                    int dc = Diff(before, closed, w), dh = Diff(closed, hint, w), dopen = Diff(before, open, w),
+                        d4 = Diff(before, open4, w), d41 = Diff(open, open4, w);
+                    Want($"camera {tag} {w.W}x{w.H}: pixels changed in its card - closed {dc}, the hint {dh}, open {dopen}; Multilayer from as before {d4}, " +
+                        $"from Photo {d41} (want > 0 each) -", dc > 0 && dh > 0 && dopen > 0 && d4 > 0 && d41 > 0);
                 }
                 foreach (var w in cams) Shutters($"camera {tag} {w.W}x{w.H} open", w);
                 // another button: its own action, nothing to VRChat's camera
@@ -260,6 +270,37 @@ static partial class Tools
             cam.Link.Dispose();
             cam.Link = null;
             running = true;
+
+            // one hang counts once (10-24): the service found (a made-up one, asked over HTTP as VRChat's is) and hung - the avatar's read
+            // misses, the port kept; the camera's read in the same pass asks nothing (it asked too: the same hang twice, the port dropped);
+            // a second later it asks and is answered; hung again, its own miss and its next pass straight after (the thread's 0.05 s once
+            // the 2 s wait is over) - asked once, the port kept, the mode as it was
+            using (var svc = new CamService())
+            {
+                var link = new AvatarLink { Running = () => true };
+                link.ServiceAt(svc.Port);
+                svc.Hung = true;
+                link.ReadNow();
+                int g1 = svc.Gets;
+                link.ReadCameraNow();
+                int g2 = svc.Gets;
+                bool kept1 = link.HasService;
+                System.Threading.Thread.Sleep(1100);
+                svc.Mode = 1;
+                svc.Hung = false;
+                link.ReadCameraNow();
+                int g3 = svc.Gets, m3 = link.CameraMode;
+                svc.Hung = true;
+                link.ReadCameraNow();
+                link.ReadCameraNow();
+                int g4 = svc.Gets, m4 = link.CameraMode;
+                bool kept2 = link.HasService;
+                link.Dispose();
+                Want($"camera: a hung service on 127.0.0.1:{svc.Port} - the avatar's read asked {g1}, the camera's after it {g2 - g1}, the port kept {kept1} " +
+                    $"(want 1, 0, True); a second later asked {g3 - g2}, mode {m3} (want 1, 1); hung again, two camera passes asked {g4 - g3}, " +
+                    $"mode {m4}, the port kept {kept2} (want 1, 1, True) -",
+                    g1 == 1 && g2 == 1 && kept1 && g3 == 2 && m3 == 1 && g4 == 3 && m4 == 1 && kept2);
+            }
 
             // Hungarian: its words, and the face in every style - not known, closed, the hint, open (camera_hu_states_sheet.png)
             Lang.Set("hu");
@@ -321,6 +362,66 @@ static partial class Tools
         }
         Log.Info($"snapshot (camera only) written to {dir}: {cam.Shots} shutter(s) to the sink, {cam.Refused} tap(s) while closed sent nothing");
         return layout > 0 ? 1 : WantsExit(failed0);
+    }
+
+    // a made-up OSCQuery service over HTTP on a port of this run's own on 127.0.0.1 (never VRChat's): it counts the GETs and answers
+    // each with /usercamera/Mode's Mode as VRChat words it - or, Hung, with nothing at all (VRChat busy loading a world: the asker's
+    // 2 s run out)
+    sealed class CamService : IDisposable
+    {
+        readonly TcpListener _listen = new(IPAddress.Loopback, 0);
+        readonly List<TcpClient> _open = new();
+        int _gets;
+        public volatile bool Hung;
+        public volatile int Mode;
+        public int Gets => System.Threading.Volatile.Read(ref _gets);
+        public int Port => ((IPEndPoint)_listen.LocalEndpoint).Port;
+
+        public CamService()
+        {
+            _listen.Start();
+            new System.Threading.Thread(Accept) { IsBackground = true, Name = "camera check: made-up OSCQuery" }.Start();
+        }
+
+        void Accept()
+        {
+            try
+            {
+                while (true)
+                {
+                    var c = _listen.AcceptTcpClient();
+                    lock (_open) _open.Add(c);
+                    new System.Threading.Thread(() => Serve(c)) { IsBackground = true }.Start();
+                }
+            }
+            catch (Exception) { }           // (stopped)
+        }
+
+        void Serve(TcpClient c)
+        {
+            try
+            {
+                var s = c.GetStream();
+                var rd = new StreamReader(s, Encoding.ASCII);
+                for (string line; (line = rd.ReadLine()) != null;)
+                {
+                    if (!line.StartsWith("GET ", StringComparison.Ordinal)) continue;
+                    while (!string.IsNullOrEmpty(rd.ReadLine())) { }        // its headers, to the empty line
+                    System.Threading.Interlocked.Increment(ref _gets);
+                    if (Hung) continue;
+                    var body = Encoding.ASCII.GetBytes("{\"FULL_PATH\":\"/usercamera/Mode\",\"ACCESS\":3,\"TYPE\":\"i\",\"VALUE\":[" + Mode + "]}");
+                    s.Write(Encoding.ASCII.GetBytes("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: " + body.Length + "\r\n\r\n"));
+                    s.Write(body);
+                }
+            }
+            catch (Exception) { }           // (the asker gave up and closed it)
+        }
+
+        public void Dispose()
+        {
+            _listen.Stop();
+            lock (_open) foreach (var c in _open) c.Dispose();
+        }
     }
 
     // the pictures 'cols' to a row (the styles two, their closed / hint / open three), each with its name

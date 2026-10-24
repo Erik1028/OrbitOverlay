@@ -1,11 +1,14 @@
+using System;
 using System.Drawing;
+using Vortice.DirectWrite;
 
 namespace Orbit;
 
 // The camera button's looks (Erik 10-24: it should know whether VRChat's camera is open - Sys/VrcCamera.cs reads its mode from
 // VRChat's OSCQuery, with the avatar's values):
 //  - not known (nothing read yet: VRChat starting, OSC off): the button as it always was - a tap takes the photo
-//  - open: the mode's name instead of "Camera" (Photo, Stream, Emoji ...) - a tap takes the photo
+//  - open: the mode's name instead of "Camera" (Photo, Stream, Emoji ...) - a tap takes the photo. 95's and the Mac's 1x1 (the picture
+//    alone otherwise - how it looks while not known) put the word under the picture; XP's cuts a long one to fit rather than drop it
 //  - closed (mode 0): greyed, each style its own "not now" - Bento's dim tile, Cyber's faint cuts, 95's etched caption and embossed
 //    picture, XP's grey words and faded icon, 7's flat disabled face, the Mac's dimmed button, the terminal's dim key - and
 //    "Open the camera" where a name fits. A tap sends nothing (VrcCamera.Shutter refuses; it never sends Mode, the one thing that
@@ -98,8 +101,10 @@ public sealed partial class WristPanel
         string name = CamLabel(look, CamMode(d), wide, k.Name);
         if (look == CamLook.Hint && !wide && _ui.Width95(name) > r.Width - 8) name = CamWhere;      // (a 1x1 too narrow for "In VRChat")
         W95Icons.Id? icon = k.Icon95;
+        if (look == CamLook.Open && !xp && !wide && r.Height >= W95Icons.Size(k.Icon95) + 19) { CameraStack95(id, k, r, name); return; }
         string text;
-        if (xp) text = wide || _ui.Width95(name) <= r.Width - 8 ? name : look == CamLook.Normal && _ui.Width95(k.Title95) <= r.Width - 8 ? k.Title95 : null;
+        if (xp) text = wide || _ui.Width95(name) <= r.Width - 8 ? name : look == CamLook.Normal && _ui.Width95(k.Title95) <= r.Width - 8 ? k.Title95
+            : look == CamLook.Open ? name : null;       // (open: its word cut to fit, not the picture alone - that is not known)
         else text = wide ? name : null;
         if (look == CamLook.Hint && text == null) { text = name; icon = null; }       // a 1x1's picture gives way to the words a moment
         // greyed words that would be cut beside the picture (its short form too): the words alone - they say more than it
@@ -107,6 +112,21 @@ public sealed partial class WristPanel
         if (text != null) text = Ui.Esc95(Fit(text, r.Width - (icon != null && !xp ? 30 : 8)));
         bool click = _ui.Clickable(Ui.Id("wcb", id), r, out bool hover, out bool held);
         Theme.RetroSkin.PushButton(_p, r, text, icon, !grey, false, held && !grey, false, hover && !grey);
+        if (click) Act(k.Id);
+    }
+
+    // 95's and the Mac's 1x1 while open: the picture over the mode's word - 95's toolbar buttons with their text under the bitmap
+    // (comctl32's), the Mac's bevel button with its title below the graphic (the Appearance Manager's); the face is the skin's push
+    // button, pushed as it pushes. The word cut to fit (the language's short form first).
+    void CameraStack95(int id, WatchWidgets.Kind k, RectangleF r, string word)
+    {
+        var sk = Theme.RetroSkin;
+        bool click = _ui.Clickable(Ui.Id("wcb", id), r, out bool hover, out bool held);
+        var face = sk.ButtonFace(_p, r, false, held, false, hover);
+        float n = W95Icons.Size(k.Icon95), o = held && Theme.Retro != RetroStyle.Mac ? 1 : 0;      // (95's pushed face moves what is on it)
+        float y = MathF.Floor(face.Y + (face.Height - n - 13) / 2) + o;
+        W95Icons.Draw(_p, k.Icon95, MathF.Floor(face.X + (face.Width - n) / 2) + o, y);
+        sk.Label(_p, Ui.Esc95(Fit(word, r.Width - 8)), new RectangleF(face.X + o, y + n, face.Width, 13), true, TextAlignment.Center, sk.ButtonText, false);
         if (click) Act(k.Id);
     }
 }
