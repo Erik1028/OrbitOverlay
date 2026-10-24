@@ -1497,6 +1497,19 @@ static class Hu
         ("COMMENT", "MEGJEGYZÉS"),
         ("short|Friends online", "Barátok"),
         ("short|Session recap", "Összegzés"),
+        // the recap's Today side (Sys/TodayLog.cs, WristToday.cs): the day's worlds from VRCX's game log (or VR Gallery's), who, the photos
+        ("In VRChat", "VRChatben"),
+        ("{0} in VRChat", "{0} VRChatben"),
+        ("Worlds today", "Mai világok"),
+        ("Reading today's worlds", "A mai világok beolvasása"),
+        ("No VRCX or VR Gallery", "Nincs VRCX vagy VR Gallery"),
+        ("Install VRCX to see today's worlds and people", "Telepítsd a VRCX-et, hogy lásd a mai világokat és embereket"),
+        ("Nothing in VRChat today", "Ma még nem voltál VRChatben"),
+        ("The worlds you visit today show up here (the day starts at 5 AM)", "A ma meglátogatott világok itt jelennek meg (a nap hajnali 5-kor kezdődik)"),
+        ("Not readable right now", "Most nem olvasható"),
+        ("Nobody else there", "Más nem volt ott"),
+        ("still here", "még itt"),
+        ("$ last -s 05:00", "$ last -s 05:00"),
         // the light and the RGB widgets (WristLights*.cs, Sys/RoomLights.cs, SettingsView.Lights.cs): Lumos / Prisma not there, the whites,
         // Prisma's effects (and their short names for a small card), the 95 dialogs' words, the bulb's setting. The one-word whites and
         // effects under "light|" / "rgb|" (Lang.C): a friend called Static or an avatar toggle called Music stays itself

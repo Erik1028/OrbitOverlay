@@ -214,7 +214,7 @@ public sealed class FriendsWatcher : IDisposable
     }
 
     // the account's table prefix "usr<32 hex>": the one asked for, the only one, or the one whose feed is the newest (null: none)
-    static string Account(IntPtr db, string meId)
+    internal static string Account(IntPtr db, string meId)          // (the recap's Today reads the same account: Sys/TodayLog.cs)
     {
         var all = new List<string>();
         foreach (var r in Vrcx.Query(db, "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'usr%\\_friend\\_log\\_current' ESCAPE '\\'", 1))

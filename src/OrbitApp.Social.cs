@@ -7,11 +7,13 @@ namespace Orbit;
 // WristRecap.cs). VRCX's friends are read only while a friends widget is on a watch page and the watch can be seen (SteamVR runs, or
 // the settings show the watch) - else its thread sleeps. The session is followed whenever SteamVR runs; a recap is finished (its
 // photos counted, recap.json written) on a thread of its own, then shown as a card - or, SteamVR gone, put in the Notifications list.
-// Nothing here allocates at rest.
+// The opened recap's Today side (Erik 10-24; Sys/TodayLog.cs, WristToday.cs): the day read only while it shows and the watch can be
+// seen - else its thread sleeps. Nothing here allocates at rest.
 public sealed partial class OrbitApp
 {
     readonly FriendsWatcher _friends = new();
     readonly SessionTracker _session = new();
+    readonly TodayWatcher _today = new();
     SessionRecap _recapDone;                     // finished on its thread, not shown yet
     bool _recapDoneCard, _recapLoaded;
     Thread _recapThread;
@@ -26,6 +28,15 @@ public sealed partial class OrbitApp
         }
         _friends.Active = want;
         _data.Friends = want ? _friends.Get() : null;
+        // the day, while the opened recap shows Today
+        bool today = _wrist != null && _wrist.RecapTodayOn && (VrAfter(4) || now - _photoPreview < 3);
+        if (today)
+        {
+            _today.VrcxDb = _room.VrcxDb;
+            _today.MeId = _roomSnap.MeId.Length > 0 ? _roomSnap.MeId : null;
+        }
+        _today.Active = today;
+        _data.Today = today ? _today.Get() : null;
         // the last recap from the file, once (off the frame)
         if (!_recapLoaded)
         {
@@ -76,5 +87,6 @@ public sealed partial class OrbitApp
         if (r != null) FinishRecap(r, false, true);
         _recapThread?.Join(3000);
         _friends.Dispose();
+        _today.Dispose();
     }
 }

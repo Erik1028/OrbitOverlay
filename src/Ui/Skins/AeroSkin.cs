@@ -375,13 +375,7 @@ public sealed partial class AeroSkin : Win95Skin
         }
         uint ink = enabled ? 0xFFFFFFFF : 0xFFE0E8F0, edge = close ? 0xFF6B2A1E : 0xFF35506F;
         float cx = MathF.Floor(r.X + r.Width / 2), cy = MathF.Floor(r.Y + r.Height / 2);
-        string[] g = kind switch
-        {
-            CaptionKind.Close => new[] { "kk...kk", ".kk.kk.", "..kkk..", ".kk.kk.", "kk...kk" },
-            CaptionKind.Min => new[] { "kkkkkk", "kkkkkk" },
-            CaptionKind.Max => new[] { "kkkkkkkk", "kkkkkkkk", "k......k", "k......k", "k......k", "kkkkkkkk" },
-            _ => new[] { ".kkk.", "k...k", "...k.", "..k..", ".....", "..k.." },
-        };
+        string[] g = kind switch { CaptionKind.Close => Close7, CaptionKind.Min => Min7, CaptionKind.Max => Max7, _ => Help7 };
         float gx = cx - MathF.Floor(g[0].Length / 2f), gy = kind == CaptionKind.Min ? cy + 2 : cy - MathF.Floor(g.Length / 2f);
         // the glyph white with a dark rim, as 7 drew them
         p.Pixels(g, gx - 1, gy, A(edge, 0.55f));
@@ -390,6 +384,10 @@ public sealed partial class AeroSkin : Win95Skin
         p.Pixels(g, gx, gy + 1, A(edge, 0.75f));
         p.Pixels(g, gx, gy, ink);
     }
+
+    // the caption boxes' glyphs, made once (a new array of them in every frame was an opened 7 window's only garbage)
+    static readonly string[] Close7 = { "kk...kk", ".kk.kk.", "..kkk..", ".kk.kk.", "kk...kk" }, Min7 = { "kkkkkk", "kkkkkk" },
+        Max7 = { "kkkkkkkk", "kkkkkkkk", "k......k", "k......k", "k......k", "kkkkkkkk" }, Help7 = { ".kkk.", "k...k", "...k.", "..k..", ".....", "..k.." };
 
     // the red glow round a close box under the pointer (to its sides and below: the window's top edge stays clean)
     static void CloseGlow(Painter p, RectangleF r, float h)

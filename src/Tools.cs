@@ -136,6 +136,7 @@ static partial class Tools
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "weather") return WeatherOnly(wrist, data, cfg, painter, gpu, dir);
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "folder") return FolderOnly(wrist, data, cfg, painter, gpu, dir);
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "social") return SocialOnly(wrist, data, cfg, painter, gpu, dir);
+        if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "today") return TodayViewTools.Only(wrist, data, cfg, gpu, dir);       // the recap's Today (TodayViewTest.cs)
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "lights") return LightsOnly(wrist, data, cfg, painter, gpu, dir);
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "onthisday") return OnThisDayTempsTools.Only(wrist, data, cfg, gpu, dir);
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "hexfaces") { DockViewTools.LinkFacesChecks(); return 0; }     // (DockViewTest.cs)
