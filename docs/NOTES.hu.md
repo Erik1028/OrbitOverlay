@@ -196,7 +196,18 @@ dotnet publish -c Release -o dist
   és a billentyűzetet számolja; az Orbit saját lebegő beállításpanelje nem (Erik: a DXOverlay
   elindult, amikor csak a beállításokat nyitotta meg).
 
-## 1.18.0 – fotógaléria az órán, fekvő recenter, pontosabb szemkurzor (2026-10-24)
+## 1.18.0 – fotógaléria az órán, SlimeVR, kamera, fekvő recenter, pontosabb szemkurzor (2026-10-24)
+
+- **VR Gallery adatai** (`Sys/VrGalleryData.cs`, csak olvasva, immutable – WAL-os adatbázis, a legújabb sorok késhetnek): világ,
+  emberek, kedvenc, értékelés; napcímekben a világok, kedvenc-szűrő, világ / ember szűrő (koppintás a nagy nézetben, emberválasztó),
+  Küldés = a VR Gallery `POST /latest/discord`-ja (csak a legújabb fotó), diavetítés (`slideshow_secs`), nagyítás 1600 px-es másolatból.
+- **SlimeVR widget** (`Sys/SlimeVrLink.cs`, SolarXR ws 21110, saját FlatBuffers olvasó; v21 és v22 dialektus – Eriké v22.0.0-rc.2):
+  akku, jel, ping, Yaw / Full / Mounting reset két koppintással. `ORBIT_SNAP_ONLY=slimevr` (kitalált szerver, sosem 21110).
+- **Kamera widget** (`Sys/VrcCamera.cs`): OSC `/usercamera/Capture` (igaz, 0,2 s múlva hamis); a kamerát a VRChat nem engedi
+  OSC-n kinyitni.
+- **Ma** (`Sys/TodayLog.cs`, `Panels/WristToday.cs`): a recap Munkamenet | Ma lapja; VRCX gamelog, különben VR Gallery.
+- **Szemkalibráció** (`Sys/EyeCalib.cs`, `Panels/EyeCalibPanel.cs`, `General.EyeCalib`): 5 pont, eltolás (+ lineáris, ha stabil).
+- **Az óra első rajzolása** a konstruktorban (`WarmWatch`); a Hexpad nem látott képei bájtként, 0 B.
 
 - **Fotógaléria** (`Panels/WristGallery.cs`, `Sys/PhotoAlbum.cs`): a fotó- és az Ezen a napon nézetben Galéria gomb – az összes
   VRChat-fotó (a mappa és a hónap-mappák, név szerint listázva: Eriknél 1903 fotó 83 ms). Alapból „All”: egy lap, négyzetes csempék,

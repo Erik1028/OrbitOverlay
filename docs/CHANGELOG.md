@@ -3,11 +3,22 @@
 This file is built into the app: after an update, the "What's new" window shows every section newer than the
 version you came from. Format: "## <version> | <title>", then "- " points (an indented line continues a point).
 
-## 1.18.0 | A photo gallery on the watch, recenter lying down, a steadier eye cursor
+## 1.18.0 | A photo gallery on the watch, SlimeVR, a camera button, recenter lying down
 - Photo gallery: the photo widget's opened view (and On this day's) has a Gallery button - every VRChat photo you took,
   one sheet of them as in VR Gallery (or by day: "All | Days"), newest first. Drag it with the laser or scroll with the
   stick; the rail at its right jumps through the months and years. A tap opens a photo big, and the arrows then step
   through all of them.
+- With VR Gallery installed, the gallery knows what it knows: each day's worlds, the people in a photo, your favourites
+  (a heart; the heading's heart shows only those). Tap a photo's world to see that world's photos, its people to see
+  theirs.
+- The opened photo: a tap zooms in where you tap (drag to look round, tap again for the whole photo); a slideshow;
+  and Send - VR Gallery sends your newest photo to its Discord webhook (asks first).
+- New widget: SlimeVR - your trackers' batteries and signal, and Yaw / Full / Mounting reset on the watch (each asks
+  first). Needs the SlimeVR server running.
+- New widget: Camera - takes a VRChat photo (VRChat's camera has to be open: VRChat lets no app open it).
+- The recap's Today: every world you were in today (from 5 AM), how long, who was there and your photos, across
+  restarts (VRCX's log, else VR Gallery's).
+- Eye calibration (VRChat > Eye cursor > Calibrate...): look at five dots; the eye cursor then sits where you look.
 - Delete a photo from the watch: the bin button asks first ("Delete?"), a second tap moves the photo into the Recycle
   Bin - never deleted for good, you can restore it from there.
 - Lying on your side, Recenter (and Reset position, Join, opening the settings...) puts the monitors parallel to your
@@ -21,8 +32,9 @@ version you came from. Format: "## <version> | <title>", then "- " points (an in
 - Smoother and lighter, especially in long sessions: the volume mixer no longer leaks memory, VRChat's log is read
   without turning every line into text, the dock's key pictures are unpacked only while the dock can be seen, textures
   of what you are not using are let go, the perf log works in the background, and the start-up work after SteamVR
-  connects is spread over frames and done ahead where it can be (from the second start on, the code is compiled ahead
-  on spare cores too: the first frame took half as long).
+  connects is spread over frames and done ahead where it can be - the watch's first draw before SteamVR connects, its
+  other pages while it is down (from the second start on, the code is compiled ahead on spare cores too: the first
+  frame took half as long).
 
 ## 1.17.0 | Virtual monitors, monitors in front of you, undo in the editor
 - Virtual monitors (Desktops, at the right of the monitor map): screens that exist only in VR, to put windows on. "Add"
