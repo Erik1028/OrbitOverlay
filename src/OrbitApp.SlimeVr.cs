@@ -9,9 +9,10 @@ namespace Orbit;
 // SteamVR runs; else nothing is open. A reset goes out from the watch's second tap (OnSlimeReset, set in the constructor).
 // The alerts (Erik 10-24; Sys/SlimeAlerts.cs, VRChat > SlimeVR alerts - never switched: on while a SlimeVR widget is on a page): the link
 // stays open whenever SteamVR runs (its one small update a second), and while the headset is on a tracker's low battery, a tracker lost
-// (and back) come as cards with a buzz in the watch's hand. Lying down (the head lies ~3 s, MathUtil.IsLyingDown) with SlimeVR connected: the
-// widget puts its Yaw reset first (PanelData.SlimeLying) - and with the alerts on, a card offers it once per lying-down, its button asking
-// first like the widget's. Nothing is ever reset by itself: only the watch's or the card's second tap sends one.
+// (and back) come as cards with a buzz in the watch's hand (one card a kind and one buzz a frame, however many trackers). Lying down (the
+// head lies ~3 s, MathUtil.IsLyingDown) with SlimeVR connected: the widget puts its Yaw reset first (PanelData.SlimeLying) - and with the
+// alerts on, a card offers it once per lying-down, its button asking first like the widget's. Nothing is ever reset by itself: only the
+// watch's or the card's second tap sends one.
 public sealed partial class OrbitApp
 {
     readonly SlimeVrLink _slime = new();
@@ -34,10 +35,10 @@ public sealed partial class OrbitApp
         _data.SlimeLying = lying && connected;
         if (!alerts) { _slimeAlerts.Forget(); return; }
         if (!_awake) return;                         // (the cards are for your eyes: with the headset off nothing moves on)
+        bool buzz = offer, twice = false;            // (one buzz a frame, whatever it says)
         if (offer)
         {
             _notifyIn.Incoming.Enqueue(SlimeAlerts.YawCard(_slimeYaw ??= () => _slime.Reset(SlimeVrLink.ResetKind.Yaw)));
-            SlimeBuzz(false);
             Log.Info("slimevr: lying down - the Yaw reset offered on a card");
         }
         _slimeNotes.Clear();
@@ -46,9 +47,10 @@ public sealed partial class OrbitApp
         {
             var n = _slimeNotes[i];
             _notifyIn.Incoming.Enqueue(SlimeAlerts.Card(n));
-            if (n.Kind != SlimeAlerts.Kind.Back) SlimeBuzz(twice: n.Kind == SlimeAlerts.Kind.Lost);
-            Log.Info($"slimevr alert: {n.Name} {(n.Kind == SlimeAlerts.Kind.Low ? $"battery {n.Battery} % (under {SlimeAlerts.LowPct} %)" : n.Kind == SlimeAlerts.Kind.Lost ? $"lost (status {n.Status})" : "back")}");
+            if (n.Kind != SlimeAlerts.Kind.Back) (buzz, twice) = (true, twice || n.Kind == SlimeAlerts.Kind.Lost);
+            Log.Info($"slimevr alert: {n.Name}{(n.Count > 1 ? $" ({n.Count} trackers)" : "")} {(n.Kind == SlimeAlerts.Kind.Low ? $"battery {n.Battery} % (under {SlimeAlerts.LowPct} %)" : n.Kind == SlimeAlerts.Kind.Lost ? $"lost (status {n.Status})" : "back")}");
         }
+        if (buzz) SlimeBuzz(twice);
     }
 
     // the watch's hand buzzes like it does for a friend - twice for a tracker lost (the second pulse a moment later: UpdateRoom)
