@@ -877,7 +877,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         _roomPanel.CreateOverlay(_vr);
         _whatsNewPanel.CreateOverlay(_vr);
         _theater.CreateOverlay();
-        _gpuIdleFrom = Clock.Now;           // (theater's textures go once Orbit is unused 5 minutes from here on: OrbitApp.GpuRelease.cs)
+        _gpuIdleFrom = Clock.Now;           // (theater's textures go 20 minutes without a sign of theater, from here on: OrbitApp.GpuRelease.cs)
         _theaterBar.CreateOverlay();
         _notifyPanel.CreateOverlay();
         try { _winrtDev ??= MonitorCapture.CreateWinRtDevice(_gpu); }

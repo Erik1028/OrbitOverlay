@@ -14,14 +14,16 @@ namespace Orbit;
 // Cyber's pieces go when a backdrop is made, the backdrop when the city is. Everything ready: a few flag tests a frame. The tools
 // without VR (no overlay) never warm, so their numbers are their own.
 // (Erik 10-24: Orbit's VRAM - "release the GPU memory of what is not in use".) Kept warm for good they were 17 MB in Cyber (the wall, the
-// band, the floor, the horizon), 8 in every other style (the backdrop), all evening for a theater that may never come. So once Orbit has
-// not been used for a while (OrbitApp.GpuSweep: no laser, no watch, no theater, no full-screen video waiting for auto theater) they are
-// let go - their overlays hidden and told first - and Cold keeps this from making them again the next frame. Orbit used again (every
-// way into theater goes through one of those) clears it and they are warmed as above before a theater can start; one started cold
-// anyway makes what it needs in its first frame, as before 10-18. The lamps' list and the backdrop's buffer (CPU memory) stay.
+// band, the floor, the horizon), 8 in every other style (the backdrop), all evening for a theater that may never come. So after 20
+// minutes in VR without a sign of theater (OrbitApp.GpuSweep: not on, no laser on the bar or the watch, no full-screen video waiting for
+// auto theater) they are let go - their overlays hidden and told first - and Cold keeps this from making them again the next frame. The
+// next sign (every way into theater goes through one) clears it and they are warmed as above before a tap can start a theater; a glance
+// at the watch for the time does not (10-24 review: warmed again on every use, they were made and let go all evening, on the frames the
+// watch and the lasers were used). One started cold anyway makes what it needs in its first frame, as before 10-18. The lamps' list and
+// the backdrop's buffer (CPU memory) stay.
 public sealed partial class Theater
 {
-    public bool Cold;                    // its textures let go while Orbit was not used (OrbitApp.GpuSweep): not warmed until it is again
+    public bool Cold;                    // its textures let go, no sign of theater a while (OrbitApp.GpuSweep): not warmed until the next one
     public bool Resting => !On && _screen == null && _leaving == null;      // nothing of theater shows (what WarmTheater runs with)
 
     // from Update, with theater off and no screen on its way out
@@ -40,7 +42,7 @@ public sealed partial class Theater
         if (_lifeState != 2 && _lifeState != 4) LifeBase();                 // (a frame each: the bare band and its copy, the map, the read-out)
     }
 
-    // Orbit not used for a while, theater at rest (OrbitApp.GpuSweep): every texture warmed above let go. An overlay that was given one is
+    // no sign of theater for a while, theater at rest (OrbitApp.GpuSweep): every texture warmed above let go. An overlay that was given one is
     // hidden and SteamVR told to let go of it before it is disposed (the wall gets its black texture back: it is never let go); every
     // "given once" flag goes with its texture, so the next theater gives them again. The cars' tiny textures stay (with their overlays).
     public void ReleaseTextures()
