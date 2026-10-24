@@ -43,7 +43,8 @@ static class SlimeVrViewTools
 
     // ---- the server's side, made with the link's own builder (FbObj): an update in either dialect, a reset's answer ----
 
-    public readonly record struct FakeTracker(SlimeVrLink.Part Part, int Battery, int Rssi, int Ping, int Status, string Custom = null, float Volt = 3.9f);
+    public readonly record struct FakeTracker(SlimeVrLink.Part Part, int Battery, int Rssi, int Ping, int Status, string Custom = null, float Volt = 3.9f,
+        int RuntimeMin = -1);
 
     static readonly FakeTracker[] Six =
     {
@@ -74,6 +75,17 @@ static class SlimeVrViewTools
         return new FbObj().Objs(SolarXr.BundleFeed, new FbObj().U8(0, SolarXr.FeedUpdate).Obj(1, new FbObj().Objs(0, devices.ToArray()))).Finish();
     }
 
+    // the headset and a board per tracker, as tables (the made-up server's own updates: Devices)
+    public static FbObj[] Boards(SolarXr.Dialect d, FakeTracker[] trackers, int bump = 0)
+    {
+        var devices = new List<FbObj> { Device(d, 0, new FakeTracker(SlimeVrLink.Part.Head, -1, int.MinValue, -1, SlimeVrLink.Ok), true, "HMD") };
+        for (int i = 0; i < trackers.Length; i++)
+            devices.Add(Device(d, i + 1, trackers[i] with { Battery = Math.Max(0, trackers[i].Battery - bump) }, false, $"udp://192.168.1.{121 + i}/0"));
+        return devices.ToArray();
+    }
+
+    public static FakeTracker[] SixTrackers => Six;
+
     // (the alerts' checks build their own updates with it: SlimeAlertsTest.cs)
     internal static FbObj Device(SolarXr.Dialect d, int id, FakeTracker t, bool hmd, string display)
     {
@@ -82,6 +94,7 @@ static class SlimeVrViewTools
         if (t.Battery >= 0) { hs.U8(v22 ? 7 : 6, t.Battery); hs.F32(v22 ? 6 : 5, t.Volt); }
         if (t.Rssi != int.MinValue) hs.I16(v22 ? 2 : 3, t.Rssi);
         if (t.Ping >= 0) hs.U16(v22 ? 1 : 2, t.Ping);
+        if (t.RuntimeMin > 0) hs.I64(v22 ? 12 : 11, t.RuntimeMin * 60_000_000L);
         FbObj info, td;
         if (v22)
         {
@@ -141,17 +154,113 @@ static class SlimeVrViewTools
 
     // ---- the made-up server ----
 
+    // a feed a client asked for (StartDataFeed's DataFeedConfig, read in the server's dialect): how often, the devices, the guards, the bones
+    public readonly record struct Cfg(int Ms, bool Device, bool Guards, bool Bones);
+
+    // a StartDataFeed's feeds (null: the message has none)
+    public static List<Cfg> ReadConfigs(byte[] msg, SolarXr.Dialect d)
+    {
+        var r = new FbRead(msg);
+        int root = r.Root(), n = r.Vector(root, SolarXr.BundleFeed, out int h0);
+        bool v22 = d == SolarXr.Dialect.V22;
+        for (int i = 0; i < n; i++)
+        {
+            int h = r.Element(h0, i);
+            if (r.U8(h, 0) != SolarXr.FeedStart) continue;
+            int sdf = r.Table(h, 1), nc = r.Vector(sdf, 0, out int c0);
+            var l = new List<Cfg>();
+            for (int k = 0; k < nc; k++)
+            {
+                int cfg = r.Element(c0, k), mask = r.Table(cfg, 1);
+                int bm = v22 ? r.Table(cfg, 2) : 0;
+                bool bones = v22 ? bm != 0 && r.U8(bm, 0) != 0 && r.U8(bm, 2) != 0 && r.U8(bm, 4) != 0 && r.U8(bm, 5) != 0 : r.U8(cfg, 3) != 0;
+                l.Add(new Cfg(r.U16(cfg, 0), mask != 0 && r.U8(mask, 1) != 0, r.U8(cfg, v22 ? 3 : 5) != 0, bones));
+            }
+            return l;
+        }
+        return null;
+    }
+
+    // a client's ResetRequests in dialect d: the type, the delay (NaN: none), the body parts as sent
+    public static List<(int type, float delay, byte[] parts)> ReadResetParts(byte[] msg, SolarXr.Dialect d)
+    {
+        var l = new List<(int, float, byte[])>();
+        var r = new FbRead(msg);
+        int root = r.Root(), n = r.Vector(root, SolarXr.BundleRpc, out int h0);
+        bool v22 = d == SolarXr.Dialect.V22;
+        for (int i = 0; i < n; i++)
+        {
+            int h = r.Element(h0, i);
+            if (r.U8(h, v22 ? 2 : 1) != SolarXr.RpcReset) continue;
+            int t = r.Table(h, v22 ? 3 : 2);
+            if (t == 0) continue;
+            int np = r.Vector(t, 1, out int p0);
+            var parts = new byte[np];
+            for (int k = 0; k < np; k++) parts[k] = (byte)r.ByteAt(p0 + k);
+            l.Add((r.U8(t, 0), r.Has(t, 2) ? r.F32(t, 2) : float.NaN, parts));
+        }
+        return l;
+    }
+
+    // the RpcMessage types of a client's message (v22's header)
+    public static List<int> RpcTypes(byte[] msg, SolarXr.Dialect d)
+    {
+        var l = new List<int>();
+        var r = new FbRead(msg);
+        int root = r.Root(), n = r.Vector(root, SolarXr.BundleRpc, out int h0);
+        for (int i = 0; i < n; i++) l.Add(r.U8(r.Element(h0, i), d == SolarXr.Dialect.V22 ? 2 : 1));
+        return l;
+    }
+
+    // a reset's answer as each server sends it: v21's ResetResponse (status 0 started / 1 finished, progress, duration, the parts); v22's
+    // ResetStatusResponse (lifecycle 0 running / 1 done / 2 cancelled / 3 failed; a countdown, or a step mounting status when step >= 0)
+    public static byte[] Answer21(int type, int status, int progress, int duration, byte[] parts)
+    {
+        var t = new FbObj().U8(0, type).U8(1, status).I32(3, progress).I32(4, duration);
+        if (parts is { Length: > 0 }) t.Bytes(2, parts);
+        return new FbObj().Objs(SolarXr.BundleRpc, new FbObj().U8(1, SolarXr.RpcResetAnswer).Obj(2, t)).Finish();
+    }
+
+    public static byte[] Answer22(int type, int lifecycle, int progress, int duration, byte[] parts, int step = -1)
+    {
+        var t = new FbObj().U8(0, type).U8(1, lifecycle);
+        if (parts is { Length: > 0 }) t.Bytes(2, parts);
+        if (step >= 0) t.U8(3, 2).Obj(4, new FbObj().U8(0, step));
+        else t.U8(3, 1).Obj(4, new FbObj().I32(0, progress).I32(1, duration));
+        return new FbObj().Objs(SolarXr.BundleRpc, new FbObj().U8(2, SolarXr.RpcResetAnswer).Obj(3, t)).Finish();
+    }
+
+    public static byte[] Settings22(int method, bool feet) => new FbObj().Objs(SolarXr.BundleRpc, new FbObj().U8(2, SolarXr.RpcSettings).Obj(3, new FbObj()
+        .Bool(0, feet).U8(1, 0).F32(2, 0).Bool(3, true).Bool(4, false).U8(5, method))).Finish();
+
+    // v21's yaw reset of every tracker answers with its default list of them (allBodyPartsButFingers)
+    static readonly byte[] AllParts21 = SolarXr.Wire(~0UL & ~SolarXr.Bit(SlimeVrLink.Part.Finger) & ~SolarXr.Bit(SlimeVrLink.Part.Toe), SolarXr.Dialect.V21);
+
+    // A made-up SolarXR server in either dialect: the feeds a client asks for (each on its own schedule, its updates with their index -
+    // v21's bundles with a slot for every feed, the ones not due dangling, as its DataFeedHandler sends them), the devices (Devices: built
+    // here with the guards; else Feed's bytes as they are), the bones (Bones), the server guards, v22's reset settings (pushed when a
+    // client connects and on asking), the resets answered as each server does - v21: started each second, finished; v22: the guards
+    // honoured (an ignored request gets no answer), a countdown or the step mounting's phases, a new reset cancelling the running one,
+    // CancelResetRequest - and Push, a message from elsewhere (a reset the GUI started).
     public sealed class FakeServer : IDisposable
     {
         readonly TcpListener _l = new(IPAddress.Loopback, 0);
         readonly Thread _t;
         readonly object _lock = new();
         readonly List<byte[]> _got = new();
+        readonly List<List<Cfg>> _starts = new();
+        readonly System.Collections.Concurrent.ConcurrentQueue<byte[]> _push = new();
         volatile bool _stop;
         public readonly int Port;
         public readonly SolarXr.Dialect Dialect;
-        public Func<int, byte[]> Feed;               // the n-th update
-        public int Connections, Updates;
+        public Func<int, byte[]> Feed;               // the n-th update (Devices null)
+        public Func<int, FbObj[]> Devices;           // the n-th status update's boards
+        public Func<double, List<FakeBone>> Bones;   // the skeleton now (null: none)
+        public volatile int YawGuard, MountGuard;    // v22's ResetAvailability (v21: 0 true, else false)
+        public volatile int Method = 3;              // v22's mounting method (3 the step, 2 the pose)
+        public volatile bool Feet;
+        public double Speed = 1;                     // every reset's delay times this (the tools' checks keep it short)
+        public int Connections, Updates, PoseUpdates, Cancels, SettingsAsked, Ignored;
 
         public FakeServer(SolarXr.Dialect d, Func<int, byte[]> feed)
         {
@@ -163,6 +272,9 @@ static class SlimeVrViewTools
         }
 
         public List<byte[]> Got() { lock (_lock) return new List<byte[]>(_got); }
+        public List<List<Cfg>> Starts() { lock (_lock) return new List<List<Cfg>>(_starts); }
+
+        public void Push(byte[] msg) => _push.Enqueue(msg);
 
         public int Resets(out (int type, float delay, int parts) last)
         {
@@ -170,6 +282,16 @@ static class SlimeVrViewTools
             int n = 0;
             foreach (var m in Got())
                 foreach (var x in ReadResets(m, Dialect)) { n++; last = x; }
+            return n;
+        }
+
+        // ... with the body parts as sent
+        public int ResetsWithParts(out (int type, float delay, byte[] parts) last)
+        {
+            last = default;
+            int n = 0;
+            foreach (var m in Got())
+                foreach (var x in ReadResetParts(m, Dialect)) { n++; last = x; }
             return n;
         }
 
@@ -185,6 +307,9 @@ static class SlimeVrViewTools
                 finally { c.Dispose(); }
             }
         }
+
+        FbObj GuardsTable() => Dialect == SolarXr.Dialect.V22 ? new FbObj().U8(0, YawGuard).U8(1, MountGuard).Bool(2, false)
+            : new FbObj().Bool(0, MountGuard == 0).Bool(1, YawGuard == 0).Bool(2, false);
 
         void Serve(TcpClient c)
         {
@@ -203,33 +328,131 @@ static class SlimeVrViewTools
             s.Write(Encoding.ASCII.GetBytes($"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {accept}\r\n\r\n"));
             using var ws = WebSocket.CreateFromStream(s, new WebSocketCreationOptions { IsServer = true, KeepAliveInterval = TimeSpan.Zero });
             Interlocked.Increment(ref Connections);
+            bool v22 = Dialect == SolarXr.Dialect.V22;
+            void Send(byte[] m) => ws.SendAsync(m, WebSocketMessageType.Binary, true, CancellationToken.None).Wait(1000);
+            if (v22 && Devices != null) Send(Settings22(Method, Feet));          // (v22's ResetsBehaviour: its settings to each client as it connects)
             var buf = new byte[64 * 1024];
-            int feedMs = -1, n = 0;
-            double next = 0;
+            var cfgs = new List<Cfg>();
+            var next = new List<double>();
+            int n = 0, resetId = 0, running = -1, runningType = -1;
+            var events = new List<(double at, byte[] msg, int id, int doneType)>();
             System.Threading.Tasks.Task<WebSocketReceiveResult> recv = null;
             while (!_stop && ws.State == WebSocketState.Open)
             {
                 recv ??= ws.ReceiveAsync(new ArraySegment<byte>(buf), CancellationToken.None);
-                if (recv.Wait(20))
+                if (recv.Wait(10))
                 {
                     var r = recv.Result;
                     recv = null;
                     if (r.MessageType == WebSocketMessageType.Close) { ws.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None).Wait(500); break; }
                     var msg = buf.AsSpan(0, r.Count).ToArray();
                     lock (_lock) _got.Add(msg);
-                    var st = ReadStart(msg);
-                    if (st.start) (feedMs, next) = (st.ms, Clock.Now);           // as the server: the feed from now on, every minimum_time_since_last
-                    foreach (var (type, _, _) in ReadResets(msg, Dialect))       // a reset: answered as the server does (a yaw done at once)
-                        ws.SendAsync(Answer(Dialect, type, type == 0 ? 1 : 0, 0, type == 0 ? 0 : 3000), WebSocketMessageType.Binary, true, CancellationToken.None).Wait(1000);
+                    double now = Clock.Now;
+                    if (ReadConfigs(msg, Dialect) is { } st)
+                    {
+                        // a new StartDataFeed replaces them all - a feed asked again as it was keeps its pace (the alerts' checks count the
+                        // status updates); a new one starts at once (v22) or after its interval (v21)
+                        var nx = new List<double>();
+                        for (int i = 0; i < st.Count; i++)
+                            nx.Add(i < cfgs.Count && cfgs[i].Ms == st[i].Ms && cfgs[i].Device == st[i].Device ? next[i] : v22 ? now : now + st[i].Ms / 1000.0);
+                        (cfgs, next) = (st, nx);
+                        lock (_lock) _starts.Add(st);
+                    }
+                    foreach (var (type, delay, parts) in ReadResetParts(msg, Dialect)) Reset(type, delay, parts);
+                    foreach (int t in RpcTypes(msg, Dialect))
+                    {
+                        if (!v22) break;
+                        if (t == SolarXr.RpcSettingsAsk) { Interlocked.Increment(ref SettingsAsked); Send(Settings22(Method, Feet)); }
+                        if (t == SolarXr.RpcCancel)
+                        {
+                            Interlocked.Increment(ref Cancels);
+                            if (running >= 0) { events.RemoveAll(e => e.id == running); Send(Answer22(runningType, 2, 0, 0, null)); running = -1; }
+                        }
+                    }
                 }
-                if (feedMs >= 0 && Clock.Now >= next)
+                while (_push.TryDequeue(out var pm)) Send(pm);
+                // the answers due
+                double t0 = Clock.Now;
+                for (int i = 0; i < events.Count; i++)
                 {
-                    ws.SendAsync(Feed(n++), WebSocketMessageType.Binary, true, CancellationToken.None).Wait(1000);
-                    Interlocked.Increment(ref Updates);
-                    next = Clock.Now + Math.Max(feedMs, 20) / 1000.0;
+                    if (events[i].at > t0) continue;
+                    var e = events[i];
+                    events.RemoveAt(i--);
+                    Send(e.msg);
+                    if (e.doneType >= 0)
+                    {
+                        if (e.id == running) running = -1;
+                        if (e.doneType == 1) (YawGuard, MountGuard) = (0, 0);         // a full reset done: yaw and mounting may (120 s)
+                    }
+                }
+                // the feeds due: v22 a bundle each; v21 a bundle per due feed with a slot for every feed (the others not due: dangling)
+                var data = Dialect == SolarXr.Dialect.V21 ? new FbObj[cfgs.Count] : null;
+                for (int i = 0; i < cfgs.Count; i++)
+                {
+                    if (t0 < next[i]) continue;
+                    var cf = cfgs[i];
+                    next[i] = v22 ? Math.Max(next[i] + cf.Ms / 1000.0, t0) : t0 + Math.Max(cf.Ms, 15) / 1000.0;
+                    if (Devices == null)
+                    {
+                        // Feed's bytes as they are (the older checks, the alerts'): a status update only
+                        if (!cf.Device || Feed == null) continue;
+                        Send(Feed(n++));
+                        Interlocked.Increment(ref Updates);
+                        continue;
+                    }
+                    var u = new FbObj();
+                    if (cf.Device) { u.Objs(0, Devices(n++)); Interlocked.Increment(ref Updates); }
+                    if (cf.Bones && Bones?.Invoke(t0) is { Count: > 0 } bl) { u.Objs(v22 ? 1 : 2, BoneTables(Dialect, bl)); Interlocked.Increment(ref PoseUpdates); }
+                    u.U8(v22 ? 2 : 4, i);
+                    if (cf.Guards) u.Obj(v22 ? 3 : 5, GuardsTable());
+                    var hdr = new FbObj().U8(0, SolarXr.FeedUpdate).Obj(1, u);
+                    if (data == null) Send(new FbObj().Objs(SolarXr.BundleFeed, hdr).Finish());
+                    else
+                    {
+                        data[i] = hdr;
+                        Send(new FbObj().Objs(SolarXr.BundleFeed, (FbObj[])data.Clone()).Finish());
+                    }
                 }
             }
             try { recv?.Wait(200); } catch { }
+
+            // a reset asked: answered the way that server does
+            void Reset(int type, float delay, byte[] parts)
+            {
+                double now = Clock.Now;
+                if (v22)
+                {
+                    // the guards: an ignored request is only logged by the server - no answer
+                    if ((type == 0 && YawGuard != 0) || (type == 2 && (MountGuard != 0 || Method is not (2 or 3)))) { Interlocked.Increment(ref Ignored); return; }
+                    if (running >= 0) { events.RemoveAll(e => e.id == running); Send(Answer22(runningType, 2, 0, 0, null)); }
+                    int id = ++resetId;
+                    (running, runningType) = (id, type);
+                    double dl = (float.IsNaN(delay) ? 0 : delay) * Speed;
+                    if (type == 2 && Method == 3)
+                    {
+                        // the step: its phases (the body parts ignored - no echo)
+                        events.Add((now + dl, Answer22(2, 0, 0, 0, null, 1), id, -1));
+                        events.Add((now + dl + 0.3, Answer22(2, 0, 0, 0, null, 2), id, -1));
+                        events.Add((now + dl + 0.6, Answer22(2, 0, 0, 0, null, 3), id, -1));
+                        events.Add((now + dl + 0.9, Answer22(2, 1, 0, 0, null, 4), id, 2));
+                        return;
+                    }
+                    int dur = (int)Math.Round(dl * 1000);
+                    events.Add((now, Answer22(type, 0, 0, dur, parts), id, -1));
+                    for (int k = 1; k * 1000 < dur; k++) events.Add((now + k, Answer22(type, 0, k * 1000, dur, parts), id, -1));
+                    events.Add((now + dl, Answer22(type, 1, dur, dur, parts), id, type));
+                    return;
+                }
+                // v21: no guards checked, no cancel - a new reset silently drops the pending one; its own delays (shortened here)
+                if (running >= 0) events.RemoveAll(e => e.id == running);
+                int id21 = ++resetId;
+                (running, runningType) = (id21, type);
+                double d21 = (float.IsNaN(delay) ? type == 0 ? 0 : 1 : delay) * Speed;
+                var echo = parts is { Length: > 0 } ? parts : type == 0 ? AllParts21 : null;
+                int ms = (int)Math.Round(d21 * 1000);
+                for (int k = 0; k * 1000 < ms; k++) events.Add((now + k, Answer21(type, 0, k * 1000, ms, echo), id21, -1));
+                events.Add((now + d21, Answer21(type, 1, ms, ms, echo), id21, type));
+            }
         }
 
         public void Dispose()
@@ -240,7 +463,27 @@ static class SlimeVrViewTools
         }
     }
 
-    static bool Until(Func<bool> ok, double seconds)
+    // a bone of the made-up skeleton: where it is worn, its global rotation, its head and tail, its length
+    public readonly record struct FakeBone(SlimeVrLink.Part Part, Quaternion Rot, Vector3 Head, Vector3 Tail, float Len);
+
+    // the bones as each server writes them: v21 { body_part, rotation_g, bone_length, head_position_g }, v22 { body_part, rotation,
+    // head_position, tail_position } (Orbit's mask) - a part that dialect has no number for is left out
+    public static FbObj[] BoneTables(SolarXr.Dialect d, List<FakeBone> bones)
+    {
+        var l = new List<FbObj>();
+        foreach (var b in bones)
+        {
+            var w = SolarXr.Wire(SolarXr.Bit(b.Part), d);
+            if (w.Length == 0) continue;
+            var q = b.Rot;
+            l.Add(d == SolarXr.Dialect.V22
+                ? new FbObj().U8(0, w[0]).Floats(2, q.X, q.Y, q.Z, q.W).Floats(4, b.Head.X, b.Head.Y, b.Head.Z).Floats(5, b.Tail.X, b.Tail.Y, b.Tail.Z)
+                : new FbObj().U8(0, w[0]).Floats(1, q.X, q.Y, q.Z, q.W).F32(2, b.Len).Floats(3, b.Head.X, b.Head.Y, b.Head.Z));
+        }
+        return l.ToArray();
+    }
+
+    internal static bool Until(Func<bool> ok, double seconds)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
         while (!ok()) { if (sw.Elapsed.TotalSeconds > seconds) return false; Thread.Sleep(20); }
@@ -250,7 +493,7 @@ static class SlimeVrViewTools
     static string Rows(SlimeVrLink.Snapshot s) => string.Join(", ", s.Trackers.Select(t =>
         $"{(t.CustomName.Length > 0 ? t.CustomName : t.Part.ToString())} {t.Battery}%{(t.Charging ? "+" : "")} {(t.Rssi == int.MinValue ? "-" : t.Rssi.ToString())}dBm {t.Ping}ms s{t.Status}"));
 
-    static void Tap(WristPanel wrist, PanelData data, Vector2 p)
+    internal static void Tap(WristPanel wrist, PanelData data, Vector2 p)
     {
         wrist.PointerMove(Hand.Left, p); wrist.Draw(data);
         wrist.PointerButton(Hand.Left, PtrButton.Primary, true, p); wrist.Draw(data);
@@ -612,24 +855,70 @@ static partial class Tools
         var culture = System.Globalization.CultureInfo.CurrentCulture;
         System.Globalization.CultureInfo.CurrentCulture = SnapCulture;
         SlimeVrViewTools.DataChecks(wrist, data, cfg, gpu, dir);
+        SlimeBodyChecks(wrist, data, cfg, gpu, dir, true);           // the Body side, the guide, the forecast, the last reset (SlimeBodyTest.cs)
+        LayoutOpenStates["slimevr"] = (SlimeBodyTools.LayoutStates(), (w, d) => { w.SlimeSetBody(false); d.SlimeVr = SlimeVrViewTools.Fake(); d.SlimePose = null; });
         foreach (var (style, tag) in new[] { ("modern", ""), ("classic", "_95"), ("xp", "_xp"), ("aero", "_aero"), ("mac", "_mac"), ("terminal", "_term"), (CyberHud.Id, "_cyber") })
         {
             cfg.Data.Appearance = new AppearanceConfig { Style = style, Clock24h = true };
             Theme.Apply(cfg.Data.Appearance);
             SlimeVrViewTools.Run(wrist, data, cfg, gpu, dir, tag);
+            SlimeBodyTools.Run(wrist, data, cfg, gpu, dir, tag);
             data.SlimeVr = SlimeVrViewTools.Fake();
             string f0 = cfg.Data.Wrist.Face;
             layout += LayoutCheckRun(wrist, data, cfg, painter, gpu, dir, tag.Length > 0 ? tag[1..] : "modern", onlyKind: "slimevr");
             cfg.Data.Wrist.Face = f0;
             cfg.Data.Wrist.Widgets = null;
         }
+        LayoutOpenStates.Remove("slimevr");
         cfg.Data.Appearance = new AppearanceConfig { Clock24h = true };
         Theme.Apply(cfg.Data.Appearance);
         SlimeVrViewTools.PreviewSheet(dir);
+        SlimeBodyTools.PreviewSheet(dir);
         SlimeAlertsTools.Checks(wrist, data, cfg, gpu, painter, dir);       // its alerts and lying down (SlimeAlertsTest.cs)
         System.Globalization.CultureInfo.CurrentCulture = culture;
         Log.Info($"layout slimevr: {layout} problem(s) in every style");
         Log.Info("snapshot (slimevr only) written to " + dir);
+        return layout > 0 ? 1 : WantsExit(failed0);
+    }
+
+    // the Body side's checks: the samples, the reader, the builder, the forecast; the link on the made-up server (link: false - the short run)
+    static void SlimeBodyChecks(WristPanel wrist, PanelData data, ConfigStore cfg, Gpu gpu, string dir, bool link)
+    {
+        cfg.Data.Appearance = new AppearanceConfig { Clock24h = true };
+        Theme.Apply(cfg.Data.Appearance);
+        SlimeBodyTools.PoseChecks(wrist);
+        SlimeBodyTools.BuilderChecks(dir);
+        SlimeBodyTools.BatteryChecks(wrist, data);
+        if (link) SlimeBodyTools.LinkChecks(wrist, data, cfg, gpu, dir);
+    }
+
+    // ORBIT_SNAP_ONLY=slimebody: the Body side and the guide alone - the samples, the reader, the builder, the forecast, every style's
+    // pictures, allocations and layout (its states), the sheet; no made-up server (slimevr runs that). A short check while working on it.
+    static int SlimeBodyOnly(WristPanel wrist, PanelData data, ConfigStore cfg, Painter painter, Gpu gpu, string dir)
+    {
+        int failed0 = WantsFailed, layout = 0;
+        var culture = System.Globalization.CultureInfo.CurrentCulture;
+        System.Globalization.CultureInfo.CurrentCulture = SnapCulture;
+        SlimeBodyChecks(wrist, data, cfg, gpu, dir, Environment.GetEnvironmentVariable("ORBIT_SNAP_LINK") == "1");
+        LayoutOpenStates["slimevr"] = (SlimeBodyTools.LayoutStates(), (w, d) => { w.SlimeSetBody(false); d.SlimeVr = SlimeVrViewTools.Fake(); d.SlimePose = null; });
+        foreach (var (style, tag) in new[] { ("modern", ""), ("classic", "_95"), ("xp", "_xp"), ("aero", "_aero"), ("mac", "_mac"), ("terminal", "_term"), (CyberHud.Id, "_cyber") })
+        {
+            cfg.Data.Appearance = new AppearanceConfig { Style = style, Clock24h = true };
+            Theme.Apply(cfg.Data.Appearance);
+            SlimeBodyTools.Run(wrist, data, cfg, gpu, dir, tag);
+            data.SlimeVr = SlimeVrViewTools.Fake();
+            string f0 = cfg.Data.Wrist.Face;
+            layout += LayoutCheckRun(wrist, data, cfg, painter, gpu, dir, tag.Length > 0 ? tag[1..] : "modern", onlyKind: "slimevr");
+            cfg.Data.Wrist.Face = f0;
+            cfg.Data.Wrist.Widgets = null;
+        }
+        LayoutOpenStates.Remove("slimevr");
+        cfg.Data.Appearance = new AppearanceConfig { Clock24h = true };
+        Theme.Apply(cfg.Data.Appearance);
+        SlimeBodyTools.PreviewSheet(dir);
+        System.Globalization.CultureInfo.CurrentCulture = culture;
+        Log.Info($"layout slimebody: {layout} problem(s) in every style");
+        Log.Info("snapshot (slimebody only) written to " + dir);
         return layout > 0 ? 1 : WantsExit(failed0);
     }
 }
