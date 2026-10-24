@@ -159,7 +159,8 @@ public sealed partial class WristPanel
         if (_ui.CaptionClose95("wd95x", win.Right - 5 - 16, win.Y + 5, true, 6)) { CloseDetail(); return; }
         if (_ui.Button95("wd95ok", new RectangleF(win.Right - 8 - 75, win.Bottom - 8 - 23, 75, 23), "OK", true, true)) { CloseDetail(); return; }
         var c = new RectangleF(win.X + 8, win.Y + 27, win.Width - 16, win.Height - 27 - 36);
-        // the keys beside OK: the arrows, ALL (the gallery), DEL (asking: SURE?), GALLERY (VR Gallery)
+        // the keys beside OK: the arrows, ALL (the gallery), DEL (asking: SURE?), GALLERY (VR Gallery) - no room for a SHOW or a ZOOM
+        // (five keys would cut GALLERY and SURE?): the Terminal's viewer has no slideshow, zoom or Send
         int n = PhotoCount;
         float ky = c.Bottom + 5, kw = MathF.Floor((c.Width - 75 - 2 * 26 - 4 * 4) / 3);
         RectangleF Key(int i) => new(c.X + 2 * 30 + i * (kw + 4), ky, kw, 23);

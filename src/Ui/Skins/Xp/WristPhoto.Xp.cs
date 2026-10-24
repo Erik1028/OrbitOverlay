@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.Numerics;
 using Vortice.Direct2D1;
 using Vortice.DirectWrite;
 
@@ -7,8 +8,9 @@ namespace Orbit;
 
 // The latest photo in Windows XP (WristPhoto.cs has the rest). The widget: My Pictures in its Thumbnails view - a little window on
 // white, the photo in its thin grey thumbnail frame, how long ago and the world under it (or beside it on one row). Opened: the
-// Windows Picture and Fax Viewer - the photo whole on white, a line saying when and where under it, and the viewer's toolbar along
-// the bottom: the green Previous / Next Image buttons, Open in VR Gallery (the viewer's "Open for editing"), Close.
+// Windows Picture and Fax Viewer - the photo whole on white, a line saying when and where (and which one) under it, and the viewer's
+// toolbar along the bottom: the green Previous / Next Image buttons, the gallery and Delete, Start Slide Show, Zoom In / Zoom Out, Send
+// (an envelope), Open in VR Gallery (the viewer's "Open for editing"), Close.
 public sealed partial class WristPanel
 {
     const uint XpThumbEdge = 0xFFB9B9AE, XpViewerBar = 0xFFC5D2E6;
@@ -94,32 +96,57 @@ public sealed partial class WristPanel
         _p.Fill(new RectangleF(bar.X, bar.Y, bar.Width, 1), XpViewerBar);
         int n = PhotoCount;
         float bx = bar.X + 6, by = bar.Y + 3;
+        // the viewer's own buttons in its order (Erik 10-24, "mehet mind"): the arrows | the gallery, Delete | Start Slide Show (its
+        // projection screen, in while the slideshow plays) | Zoom In, Zoom Out (the magnifiers) | Send (an e-mail's envelope: VR
+        // Gallery's newest only). The grid: Days | the gallery, Favourites | how many
         if (grid)
         {
             // the view: Days (held in while on - the viewer's own toggles' way)
-            var dr = new RectangleF(bx, by, 50, 22);
+            var dr = new RectangleF(bx, by, 45, 22);
             if (C.GalleryDays) Theme.RetroSkin.ButtonFace(_p, dr, false, true, false, false);
             if (XpTool("wgdays", dr, "Days", false, true)) GalSetDays(!C.GalleryDays);
         }
         else
         {
-            if (XpRound("wph95p", new RectangleF(bx, by, 24, 22), false, _phIndex < n - 1)) PhotoStep(1);
-            if (XpRound("wph95n", new RectangleF(bx + 26, by, 24, 22), true, _phIndex > 0)) PhotoStep(-1);
+            if (XpRound("wph95p", new RectangleF(bx, by, 22, 22), false, _phIndex < n - 1)) PhotoStep(1);
+            if (XpRound("wph95n", new RectangleF(bx + 23, by, 22, 22), true, _phIndex > 0)) PhotoStep(-1);
         }
-        _p.Fill(new RectangleF(bx + 56, by + 2, 1, 18), XpViewerBar);
+        XpSep(bx + 47, by);
         // the viewer's own Delete (its red X), and the thumbnails' four squares for the gallery
-        if (XpGlyphTool("wphall", new RectangleF(bx + 61, by, 24, 22), Grid95, 0xFF316AC5, true, grid)) GalleryToggle(p);
+        if (XpGlyphTool("wphall", new RectangleF(bx + 50, by, 22, 22), Grid95, 0xFF316AC5, true, grid)) GalleryToggle(p);
         if (grid)
         {
-            if (XpGlyphTool("wgfav", new RectangleF(bx + 87, by, 24, 22), Heart95, 0xFFD8432E, true, _galFav)) GalFilter(!_galFav, _galWorld, _galPerson, null);
+            if (XpGlyphTool("wgfav", new RectangleF(bx + 73, by, 22, 22), Heart95, 0xFFD8432E, true, _galFav)) GalFilter(!_galFav, _galWorld, _galPerson, null);
         }
-        else if (XpGlyphTool("wphdel", new RectangleF(bx + 87, by, 24, 22), Del95, 0xFFD8432E, p != null && !DeleteBusy, DeleteArmed(p))) DeleteTap(p);
-        _p.Fill(new RectangleF(bx + 117, by + 2, 1, 18), XpViewerBar);
-        float cx = bx + 123;
+        else if (XpGlyphTool("wphdel", new RectangleF(bx + 73, by, 22, 22), Del95, 0xFFD8432E, p != null && !DeleteBusy, DeleteArmed(p))) DeleteTap(p);
+        XpSep(bx + 97, by);
+        float cx = bx + 102;
+        if (!grid)
+        {
+            bool show = _galShow;
+            if (XpGlyphTool(show ? "wphstop" : "wphplay", new RectangleF(bx + 100, by, 22, 22), Screen95, 0xFF4A5A70, show || _phIndex < n - 1, show,
+                    ScreenFill, 0xFF6FA8E8))
+            {
+                if (show) ShowStop(); else ShowStart();
+            }
+            XpSep(bx + 124, by);
+            if (XpGlyphTool("wphzin", new RectangleF(bx + 127, by, 22, 22), LensIn95, 0xFF31476B, p != null && !_galZoom, false, LensFill, 0xFFCFE3FA))
+                ZoomIn(p, new Vector2(0.5f, 0.5f));
+            if (XpGlyphTool("wphzout", new RectangleF(bx + 150, by, 22, 22), LensOut95, 0xFF31476B, _galZoom, false, LensFill, 0xFFCFE3FA)) ZoomOut();
+            cx = bx + 177;
+            if (CanSend(p))
+            {
+                _sendSeen = true;
+                XpSep(bx + 174, by);
+                if (XpGlyphTool("wphsend", new RectangleF(bx + 177, by, 22, 22), Mail95, 0xFF2B57A8, !_sendBusy, SendArmed(p), MailFill, 0xFFFFF4CC)) SendTap(p);
+                cx = bx + 203;
+            }
+        }
         var close = new RectangleF(bar.Right - 6 - 56, by, 56, 22);
         // the gallery's button leaves the counter its room: its short form ("VR Gallery", as the 95 and Mac viewers say) where the
-        // whole would take it (Magyar's "Megnyitás a VR Galleryben" left a cut "5")
-        string cnt = grid ? (_ph is { Recent.Count: > 0 } a ? GalCountText(a.Recent.Count) : null) : p != null ? words.Count : null;
+        // whole would take it (Magyar's "Megnyitás a VR Galleryben" left a cut "5"); a photo's count is in the line under it (the
+        // viewer's own buttons fill the bar)
+        string cnt = grid && _ph is { Recent.Count: > 0 } a ? GalCountText(a.Recent.Count) : null;
         float room = close.X - 6 - cx, need = cnt != null ? MathF.Min(_ui.Width95(cnt), 70) + 12 : 0;
         string gl = OpenGallery;
         if (_ui.Width95(gl) + 30 > room - need) gl = Lang.Short(OpenGallery) ?? "VR Gallery";
@@ -156,8 +183,7 @@ public sealed partial class WristPanel
         var pic = PhotoFit(aw, ah, view, true);
         _p.Fill(new RectangleF(pic.X + 2, pic.Y + 2, pic.Width, pic.Height), 0xFFD8D8D8);
         var bmp = PhotoBitmap(p);
-        if (bmp != null) _p.ImagePart(bmp, pic, new RectangleF(0, 0, p.TW, p.TH));
-        else _p.Fill(pic, 0xFFF1EFE2);
+        PhotoImage95(pic, p, bmp, 0xFFF1EFE2, false);       // (whole or zoomed: WristGallery.cs)
         PhotoFlash95(pic);
         // Delete asking or answering: its words in the line under the photo
         if (ds != null)
@@ -165,12 +191,14 @@ public sealed partial class WristPanel
             _ui.Text95(PhotoCut(Lang.T(ds), iw, Ui.F95, FontWeight.Normal, null, 1), new RectangleF(body.X + 8, iy, iw, 13), _delNoteBad || DeleteArmed(p) ? 0xFFC00000 : 0xFF000000);
             return;
         }
-        // when at the right; the world and the people in what is left
+        // when at the right, which one before it; the world and the people in what is left
         float ww = MathF.Min(_ui.Width95(words.When), 100);
         _ui.Text95(PhotoCut(words.When, 100, Ui.F95, FontWeight.Normal, null, 1), new RectangleF(body.Right - 8 - ww - 1, iy, ww + 2, 13), XpGrey, false,
             TextAlignment.Trailing);
-        float lw = iw - ww - 12;
-        string where = p.World != null ? PhotoCut(p.World, lw, Ui.F95, FontWeight.Normal, null, 1) : null;
+        float cw = MathF.Min(_ui.Width95(words.Count), 60), cr = body.Right - 8 - ww - 14;
+        _ui.Text95(PhotoCut(words.Count, 60, Ui.F95, FontWeight.Normal, null, 1), new RectangleF(cr - cw - 1, iy, cw + 2, 13), XpGrey, false, TextAlignment.Trailing);
+        float lw = iw - ww - 14 - cw - 12, wm = p.Players.Length > 0 && lw - 76 >= 40 ? lw - 76 : lw;      // (a long world leaves the people a little)
+        string where = p.World != null ? PhotoCut(p.World, wm, Ui.F95, FontWeight.Normal, null, 1) : null;
         float wl = where != null ? _ui.Width95(where) : 0, px = body.X + 8 + (where != null ? wl + 12 : 0), pr = lw - (where != null ? wl + 12 : 0);
         if (where != null) _ui.Text95(where, new RectangleF(body.X + 8, iy, wl + 2, 13), 0xFF000000);
         GalTapWorld("wphworld", new RectangleF(body.X + 8, iy, wl + 2, 14), p, 0xFF000000);
@@ -182,16 +210,22 @@ public sealed partial class WristPanel
         }
     }
 
-    // a toolbar button with only its picture (Delete's red X, the thumbnails' four squares): flat, XP's hot button under the pointer;
-    // down: held in (the grid shown, Delete asking)
-    bool XpGlyphTool(string id, RectangleF r, string[] glyph, uint ink, bool enabled, bool down)
+    // a toolbar button with only its picture (Delete's red X, the thumbnails' four squares, the slideshow's screen, the magnifiers, the
+    // envelope): flat, XP's hot button under the pointer; down: held in (the grid shown, Delete or Send asking, the slideshow playing).
+    // fill: the picture's colour under its outline (the screen's picture, the lens's glass, the envelope's paper)
+    bool XpGlyphTool(string id, RectangleF r, string[] glyph, uint ink, bool enabled, bool down, string[] fill = null, uint fillInk = 0)
     {
         bool click = _ui.Clickable(id, r, out bool hover, out bool held) && enabled;
         if ((hover || held || down) && enabled) Theme.RetroSkin.ButtonFace(_p, r, false, held || down, false, true);
         float o = (held || down) && enabled ? 1 : 0;
-        _p.Pixels(glyph, MathF.Floor(r.X + (r.Width - 7) / 2) + o, MathF.Floor(r.Y + (r.Height - 7) / 2) + o, enabled ? ink : 0xFFACA899);
+        float gx = MathF.Floor(r.X + (r.Width - glyph[0].Length) / 2) + o, gy = MathF.Floor(r.Y + (r.Height - glyph.Length) / 2) + o;
+        if (fill != null) _p.Pixels(fill, gx, gy, enabled ? fillInk : 0xFFE6E4DA);
+        _p.Pixels(glyph, gx, gy, enabled ? ink : 0xFFACA899);
         return click;
     }
+
+    // the line between the toolbar's groups
+    void XpSep(float x, float by) => _p.Fill(new RectangleF(x, by + 2, 1, 18), XpViewerBar);
 
     // a toolbar button of the viewer: flat; under the pointer XP's hot button, pressed its sunken one
     bool XpTool(string id, RectangleF r, string label, bool icon, bool enabled)

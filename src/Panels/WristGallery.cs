@@ -59,7 +59,8 @@ public sealed partial class WristPanel
     public bool DeleteArmedShown => _delArmed != null && Clock.Now - _delArmAt <= DelArmLen;
 
     // the opened view's set: the album's while the gallery is open, else its widget's
-    SetScope UseOpenSet() => new(this, _gal ? _album : DetailIs("memory") ? _memory : _latest);
+    PhotoSet OpenSet => _gal ? _album : DetailIs("memory") ? _memory : _latest;
+    SetScope UseOpenSet() => new(this, OpenSet);
 
     void GalleryReset()
     {
@@ -67,7 +68,7 @@ public sealed partial class WristPanel
         _galFav = false;
         _galWorld = _galPerson = null;
         _galPeople = null;
-        _galShow = _galZoom = false;
+        _galShow = _galZoom = _zoomTool = false;
         _galAnchor = null;
         _delArmed = null;
         FromNewest(_album);
@@ -78,6 +79,7 @@ public sealed partial class WristPanel
     {
         _delArmed = null;
         _dirty = true;
+        if (_galShow) ShowStop();                   // (a retro viewer's Gallery while the slideshow plays: it ends)
         if (_gal && _galGrid)
         {
             if (_galPicked) _galGrid = false;
@@ -115,6 +117,7 @@ public sealed partial class WristPanel
             if (cv != _galCellsSeen) { _galCellsSeen = cv; ch |= _galGrid; }
         }
         double now = Clock.Now;
+        if (_galShow && (_open == null || _closing || !(DetailIs("photo") || DetailIs("memory")))) _galShow = false;     // (closed while it played: it ends)
         if (_galShow && now - _galShowAt >= SlideSeconds) ch = true;           // the slideshow's next slide
         if (!ReferenceEquals(Hi, _hiSeen)) { _hiSeen = Hi; ch |= _galZoom; }   // the zoom's sharp copy came
         if (_sendDone || (_sendArmed != null && now - _sendArmAt > DelArmLen)) ch = true;
@@ -314,6 +317,7 @@ public sealed partial class WristPanel
     {
         if (p == null || _delBusy != null) return;
         _dirty = true;
+        if (_galShow) ShowStop();                   // (a retro viewer's Delete while the slideshow plays: it ends on that photo)
         if (!DeleteArmed(p)) { _delArmed = p.Path; _delArmAt = Clock.Now; _delNote = null; return; }
         _delArmed = null;
         _delBusy = p.Path;
@@ -1021,6 +1025,7 @@ public sealed partial class WristPanel
     {
         if (p == null || _sendBusy) return;
         _dirty = true;
+        if (_galShow) ShowStop();
         if (!SendArmed(p)) { _sendArmed = p.Path; _sendArmAt = Clock.Now; _delNote = null; return; }
         _sendArmed = null;
         _sendBusy = true;
@@ -1045,7 +1050,9 @@ public sealed partial class WristPanel
     }
 
     // ---- the slideshow (VR Gallery's Play): from the photo shown, the next older one every SlideSeconds (VR Gallery's own setting),
-    // each fading in; Stop, a tap on the photo, an arrow or the stick end it, as the last photo does ----
+    // each fading in; Stop, a tap on the photo, an arrow or the stick end it, as the last photo does. The retro viewers have theirs (Erik
+    // 10-24, "mehet mind"): XP's Start Slide Show, 7's big blue Play (Pause while it plays), the Mac's projection screen - held in while
+    // it plays, a slide cutting in; 95 Imaging had none, the Terminal has no key for one (its keys are full) ----
 
     public volatile int SlideSeconds = 4;            // the app: VR Gallery's slideshow_secs
     bool _galShow;
@@ -1055,10 +1062,11 @@ public sealed partial class WristPanel
     void ShowStart() { (_galShow, _galShowAt, _galSlideAt, _galZoom) = (true, Clock.Now, Clock.Now, false); _delArmed = _sendArmed = null; _dirty = true; }
     void ShowStop() { _galShow = false; _dirty = true; }
 
-    // in the opened view's set (after PhotoFrame): the next slide when it is due
+    // in the opened view's set (PhotoFrame's, once a frame - so every style's viewer has it): the next slide when it is due; not under
+    // the gallery's grid
     void ShowTick()
     {
-        if (!_galShow) return;
+        if (!_galShow || (_gal && _galGrid)) return;
         double now = Clock.Now;
         if (now - _galShowAt < SlideSeconds) return;
         if (_phIndex >= PhotoCount - 1) { ShowStop(); return; }
@@ -1069,9 +1077,11 @@ public sealed partial class WristPanel
         _dirty = true;
     }
 
-    // ---- the zoom (modern, Cyber): a tap on the photo - 2.2 x there, from a sharp copy of it (the app reads it at 1600 px: the
-    // shell's big thumbnail, else the file; the watch's 640 px one until it comes); a drag moves round it; a tap again - whole. The
-    // photo's controls stay over it; its words and arrows give way meanwhile ----
+    // ---- the zoom: a tap on the photo - 2.2 x there, from a sharp copy of it (the app reads it at 1600 px: the shell's big thumbnail,
+    // else the file; the watch's 640 px one until it comes); a drag moves round it; a tap again - whole. The photo's controls stay over
+    // it; its words and arrows give way meanwhile (modern, Cyber). The retro viewers zoom their own way, the photo zoomed in its frame
+    // and a drag moving round it all the same: 95 Imaging's Zoom menu word a switch (on: a tap on the photo zooms in there, again
+    // whole), XP's Zoom In and Zoom Out, 7's "Change the display size" magnifier and the Mac's (in while zoomed) ----
 
     public sealed class HiPicture { public string Path; public uint[] Px; public int W, H; }
     public Action<string> OnWantHi;                  // the app: the photo at 1600 px, on a thread; then Hi
@@ -1080,21 +1090,44 @@ public sealed partial class WristPanel
     ID2D1Bitmap _hiBmp;
     uint[] _hiBmpPx;
     bool _galZoom, _zoomHeld, _zoomDrag;
+    bool _zoomTool;                                  // 95 Imaging's Zoom switched on: a tap on the photo zooms
     Vector2 _zoomAt = new(0.5f, 0.5f), _zoomPress, _zoomFrom;
     string _zoomPath;
     const float ZoomK = 2.2f;
     public bool GalleryZoomShown => _galZoom;
+    public bool ZoomToolShown => _zoomTool;          // --snapshot
 
     // the photo in its box: whole, faded in as a slide comes, or zoomed; a tap / drag on it (registered before the controls over it)
     void PhotoImage(RectangleF box, PhotoWatcher.Photo p, ID2D1Bitmap bmp, uint fill)
     {
+        PhotoZoomInput(box, p, "wphzoom", true);
+        if (bmp == null) { _p.Fill(box, fill); _p.Icon(PhotoKindIcon, box, Theme.Cyber ? CyberHud.Faint : Bento.Faint, 40); return; }
+        float fade = _galShow ? (float)Math.Clamp((Clock.Now - _galSlideAt) / 0.35, 0, 1) : 1;
+        if (fade < 1) { _ui.Animating = true; _p.Fill(box, fill); _p.PushFade(fade); }
+        PhotoZoomDraw(box, p, bmp);
+        if (fade < 1) _p.PopFade();
+    }
+
+    // a retro viewer's photo where it shows whole (pic): whole or zoomed, a slide cutting in (the era's viewers did not fade); tapZooms:
+    // a tap on it zooms in there and out again (95's Zoom on), else its buttons do (ZoomIn, ZoomOut) and a tap only ends the slideshow
+    void PhotoImage95(RectangleF pic, PhotoWatcher.Photo p, ID2D1Bitmap bmp, uint empty, bool tapZooms)
+    {
+        PhotoZoomInput(pic, p, tapZooms ? "wphzoom" : "wphpic", tapZooms);
+        if (bmp != null) PhotoZoomDraw(pic, p, bmp);
+        else _p.Fill(pic, empty);
+    }
+
+    // the tap and the drag on the photo: held and moved while zoomed - round it; a tap - the slideshow ends, else (tapZooms) zoomed in
+    // there, or whole again
+    void PhotoZoomInput(RectangleF box, PhotoWatcher.Photo p, string id, bool tapZooms)
+    {
         if (_zoomPath != p.Path) { _galZoom = false; _zoomPath = p.Path; }
-        bool tap = _ui.Clickable("wphzoom", box, out _, out bool held) && !_ui.Inert;
+        bool tap = _ui.Clickable(id, box, out _, out bool held) && !_ui.Inert;
         var m = _ui.Mouse;
         if (held && !_zoomHeld) (_zoomHeld, _zoomDrag, _zoomPress, _zoomFrom) = (true, false, m, _zoomAt);
         else if (held && _galZoom)
         {
-            if (!_zoomDrag && Vector2.Distance(m, _zoomPress) > 8) _zoomDrag = true;
+            if (!_zoomDrag && Vector2.Distance(m, _zoomPress) > (Theme.Classic ? 4 : 8)) _zoomDrag = true;      // (a retro canvas: half the px)
             if (_zoomDrag)
             {
                 var dd = (m - _zoomPress) / new Vector2(box.Width * ZoomK, box.Height * ZoomK);
@@ -1103,38 +1136,44 @@ public sealed partial class WristPanel
             }
         }
         if (!held) _zoomHeld = false;
-        if (tap && !_zoomDrag)
+        if (!tap || _zoomDrag) return;
+        if (_galShow) ShowStop();
+        else if (!tapZooms) return;
+        else if (_galZoom) _galZoom = false;
+        else ZoomIn(p, new Vector2((m.X - box.X) / box.Width, (m.Y - box.Y) / box.Height));
+        _dirty = true;
+    }
+
+    // zoomed in at 'at' (0..1 across the photo), its sharp copy asked for; ZoomOut: whole again
+    void ZoomIn(PhotoWatcher.Photo p, Vector2 at)
+    {
+        if (p == null) return;
+        if (_galShow) ShowStop();
+        (_galZoom, _zoomPath) = (true, p.Path);
+        _zoomAt = Vector2.Clamp(at, new Vector2(0.5f / ZoomK), new Vector2(1 - 0.5f / ZoomK));
+        if (Hi?.Path != p.Path) OnWantHi?.Invoke(p.Path);
+        _dirty = true;
+    }
+
+    void ZoomOut() { _galZoom = false; _dirty = true; }
+
+    // 95's Zoom switched on or off (off: the photo whole again)
+    void ZoomTool(bool on) { _zoomTool = on; if (!on) _galZoom = false; _dirty = true; }
+
+    // the photo whole, or the part zoomed in on - from the sharp copy when it is this photo's, else the watch's own
+    void PhotoZoomDraw(RectangleF box, PhotoWatcher.Photo p, ID2D1Bitmap bmp)
+    {
+        if (!_galZoom) { _p.ImagePart(bmp, box, new RectangleF(0, 0, p.TW, p.TH)); return; }
+        var hi = Hi;
+        float W = p.TW, H = p.TH;
+        var b = bmp;
+        if (hi != null && hi.Path == p.Path && hi.Px != null)
         {
-            if (_galShow) ShowStop();
-            else if (_galZoom) _galZoom = false;
-            else
-            {
-                _galZoom = true;
-                var at = new Vector2((m.X - box.X) / box.Width, (m.Y - box.Y) / box.Height);
-                _zoomAt = Vector2.Clamp(at, new Vector2(0.5f / ZoomK), new Vector2(1 - 0.5f / ZoomK));
-                if (Hi?.Path != p.Path) OnWantHi?.Invoke(p.Path);
-            }
-            _dirty = true;
+            if (!ReferenceEquals(_hiBmpPx, hi.Px)) { _hiBmp?.Dispose(); _hiBmp = _p.CreateBitmap(hi.Px, hi.W, hi.H); _hiBmpPx = hi.Px; }
+            (b, W, H) = (_hiBmp, hi.W, hi.H);
         }
-        if (bmp == null) { _p.Fill(box, fill); _p.Icon(PhotoKindIcon, box, Theme.Cyber ? CyberHud.Faint : Bento.Faint, 40); return; }
-        float fade = _galShow ? (float)Math.Clamp((Clock.Now - _galSlideAt) / 0.35, 0, 1) : 1;
-        if (fade < 1) { _ui.Animating = true; _p.Fill(box, fill); _p.PushFade(fade); }
-        if (!_galZoom) _p.ImagePart(bmp, box, new RectangleF(0, 0, p.TW, p.TH));
-        else
-        {
-            // the sharp copy when it is this photo's, else the watch's own
-            var hi = Hi;
-            float W = p.TW, H = p.TH;
-            var b = bmp;
-            if (hi != null && hi.Path == p.Path && hi.Px != null)
-            {
-                if (!ReferenceEquals(_hiBmpPx, hi.Px)) { _hiBmp?.Dispose(); _hiBmp = _p.CreateBitmap(hi.Px, hi.W, hi.H); _hiBmpPx = hi.Px; }
-                (b, W, H) = (_hiBmp, hi.W, hi.H);
-            }
-            float sw = W / ZoomK, sh = H / ZoomK;
-            _p.ImagePart(b, box, new RectangleF(Math.Clamp(_zoomAt.X * W - sw / 2, 0, W - sw), Math.Clamp(_zoomAt.Y * H - sh / 2, 0, H - sh), sw, sh));
-        }
-        if (fade < 1) _p.PopFade();
+        float sw = W / ZoomK, sh = H / ZoomK;
+        _p.ImagePart(b, box, new RectangleF(Math.Clamp(_zoomAt.X * W - sw / 2, 0, W - sw), Math.Clamp(_zoomAt.Y * H - sh / 2, 0, H - sh), sw, sh));
     }
 
     void ZoomDispose() { _hiBmp?.Dispose(); _hiBmp = null; _hiBmpPx = null; }
@@ -1161,6 +1200,39 @@ public sealed partial class WristPanel
     static readonly string[] Del95 = { "kk...kk", ".kk.kk.", "..kkk..", "..kkk..", ".kk.kk.", "kk...kk", "......." };
     // Open in VR Gallery where not even its short name fits: a little window (the toolbars' "open" picture)
     static readonly string[] OpenWin95 = { "kkkkkkk", "kkkkkkk", "k.....k", "k.....k", "k.....k", "k.....k", "kkkkkkk" };
+    // Send: an envelope (the era's picture for mail going out); the zoom: a magnifier - XP's Zoom In / Zoom Out with a + / - in its lens;
+    // the slideshow: a projection screen on its stand (XP's Start Slide Show). The *Fill maps: what XP colours in under them
+    static readonly string[] Mail95 = { "kkkkkkkkk", "kk.....kk", "k.k...k.k", "k..k.k..k", "k...k...k", "k.......k", "kkkkkkkkk" };
+    static readonly string[] MailFill = { ".........", "..kkkkk..", ".k.kkk.k.", ".kk.k.kk.", ".kkk.kkk.", ".kkkkkkk." };
+    static readonly string[] Lens95 = { "..kkk.....", ".k...k....", "k.....k...", "k.....k...", "k.....k...", ".k...k....", "..kkk.kk..", ".......kk.", "........kk" };
+    static readonly string[] LensIn95 = { "..kkk.....", ".k...k....", "k..k..k...", "k.kkk.k...", "k..k..k...", ".k...k....", "..kkk.kk..", ".......kk.", "........kk" };
+    static readonly string[] LensOut95 = { "..kkk.....", ".k...k....", "k.....k...", "k.kkk.k...", "k.....k...", ".k...k....", "..kkk.kk..", ".......kk.", "........kk" };
+    static readonly string[] LensFill = { "..........", "..kkk.....", ".kkkkk....", ".kkkkk....", ".kkkkk....", "..kkk....." };
+    static readonly string[] Screen95 = { "kkkkkkkkkkk", ".k.......k.", ".k.......k.", ".k.......k.", ".k.......k.", ".kkkkkkkkk.", ".....k.....", "....k.k....", "...k...k..." };
+    static readonly string[] ScreenFill = { "...........", "..kkkkkkk..", "..kkkkkkk..", "..kkkkkkk..", "..kkkkkkk.." };
+
+    // a retro push button with its picture that stays in while on (the Mac's magnifier while zoomed, its slideshow while it plays)
+    bool ToggleGlyph95(string id, RectangleF r, string[] glyph, bool enabled, bool on)
+    {
+        bool click = _ui.Clickable(id, r, out bool hover, out bool held) && enabled;
+        Theme.RetroSkin.GlyphButton(_p, r, glyph, enabled, (held || on) && enabled, hover);
+        return click;
+    }
+
+    // a 95 / Mac toolbar's Send (VR Gallery's newest only): the envelope; asking - held down, the envelope in the selection's navy (the
+    // status line says to tap again); sending - greyed
+    void SendButton95(RectangleF r, PhotoWatcher.Photo p)
+    {
+        _sendSeen = true;
+        if (SendArmed(p))
+        {
+            bool click = _ui.Clickable("wphsend", r, out _, out _) && !_sendBusy;
+            Theme.RetroSkin.ButtonFace(_p, r, false, true, false, false);
+            _p.Pixels(Mail95, MathF.Floor(r.X + (r.Width - 9) / 2) + 1, MathF.Floor(r.Y + (r.Height - 7) / 2) + 1, 0xFF000080);
+            if (click) SendTap(p);
+        }
+        else if (_ui.GlyphButton95("wphsend", r, Mail95, !_sendBusy)) SendTap(p);
+    }
 
     // the ask and the note run out (drawn: the frame's own check, as Update's - GalleryChanged - may not have run)
     void DeleteTick()
@@ -1188,9 +1260,10 @@ public sealed partial class WristPanel
         else if (_ui.GlyphButton95("wphdel", dr, Del95, can)) DeleteTap(p);
     }
 
-    // the status line's words while Delete asks or answers (null: the view's own)
+    // the status line's words while Delete or Send asks or answers (null: the view's own)
     string DeleteStatus(PhotoWatcher.Photo p) =>
-        DeleteBusy ? "Deleting..." : DeleteArmed(p) ? "Tap Delete again to move it to the Recycle Bin" : _delNote;
+        DeleteBusy ? "Deleting..." : DeleteArmed(p) ? "Tap Delete again to move it to the Recycle Bin" : _sendBusy ? "Sending..."
+            : SendArmed(p) ? "Tap Send again to send it to Discord" : _delNote;
 
     // ---- the Terminal: "> ls" - the files listed by day, the stick scrolling, a tap opening one ----
 

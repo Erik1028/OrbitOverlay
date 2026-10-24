@@ -102,7 +102,8 @@ public sealed partial class WristPanel
 
     PhotoWatcher.Snapshot SetData(PanelData d) => _set.Album ? GalView(d.Album) : _set.Memory ? d.Memories : d.Photos;
 
-    // once a frame, before the first photo is drawn: the snapshot taken, a new photo popped, the opened view kept on its photo
+    // once a frame, before the first photo is drawn: the snapshot taken, a new photo popped, the opened view kept on its photo - and
+    // its slideshow's next slide when due (here, so every style's viewer has it)
     void PhotoFrame(PanelData d)
     {
         if (_delDone) { _delDone = false; DeleteFinished(); }      // Delete's answer, before the view picks its photo (WristGallery.cs)
@@ -114,6 +115,7 @@ public sealed partial class WristPanel
         var snap = SetData(d);
         if (!ReferenceEquals(snap, _ph)) PhotoTake(snap);
         if (Clock.Now - _phPopAt < PopLen) _ui.Animating = true;
+        if (_galShow && ReferenceEquals(_set, OpenSet)) ShowTick();     // (WristGallery.cs)
     }
 
     void PhotoTake(PhotoWatcher.Snapshot s)
@@ -517,8 +519,7 @@ public sealed partial class WristPanel
     void PhotoDetailBody(RectangleF E, PanelData d)
     {
         using var set = UseOpenSet();
-        PhotoFrame(d);
-        ShowTick();                                 // the slideshow's next slide, when due (WristGallery.cs)
+        PhotoFrame(d);                              // (the slideshow's next slide too, when due)
         if (Theme.Cyber) { CyberPhotoDetail(E, d); return; }
         if (_gal && _galGrid) { GalleryModern(E); return; }         // the gallery's grid (WristGallery.cs)
         var p = PhotoShown();
@@ -892,9 +893,11 @@ public sealed partial class WristPanel
             _ui.Text95(PhotoCut(p.World, c.Width - aw - 14, Ui.F95, FontWeight.Normal, null, 1), new RectangleF(c.X + aw + 10, y, c.Width - aw - 12, 13), Gry95);
     }
 
-    // ---- 95's Imaging: a menu bar, a toolbar (the arrows, which one, Open in VR Gallery, Close), the photo on Imaging's grey, a status bar ----
+    // ---- 95's Imaging: a menu bar (its Zoom the zoom's switch), a toolbar (the arrows, Gallery, Delete, Send, which one, Open in VR
+    // Gallery, Close), the photo on Imaging's grey, a status bar ----
 
     static readonly string[] MenuImaging = { "File", "Edit", "View", "Page", "Zoom", "Help" };
+    const string ZoomHint = "Tap the photo to zoom in there", ZoomedHint = "Drag to look round it, tap to see it whole";
     readonly Dictionary<string, float> _menuKeys = new();
     int _menuKeysLang = -1, _menuKeysTheme = -1;
 
@@ -904,6 +907,15 @@ public sealed partial class WristPanel
         if (_menuKeysLang != Lang.Version || _menuKeysTheme != Theme.Version) { _menuKeys.Clear(); _menuKeysLang = Lang.Version; _menuKeysTheme = Theme.Version; }
         if (!_menuKeys.TryGetValue(m, out float w)) _menuKeys[m] = w = _ui.Width95(Lang.T(m)[..1]);
         return w;
+    }
+
+    // a menu title pressed in (95's open menu): a shadow line over and left of it, a white one under and right
+    void MenuPushed95(RectangleF r)
+    {
+        _p.Fill(new RectangleF(r.X, r.Y, r.Width, 1), Gry95);
+        _p.Fill(new RectangleF(r.X, r.Y, 1, r.Height), Gry95);
+        _p.Fill(new RectangleF(r.X, r.Bottom - 1, r.Width, 1), Wht95);
+        _p.Fill(new RectangleF(r.Right - 1, r.Y, 1, r.Height), Wht95);
     }
 
     void Photo95Detail(RectangleF win, PanelData d, WatchWidgets.Kind k)
@@ -929,16 +941,23 @@ public sealed partial class WristPanel
             : p == null ? k.Title95 : PhotoCut(PhotoCaption(words, "Imaging - {0}"), win.Width - 6 - 44, Ui.F95, FontWeight.Bold, null, 1);
         _ui.Caption95(new RectangleF(win.X + 3, win.Y + 3, win.Width - 6, 18), title);
         if (_ui.CaptionClose95("wd95x", win.Right - 5 - 16, win.Y + 5, true, 6)) { CloseDetail(); return; }
-        // the menu bar (the window's own words: not menus that open here)
+        // the menu bar (the window's own words: not menus that open here) - but Zoom, over a photo: the zoom's switch (Erik 10-24, "mehet
+        // mind"; Imaging zoomed). On, it stays pressed in as 95's open menu title did, and a tap on the photo zooms in there (WristGallery.cs)
         float mx = win.X + 6, my = win.Y + 23;
         foreach (var m in MenuImaging)
         {
-            float mw = _ui.Width95(m);
-            _ui.Text95(m, new RectangleF(mx, my, mw + 2, 15), Blk95);
-            _p.Fill(new RectangleF(mx, my + 12, MenuKey(m), 1), Blk95);       // its access key, underlined
+            float mw = _ui.Width95(m), o = 0;
+            if (m == "Zoom" && !grid && p != null)
+            {
+                var mr = new RectangleF(mx - 3, my - 1, mw + 7, 16);
+                if (_ui.Clickable("wph95zoom", mr, out _, out _) && !_ui.Inert) ZoomTool(!_zoomTool);
+                if (_zoomTool) { MenuPushed95(mr); o = 1; }
+            }
+            _ui.Text95(m, new RectangleF(mx + o, my + o, mw + 2, 15), Blk95);
+            _p.Fill(new RectangleF(mx + o, my + 12 + o, MenuKey(m), 1), Blk95);       // its access key, underlined
             mx += mw + 12;
         }
-        // the toolbar: the arrows, Gallery and Delete, which one; Open in VR Gallery (its short name where the whole does not fit), Close
+        // the toolbar: the arrows, Gallery and Delete, Send, which one; Open in VR Gallery (its short name where the whole does not fit), Close
         float ty = win.Y + 40;
         _p.EtchedLine(win.X + 3, win.Right - 3, ty - 2);
         int n = PhotoCount;
@@ -953,6 +972,8 @@ public sealed partial class WristPanel
         }
         ActionButtons95(win.X + 63, ty + 1, 26, 22, p);
         float cx = win.X + 63 + 53 + 6;
+        // Send (VR Gallery's newest only): an envelope after Delete; which one and Open in VR Gallery make room for it as they do
+        if (!grid && CanSend(p)) { SendButton95(new RectangleF(win.X + 63 + 53 + 1, ty + 1, 26, 22), p); cx += 27; }
         var close = new RectangleF(win.Right - 6 - 56, ty + 1, 56, 22);
         string cnt = grid ? (_ph is { Recent.Count: > 0 } a ? GalCountText(a.Recent.Count) : null) : p != null ? words.Count : null;
         float room = close.X - 4 - (cx + (cnt != null ? MathF.Min(_ui.Width95(cnt), 60) + 6 : 0));
@@ -983,13 +1004,14 @@ public sealed partial class WristPanel
             var pic = PhotoFit(aw, ah, inner, true);
             var bmp = PhotoBitmap(p);
             _p.Fill(new RectangleF(pic.X + 2, pic.Y + 2, pic.Width, pic.Height), Blk95);      // a page's shadow
-            if (bmp != null) _p.ImagePart(bmp, pic, new RectangleF(0, 0, p.TW, p.TH));
-            else _p.Fill(pic, Wht95);
+            PhotoImage95(pic, p, bmp, Wht95, _zoomTool);    // (whole or zoomed; Zoom on: a tap zooms - WristGallery.cs)
             PhotoFlash95(pic);
         }
         // the status bar: when, the world, the people (Delete asking or answering: its words)
         if (ds != null) { _ui.Pane95(st, PhotoCut(Lang.T(ds), st.Width - 8, Ui.F95, FontWeight.Normal, null, 1)); return; }
         if (p == null) { _ui.Pane95(st, ""); return; }
+        // Zoom on: what a tap does (the era's status bar helped with the tool picked)
+        if (_zoomTool) { _ui.Pane95(st, PhotoCut(Lang.T(_galZoom ? ZoomedHint : ZoomHint), st.Width - 8, Ui.F95, FontWeight.Normal, null, 1)); return; }
         float w1 = MathF.Ceiling(MathF.Min(_ui.Width95(words.When) + 10, st.Width * 0.34f)), w2 = MathF.Floor((st.Width - w1 - 4) * 0.5f);
         _ui.Pane95(new RectangleF(st.X, st.Y, w1, st.Height), PhotoCut(words.When, w1 - 8, Ui.F95, FontWeight.Normal, null, 1));
         _ui.Pane95(new RectangleF(st.X + w1 + 2, st.Y, w2, st.Height), PhotoCut(p.World ?? Lang.T("World not known"), w2 - 8, Ui.F95, FontWeight.Normal, null, 1));

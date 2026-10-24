@@ -1,13 +1,15 @@
 using System;
 using System.Drawing;
+using System.Numerics;
 using Vortice.DirectWrite;
 
 namespace Orbit;
 
 // The latest photo on the Mac (WristPhoto.cs has the rest): the widget a little Scrapbook window - the photo in its white well, how
 // long ago and the world in Chicago under it (the shared 95 widget in the Platinum skin); opened, a Platinum document window
-// with the photo's name in its striped title bar, the photo whole in a white well, where and when under it, and Platinum buttons:
-// the arrows, Open in VR Gallery, OK.
+// with the photo's name in its striped title bar, the photo whole in a white well, where and when (and which one) under it, and
+// Platinum buttons: the arrows, the gallery and Delete, the zoom (a magnifier), the slideshow (a projection screen), Send (an
+// envelope), Open in VR Gallery, OK.
 public sealed partial class WristPanel
 {
     void PhotoWidgetMac(RectangleF r, WatchWidget w, PanelData d, int id)
@@ -39,27 +41,48 @@ public sealed partial class WristPanel
         _mCloseBtn = new RectangleF(MacSkin.CloseX(win), MacSkin.BoxY(win), 16, 14);
         if (_ui.CaptionClose95("wd95x", MacSkin.CloseX(win), MacSkin.BoxY(win), true, 6)) { CloseDetail(); return; }
         var c = new RectangleF(win.X + 8, win.Y + 28, win.Width - 16, win.Height - 28 - 36);
-        // the buttons along the bottom: the arrows, Gallery and Delete, which one, Open in VR Gallery, OK
+        // the buttons along the bottom: the arrows, Gallery and Delete, the zoom (the magnifier, in while zoomed: PictureViewer's Normal /
+        // Double Size) and the slideshow (a projection screen, in while it plays - Erik 10-24, "mehet mind"), Send (an envelope: VR
+        // Gallery's newest only), Open in VR Gallery, OK; which one in the line over them (the grid: Days, Gallery, Favourites, how many)
         float by = win.Bottom - 8 - 23;
         int n = PhotoCount;
+        const float bw = 26;
         if (grid)
         {
-            if (_ui.Button95("wgdays", new RectangleF(c.X, by, 60, 23), "Days", true, false, C.GalleryDays)) GalSetDays(!C.GalleryDays);
+            if (_ui.Button95("wgdays", new RectangleF(c.X, by, 55, 23), "Days", true, false, C.GalleryDays)) GalSetDays(!C.GalleryDays);
         }
         else
         {
-            if (_ui.GlyphButton95("wph95p", new RectangleF(c.X, by, 28, 23), PhPrev95, _phIndex < n - 1)) PhotoStep(1);
-            if (_ui.GlyphButton95("wph95n", new RectangleF(c.X + 32, by, 28, 23), PhNext95, _phIndex > 0)) PhotoStep(-1);
+            if (_ui.GlyphButton95("wph95p", new RectangleF(c.X, by, bw, 23), PhPrev95, _phIndex < n - 1)) PhotoStep(1);
+            if (_ui.GlyphButton95("wph95n", new RectangleF(c.X + 29, by, bw, 23), PhNext95, _phIndex > 0)) PhotoStep(-1);
         }
-        ActionButtons95(c.X + 64, by, 28, 23, p);
-        float cx = c.X + 64 + 57 + 6;
+        ActionButtons95(c.X + 59, by, bw, 23, p);
+        float cx = c.X + 59 + 2 * bw + 1 + 6;
+        if (!grid)
+        {
+            if (ToggleGlyph95("wphzoom", new RectangleF(c.X + 116, by, bw, 23), Lens95, p != null, _galZoom))
+            {
+                if (_galZoom) ZoomOut(); else ZoomIn(p, new Vector2(0.5f, 0.5f));
+            }
+            bool show = _galShow;
+            if (ToggleGlyph95(show ? "wphstop" : "wphplay", new RectangleF(c.X + 116 + bw + 1, by, bw, 23), Screen95, show || _phIndex < n - 1, show))
+            {
+                if (show) ShowStop(); else ShowStart();
+            }
+            cx = c.X + 116 + 2 * bw + 1 + 6;
+            if (CanSend(p))
+            {
+                SendButton95(new RectangleF(c.X + 116 + 2 * bw + 5, by, bw, 23), p);
+                cx += bw + 4;
+            }
+        }
         var ok = new RectangleF(win.Right - 8 - 60, by, 60, 23);
-        string cnt = grid ? (_ph is { Recent.Count: > 0 } a ? GalCountText(a.Recent.Count) : null) : p != null ? words.Count : null;
-        float room = ok.X - 8 - (cx + (cnt != null ? MathF.Min(_ui.Width95(cnt), 60) + 6 : 0));
+        string cnt = grid && _ph is { Recent.Count: > 0 } a ? GalCountText(a.Recent.Count) : null;
+        float room = ok.X - 6 - (cx + (cnt != null ? MathF.Min(_ui.Width95(cnt), 60) + 6 : 0));
         string gl = _ui.Width95(OpenGallery) + 20 <= room ? OpenGallery : Lang.Short(OpenGallery) ?? "VR Gallery";
         bool glyph = _ui.Width95(gl) + 20 > room;            // (not even the short name: the button's picture alone)
-        float gw = glyph ? 28 : _ui.Width95(gl) + 20;
-        var gal = new RectangleF(ok.X - 8 - gw, by, gw, 23);
+        float gw = glyph ? bw : _ui.Width95(gl) + 20;
+        var gal = new RectangleF(ok.X - 6 - gw, by, gw, 23);
         if (cnt != null) _ui.Text95(PhotoCut(cnt, gal.X - 6 - cx, Ui.F95, FontWeight.Normal, null, 1), new RectangleF(cx, by + 5, gal.X - 6 - cx, 13), MacBlack);
         if (glyph ? _ui.GlyphButton95("wphgal", gal, OpenWin95, p != null) : _ui.Button95("wphgal", gal, gl, p != null)) PhotoOpen(p);
         if (_ui.Button95("wd95ok", ok, "OK", true, true)) { CloseDetail(); return; }
@@ -90,15 +113,17 @@ public sealed partial class WristPanel
         var (aw, ah) = PhotoAspect(p);
         var pic = PhotoFit(aw, ah, inner, true);
         var bmp = PhotoBitmap(p);
-        if (bmp != null) _p.ImagePart(bmp, pic, new RectangleF(0, 0, p.TW, p.TH));
-        else _p.Fill(pic, 0xFFDDDDDD);
+        PhotoImage95(pic, p, bmp, 0xFFDDDDDD, false);       // (whole or zoomed: WristGallery.cs)
         _p.Stroke(new RectangleF(pic.X - 0.5f, pic.Y - 0.5f, pic.Width + 1, pic.Height + 1), MacBlack, 1);
         PhotoFlash95(pic);
         if (ds != null) return;
+        // when at the right, which one before it; the world and the people in what is left
         float ww = MathF.Min(_ui.Width95(words.When), 100);
         _ui.Text95(PhotoCut(words.When, 100, Ui.F95, FontWeight.Normal, null, 1), new RectangleF(c.Right - ww - 1, iy, ww + 2, 13), Gry95, false, TextAlignment.Trailing);
-        float lw = c.Width - ww - 10;
-        string where = p.World != null ? PhotoCut(p.World, lw, Ui.F95, FontWeight.Bold, null, 1) : null;
+        float cw = MathF.Min(_ui.Width95(words.Count), 60), cr = c.Right - ww - 14;
+        _ui.Text95(PhotoCut(words.Count, 60, Ui.F95, FontWeight.Normal, null, 1), new RectangleF(cr - cw - 1, iy, cw + 2, 13), Gry95, false, TextAlignment.Trailing);
+        float lw = c.Width - ww - 14 - cw - 10, wm = p.Players.Length > 0 && lw - 76 >= 40 ? lw - 76 : lw;     // (a long world leaves the people a little)
+        string where = p.World != null ? PhotoCut(p.World, wm, Ui.F95, FontWeight.Bold, null, 1) : null;
         float wl = where != null ? _ui.Width95(where, true) : 0;
         if (where != null) _ui.Text95(where, new RectangleF(c.X, iy, wl + 2, 13), MacBlack, true);
         GalTapWorld("wphworld", new RectangleF(c.X, iy, wl + 2, 14), p, MacBlack);
