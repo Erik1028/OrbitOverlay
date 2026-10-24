@@ -22,6 +22,9 @@ namespace Orbit;
 // the line under its value), a retro window's default button, the Terminal's lit key - and the opened view lights its Yaw reset with the
 // hint over the buttons (the retro styles: the default button, the hint on the status line; the Terminal: the prompt). A tap on it is the
 // Yaw reset's: the first asks ("Reset?"), the second sends it.
+// More (Erik 10-24; WristSlimeBody.cs): the opened view's Body side (the live figure, the legs' twist, a reset of just some trackers),
+// the mounting guide, the last reset seen ("Yaw reset 12 min ago": the header, Cyber's head, the retro status line, the Terminal's
+// prompt) and each tracker's battery time left ("~2 h left" after its signal; Sys/SlimeBattery.cs).
 public sealed partial class WristPanel
 {
     public const string SlimeKindIcon = "\uE805";           // Segoe's walking figure: the widget in the editor's palette
@@ -35,6 +38,7 @@ public sealed partial class WristPanel
     sealed class SvRow
     {
         public string Name = "", NameUp = "", Short = "", Pct = "", Value = "", Signal = "", Rssi = "", Ping = "", SigLine = "", Status = "";
+        public string Left = "", LeftShort = "";  // its battery's time left ("~2 h left", "~2h"; "": nothing to say)
         public int Battery;                      // % (-1: not told)
         public float Frac, SigFrac;              // 0..1 (-1: not told)
         public StatLevel Lv, SigLv, StLv;        // the battery's, the signal's, the status' level
@@ -142,6 +146,8 @@ public sealed partial class WristPanel
                 r.SigLv = r.SigFrac < 0 || r.SigFrac > 0.4f ? StatLevel.Ok : r.SigFrac > 0.2f ? StatLevel.Warn : StatLevel.Bad;
                 r.Ping = t.Ping >= 0 ? Lang.F("{0} ms", t.Ping) : "";
                 r.SigLine = r.Ping.Length > 0 ? r.Signal + " · " + r.Ping : r.Signal;
+                (r.Left, r.LeftShort) = t.Connected && t.LeftMin > 0 ? SvLeftText(t.LeftMin) : ("", "");
+                if (r.Left.Length > 0) r.SigLine += " · " + r.Left;
                 r.Status = Lang.C("slimevr", StatusName(t.Status));
                 r.StLv = t.Status is SlimeVrLink.Ok or SlimeVrLink.Sleeping ? StatLevel.Ok : t.Status is SlimeVrLink.Busy or SlimeVrLink.Occluded ? StatLevel.Warn : StatLevel.Bad;
                 _svRows.Add(r);
@@ -162,6 +168,18 @@ public sealed partial class WristPanel
         _svCyHead = listed ? _svCy + "  //  SOLARXR" : Upper(_svMsg);
         (_svCyYaw, _svCyLie) = (Upper(Lang.T("Yaw?")), Upper(Lang.T(LieHint)));
         SvTermTexts(culture);                  // the Terminal's lines (WristSlimeVr.Term.cs)
+        SvPartLevels(listed ? s : null);       // each bone's colour on the Body side (WristSlimeBody.cs)
+    }
+
+    // "~2 h left" / "~2h" (the retro list, the Terminal): whole hours from 2 h, halves under, tens of minutes under 1 h, "~5 min"
+    static (string, string) SvLeftText(int min)
+    {
+        if (min >= 60)
+        {
+            double h = min / 60.0;
+            return (Lang.F("~{0} h left", h), Lang.F("~{0}h", h));
+        }
+        return (Lang.F("~{0} min left", min), Lang.F("~{0}m", min));
     }
 
     // which rows fit: all of them, or the emptiest connected ones first (kept in their order). The list is the same one every call (no
@@ -201,42 +219,51 @@ public sealed partial class WristPanel
     // --snapshot's hook: the reset asking now (-1: none)
     public int SlimeArmed => _svArmed >= 0 && Clock.Now - _svArmAt <= SvArmLen ? _svArmed : -1;
 
-    void SvResetTap(int k)
+    // a tap on reset k (g: the trackers - SlimeGroups; view: in the opened view, where the guide can show): the first asks, the second
+    // sends - a reset the server would not take now shows the guide instead of asking (WristSlimeBody.cs)
+    void SvResetTap(int k, PanelData d, int g = SlimeGroups.All, bool view = true)
     {
         _dirty = true;
-        if (!SvArmed(k)) { _svArmed = k; _svArmAt = Clock.Now; return; }
+        if (view && SvGuideTap(k, d)) { _svArmed = -1; return; }
+        if (!SvArmed(k)) { _svArmed = k; _svArmGroup = g; _svArmAt = Clock.Now; return; }
         _svArmed = -1;
-        LastSlimeReset = k;
-        if (OnSlimeReset?.Invoke(k) ?? true) (_svSent, _svSentAt) = (k, Clock.Now);
+        (LastSlimeReset, LastSlimeGroup) = (k, g);
+        bool went = g == SlimeGroups.All ? OnSlimeReset?.Invoke(k) ?? true : OnSlimeResetParts?.Invoke(k, g) ?? true;
+        if (went) (_svSent, _svSentAt) = (k, Clock.Now);
+        if (k == _svNext) _svNext = -1;
     }
 
-    void SvDisarm() => _svArmed = _svSent = -1;
+    void SvDisarm() { _svArmed = _svSent = -1; SvGuideReset(); }
 
     // a reset button now: asking ("Reset?"), the server counting its delay down ("3 s"), done a moment ("Done"), sent and not answered yet
     // ("Sent"), else its name
     (string label, bool asking, bool counting) SvButton(int k, PanelData d, bool retro)
     {
-        if (SvArmed(k)) return (Lang.T(ResetAsk), true, false);
+        if (SvArmed(k)) return (Lang.T(retro ? ResetAsk : SvAskGroup[Math.Clamp(_svArmGroup, 0, SlimeGroups.Count - 1)]), true, false);
         var s = d.SlimeVr;
         double now = Clock.Now;
         if (s != null && s.ResetKind == k && s.ResetAt >= _svSentAt - 30)
         {
             double left = s.ResetLeftMs / 1000.0 - (now - s.ResetAt);
             if (s.ResetState == 0 && left > 0) return (SvSecs((int)Math.Ceiling(left)), false, true);
+            // (the step: no countdown - lit while it runs; a retro label without its access key, as the countdown's)
+            if (s.ResetState == 0 && k == 2 && SvStep(d) && now - s.ResetAt < 20) return (retro ? Ui.Amp(SvResetNames95[2]).text : Lang.T(SvResetNames[2]), false, true);
             if (s.ResetState == 1 && now - s.ResetAt < 2.5) return (Lang.T("Done"), false, false);
         }
         if (_svSent == k && now - _svSentAt < 2.5 && (s == null || s.ResetAt < _svSentAt)) return (Lang.T("Sent"), false, false);
         return (Lang.T(retro ? SvResetNames95[k] : SvResetNames[k]), false, false);
     }
 
-    // "3 s", made once per number and language
+    // "3 s", made once per number and language (the first one of a countdown makes every one down to 0)
     readonly Dictionary<int, string> _svSecs = new();
     int _svSecsLang = -1;
     string SvSecs(int n)
     {
         if (_svSecsLang != Lang.Version) { _svSecs.Clear(); _svSecsLang = Lang.Version; }
-        if (!_svSecs.TryGetValue(n, out var t)) _svSecs[n] = t = Lang.F("{0} s", n);
-        return t;
+        if (!_svSecs.TryGetValue(n, out var t))
+            for (int i = Math.Max(n, 9); i >= 0; i--)
+                if (!_svSecs.ContainsKey(i)) _svSecs[i] = Lang.F("{0} s", i);
+        return _svSecs[n];
     }
 
     bool SvCan(PanelData d) => d.SlimeVr is { State: SlimeVrLink.State.Ok, Dialect: not SolarXr.Dialect.Unknown } && _svRows.Count > 0;
@@ -264,7 +291,7 @@ public sealed partial class WristPanel
         label = SvCut(label, room, ls, FontWeight.SemiBold);      // (kept: Press would cut it on every frame)
         if (Press(Ui.Id("wsvl", id), b, SvIcons[0], label, true, SvCan(d), 20, false, accentFill: !Theme.Cyber && !asking,
                 fill: asking ? Bento.Warn : CyberHud.Cyan))
-            SvResetTap(0);
+            SvResetTap(0, d, view: false);
     }
 
     // a 1x1's line under its value: "Lying? Yaw reset" (shorter where it does not fit) in the accent - a tap opens the view, its Yaw
@@ -417,9 +444,13 @@ public sealed partial class WristPanel
         SvNow(d);
         int n = _svRows.Count;
         bool lie = SvLying(d);
-        float nx = E.X + 24 + _p.MeasureWidth(Lang.T(WatchWidgets.Find("slimevr").Name), 24, FontWeight.SemiBold) + 14, nr = E.Right - 22 - 46 - 14;
-        if (n > 0 && nr - nx > 40) TextAt(SvCut(_svOfN, nr - nx, 19, FontWeight.Normal), nx, E.Y + 45, nr - nx + 2, Sub, 19, FontWeight.Normal);
+        // Trackers | Body left of the X (WristSlimeBody.cs); how many are connected and the last reset after the name
+        float nx = E.X + 24 + _p.MeasureWidth(Lang.T(WatchWidgets.Find("slimevr").Name), 24, FontWeight.SemiBold) + 14, nr = SvTabs(E.Right - 22 - 46 - 14, E.Y + 17) - 14;
+        if (n > 0 && nr - nx > 40) TextAt(SvCut(SvHead(d, nr - nx), nr - nx, 19, FontWeight.Normal), nx, E.Y + 45, nr - nx + 2, Sub, 19, FontWeight.Normal);
         var B = new RectangleF(E.X + 24, E.Bottom - 22 - 56, E.Width - 48, 56);
+        var guide = SvGuideNow(d, out int gk);
+        if (guide != Guide.None) { SvGuideCard(new RectangleF(E.X + 24, E.Y + 78, E.Width - 48, B.Y - 16 - (E.Y + 78)), d, guide, gk); SvButtons(B, d); return; }
+        if (_svBody && n > 0) { SvBody(E, B, d); return; }
         var L = new RectangleF(E.X + 24, E.Y + 78, E.Width - 48, B.Y - 16 - (lie ? 36 : 0) - (E.Y + 78));      // (lying: the hint's line over the buttons)
         if (n == 0) SvEmpty(L, 22);
         else
@@ -484,14 +515,23 @@ public sealed partial class WristPanel
         for (int k = 0; k < 3; k++)
         {
             var (label, asking, counting) = SvButton(k, d, false);
-            bool hi = k == 0 && lie && !asking && !counting;
+            bool hi = ((k == 0 && lie) || SvGuideLit(k, d)) && !asking && !counting;
             var rb = new RectangleF(B.X + k * (bw + gap), B.Y, bw, B.Height);
             // (cut here to what Press has beside its icon - 17 px text - and kept: Press would cut it again on every frame)
             label = SvCut(label, bw - 20 - 8 - 16 - 2, MathF.Min(18, MathF.Max(SmallText, B.Height * 0.3f)), FontWeight.SemiBold);
             if (Press(SvIds[k], rb, SvIcons[k], label, asking || counting || hi, can, 20, false, accentFill: counting || (hi && !Theme.Cyber),
                     fill: hi ? CyberHud.Cyan : Bento.Warn))
-                SvResetTap(k);
+                SvResetTap(k, d);
         }
+    }
+
+    // the header's words: how many are connected and the last reset ("6 of 6 connected · Yaw reset 12 min ago"; shorter: "6/6 · ...")
+    string SvHead(PanelData d, float w)
+    {
+        string last = SvLast(d);
+        if (last == null) return _svOfN;
+        string full = SvJoin(_svOfN, last);
+        return _p.MeasureWidth(full, 19, FontWeight.Normal) <= w ? full : SvJoin(_svCount, last);
     }
 
     // ================= Cyber =================
@@ -595,11 +635,15 @@ public sealed partial class WristPanel
         SvNow(d);
         CyFrame();
         int n = _svRows.Count;
-        float nx = E.X + 24 + CyberHud.TagWidth(_p, Upper(WatchWidgets.Find("slimevr").Name), 18) + 14, nr = E.Right - 22 - 46 - 14;
-        if (nr - nx > 40) CyMono(SvCut(_svCyHead, nr - nx, CyNote, FontWeight.SemiBold, CyberHud.Mono), nx, E.Y + 23 + (26 + CyberHud.CapH(_p, CyNote)) / 2,
+        float nx = E.X + 24 + CyberHud.TagWidth(_p, Upper(WatchWidgets.Find("slimevr").Name), 18) + 14, nr = SvTabs(E.Right - 22 - 46 - 14, E.Y + 17) - 14;
+        string head = n > 0 && SvLast(d, true) is { } last ? SvJoin(_svCy, last, "  //  ") : _svCyHead;
+        if (nr - nx > 40) CyMono(SvCut(head, nr - nx, CyNote, FontWeight.SemiBold, CyberHud.Mono), nx, E.Y + 23 + (26 + CyberHud.CapH(_p, CyNote)) / 2,
             nr - nx, n > 0 ? CyC : CyG);
         bool lie = SvLying(d);
         var B = new RectangleF(E.X + 24, E.Bottom - 22 - 56, E.Width - 48, 56);
+        var guide = SvGuideNow(d, out int gk);
+        if (guide != Guide.None) { SvGuideCard(new RectangleF(E.X + 24, E.Y + 74, E.Width - 48, B.Y - 14 - (E.Y + 74)), d, guide, gk); SvButtons(B, d); return; }
+        if (_svBody && n > 0) { SvBody(E, B, d); return; }
         var L = new RectangleF(E.X + 24, E.Y + 74, E.Width - 48, B.Y - 14 - (lie ? 30 : 0) - (E.Y + 74));
         if (n == 0)
         {
@@ -685,7 +729,7 @@ public sealed partial class WristPanel
             float bh = MathF.Min(23, MathF.Floor(c.Height - 4));
             if (_ui.Button95(Ui.Id("wsvl", id), new RectangleF(c.X + 2, c.Y + 2, c.Width - 4, bh), SvFit95(label, c.Width - 14), SvCan(d), !asking && !counting,
                     asking || counting))
-                SvResetTap(0);
+                SvResetTap(0, d, view: false);
             c = new RectangleF(c.X, c.Y + bh + 4, c.Width, c.Height - bh - 4);
             if (c.Height < 20) return;
         }
@@ -758,19 +802,28 @@ public sealed partial class WristPanel
     {
         SvNow(d);
         int n = _svRows.Count;
-        float sw = c.Right - 75 - 8 - c.X;
+        // the Body button left of OK, pushed in while the window shows the body (the recap's Today; WristSlimeBody.cs); the status line
+        // between them
+        if (_ui.Button95("wsv95body", new RectangleF(c.X, c.Bottom + 5, 75, 23), "Body", n > 0, false, _svBody && n > 0)) SvSetBody(!_svBody);
+        float sx = c.X + 75 + 8, sw = c.Right - 75 - 8 - sx;
         bool lie = SvLying(d);                 // lying: the hint on the status line (bold), Yaw Reset the default button
         if (lie) _svHints++;
-        _ui.Text95(SvFit95(SvStatus95(d), sw, lie && !SvArmed95()), new RectangleF(c.X, c.Bottom + 10, sw, 13), SvArmed95() ? 0xFF800000 : Blk95, lie && !SvArmed95());
+        bool armed = SvArmed95();
+        _ui.Text95(SvFit95(SvFirstFit95(SvStatus95(d), sw, lie && !armed), sw, lie && !armed), new RectangleF(sx, c.Bottom + 10, sw, 13), armed ? 0xFF800000 : Blk95,
+            lie && !armed);
+        var guide = SvGuideNow(d, out int gk);
+        if (_svBody && n > 0 && guide == Guide.None) { SvBody95(c, d); return; }
         // the resets along the bottom of the inside
         bool can = SvCan(d);
         float bw = MathF.Floor((c.Width - 12) / 3), by = c.Bottom - 23;
         for (int k = 0; k < 3; k++)
         {
             var (label, asking, counting) = SvButton(k, d, true);
-            if (_ui.Button95(SvIds[k], new RectangleF(c.X + k * (bw + 6), by, bw, 23), label, can, k == 0 && lie && !asking && !counting, asking || counting))
-                SvResetTap(k);
+            bool hi = ((k == 0 && lie) || SvGuideLit(k, d)) && !asking && !counting;
+            if (_ui.Button95(SvIds[k], new RectangleF(c.X + k * (bw + 6), by, bw, 23), label, can, hi, asking || counting))
+                SvResetTap(k, d);
         }
+        if (guide != Guide.None) { SvGuide95(new RectangleF(c.X, c.Y, c.Width, by - 6 - c.Y), d, guide, gk); return; }
         var box = new RectangleF(c.X, c.Y, c.Width, by - 6 - c.Y);
         if (n == 0)
         {
@@ -809,31 +862,58 @@ public sealed partial class WristPanel
         x += _svCol95C;
         float tw = MathF.Min(r.Right - x - 4, 200);
         if (tw > 8) _ui.Text95(SvFit95(e.Status, tw), new RectangleF(x + 3, r.Y, tw, r.Height), e.StLv == StatLevel.Bad ? 0xFF800000 : ink);
+        // its battery's time left after the status, where it fits whole ("OK  ~2h")
+        if (e.LeftShort.Length > 0 && tw > 8)
+        {
+            float stw = _ui.Width95(Lang.T(e.Status)), lw = _ui.Width95(e.LeftShort);
+            if (stw + 8 + lw <= tw) _ui.Text95(e.LeftShort, new RectangleF(x + 3 + stw + 8, r.Y, lw + 2, r.Height), Gry95);
+        }
     }
 
     bool SvArmed95() => _svArmed >= 0 && Clock.Now - _svArmAt <= SvArmLen;
 
-    // the status line: what is asked ("Click Full Reset again to reset"), counted ("Full reset in 3 s"), else how many are connected
-    string SvStatus95(PanelData d)
+    // the status line: what is asked ("Click Full Reset again to reset" - "... the left leg"), counted ("Full reset in 3 s"), the step
+    // mounting's phase, else (lying) the hint, the last reset ("Yaw reset 12 min ago"), how many are connected - the forms longest first:
+    // the first that fits is shown (SvFirstFit95)
+    string[] SvStatus95(PanelData d)
     {
         if (_svAskLang != Lang.Version) { _svIn95.Clear(); Array.Clear(_svAsk95); _svAskLang = Lang.Version; }
-        if (SvArmed95()) return _svAsk95[_svArmed] ??= Lang.F("Click {0} again to reset", Lang.T(SvResetNames[_svArmed]));
+        if (SvArmed95())
+        {
+            int g = Math.Clamp(_svArmGroup, 0, SlimeGroups.Count - 1), i = _svArmed * SlimeGroups.Count + g;
+            return _svAsk95[i] ??= g == SlimeGroups.All
+                ? new[] { Lang.F(SvClickGroup[g], Lang.T(SvResetNames[_svArmed])), Lang.T("Click again to reset"), Lang.T(SvAskGroup[g]) }
+                : new[] { Lang.F(SvClickGroup[g], Lang.T(SvResetNames[_svArmed])), Lang.T(SvAskGroup[g]) };
+        }
         var s = d.SlimeVr;
         if (s != null && s.ResetKind is >= 0 and <= 2 && s.ResetState == 0)
         {
+            if (s.ResetKind == 2 && SvStep(d)) return SvOne(Lang.T(GuidePhases[Math.Clamp(s.ResetPhase, 0, 4)]));
             int left = (int)Math.Ceiling(s.ResetLeftMs / 1000.0 - (Clock.Now - s.ResetAt));
             if (left > 0)
             {
-                if (!_svIn95.TryGetValue((s.ResetKind, left), out var t)) _svIn95[(s.ResetKind, left)] = t = Lang.F("{0} in {1} s", Lang.T(SvResetNames[s.ResetKind]), left);
-                return t;
+                if (!_svIn95.TryGetValue((s.ResetKind, left), out var t))
+                    for (int i = left; i >= 1; i--)                // (the rest of the countdown with it)
+                        if (!_svIn95.ContainsKey((s.ResetKind, i))) _svIn95[(s.ResetKind, i)] = new[] { Lang.F("{0} in {1} s", Lang.T(SvResetNames[s.ResetKind]), i), SvSecs(i) };
+                return _svIn95[(s.ResetKind, left)];
             }
         }
-        if (SvLying(d)) return Lang.T(LieHint);
-        return _svRows.Count > 0 ? _svOfN : Lang.T(_svMsg ?? "No trackers");
+        if (SvLying(d)) return SvOne(Lang.T(LieHint));
+        if (_svRows.Count > 0 && SvLast(d) is { } last) return SvOne(last);
+        return SvOne(_svRows.Count > 0 ? _svOfN : Lang.T(_svMsg ?? "No trackers"));
     }
 
-    readonly string[] _svAsk95 = new string[3];
-    readonly Dictionary<(int, int), string> _svIn95 = new();
+    // a text (translated) as the status line's one form (kept)
+    readonly Dictionary<string, string[]> _svOnes = new();
+    string[] SvOne(string s)
+    {
+        if (_svOnes.TryGetValue(s, out var a)) return a;
+        if (_svOnes.Count > 128) _svOnes.Clear();
+        return _svOnes[s] = new[] { s };
+    }
+
+    readonly string[][] _svAsk95 = new string[3 * SlimeGroups.Count][];
+    readonly Dictionary<(int, int), string[]> _svIn95 = new();
     int _svAskLang = -1;
 
     // ---- --snapshot's hooks ----

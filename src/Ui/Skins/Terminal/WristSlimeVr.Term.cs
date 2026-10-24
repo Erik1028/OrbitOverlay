@@ -13,6 +13,11 @@ namespace Orbit;
 // server's countdown on the prompt line. Nothing made a frame at rest: the lines are made with the snapshot, the bars' runs once.
 // Lying down (WristSlimeVr.cs): the box's first line a lit key, "LYING? [Y] YAW"; opened, the [Y] YAW key lit with LYING? under it and
 // the hint on the prompt line.
+// The Body side (Erik 10-24; WristSlimeBody.cs): [F1] TRACKERS / [F2] BODY keys on the command's line; `slimevr pose --live` draws the
+// figure as thin vector lines in the tube's ink (faint where no tracker is, bright for trouble) and the legs in columns - BONE, TWIST,
+// SIDE ("L THIGH  +32 OUT  6", bright from 15°); keys for the groups ([A] ALL, [L] LEGS, [<] LEFT, [>] RIGHT, [U] UPPER - lit when
+// picked) over [Y] YAW and [F] FULL. The guide: `slimevr mount --step` (or --pose) with a stick figure of characters, the phase lines
+// and a [######----] bar. The prompt at rest: "> YAW RESET 12 MIN AGO". The tracker list has a LEFT column (its battery's time left).
 public sealed partial class WristPanel
 {
     // the box's first line ("5/6 UP  LOW 23%", shorter "5/6 23%"); the opened view's prompt line at rest; lying: the key's words
@@ -92,7 +97,7 @@ public sealed partial class WristPanel
             _svHints++;
             var (label, asking, counting) = SvButton(0, d, true);
             string key = asking ? Lang.T("SURE?") : !counting && label == Lang.T(SvResetNames95[0]) ? _svTLie : T.Up(label);
-            if (TKey(Ui.Id("wsvl", id), new RectangleF(c.X + 2, c.Y + 1, c.Width - 4, 13), SvTFit(key, c.Width - 8), true, SvCan(d))) SvResetTap(0);
+            if (TKey(Ui.Id("wsvl", id), new RectangleF(c.X + 2, c.Y + 1, c.Width - 4, 13), SvTFit(key, c.Width - 8), true, SvCan(d))) SvResetTap(0, d, view: false);
             c = new RectangleF(c.X, c.Y + 16, c.Width, c.Height - 16);
             if (c.Height < 24) return;
         }
@@ -143,19 +148,34 @@ public sealed partial class WristPanel
         if (_ui.CaptionClose95("wd95x", win.Right - 5 - 16, win.Y + 5, true, 6)) { CloseDetail(); return; }
         var c = new RectangleF(win.X + 8, win.Y + 27, win.Width - 16, win.Height - 27 - 8);
         int n = _svRows.Count;
-        TPut("$ slimevr status", c.X, c.Y, T.MID);
+        var guide = SvGuideNow(d, out int gk);
+        bool body = _svBody && n > 0 && guide == Guide.None;
+        // [F1] TRACKERS / [F2] BODY at the right of the command's line (the command cut short where they leave it no room)
+        float cmdW = c.Width;
+        if (n > 0)
+        {
+            string k2 = SvTFit(Lang.T("[F2] BODY"), 90), k1 = SvTFit(Lang.T("[F1] TRACKERS"), 100);
+            float w2 = T.W(k2) + 8, w1 = T.W(k1) + 8;
+            if (TKey("wsvtab1", new RectangleF(c.Right - w2, c.Y - 3, w2, 13), k2, _svBody)) SvSetBody(true);
+            if (TKey("wsvtab0", new RectangleF(c.Right - w2 - 4 - w1, c.Y - 3, w1, 13), k1, !_svBody)) SvSetBody(false);
+            cmdW = c.Width - w2 - 4 - w1 - 6;
+        }
+        TPut(SvTFit(guide != Guide.None ? SvTGuideCmd(d, guide) : body ? "$ slimevr pose --live" : "$ slimevr status", cmdW), c.X, c.Y, T.MID);
         float y0 = c.Y + 13, keyY = c.Bottom - 22, promptY = keyY - 13;
-        if (n == 0)
+        if (guide != Guide.None) TSvGuide(new RectangleF(c.X, y0, c.Width, promptY - 2 - y0), d, guide, gk);
+        else if (body) { TSlimeBody(c, d); return; }
+        else if (n == 0)
         {
             TPut(SvTFit(T.Up(Lang.T(_svMsg ?? "No trackers")), c.Width), c.X, y0 + 4, T.HOT);
             if (!string.IsNullOrEmpty(_svHint)) TPut(SvTFit(Lang.T(_svHint), c.Width), c.X, y0 + 15, T.DIM);
         }
         else
         {
-            // the columns: TRACKER, BATT (a + after it while charging), RSSI (dBm), PING, STATUS
-            float bx = c.X + MathF.Floor(c.Width * 0.36f), rx = bx + 42, px = rx + 36, sx = px + 42;
+            // the columns: TRACKER, BATT (a + after it while charging), LEFT (its time left), RSSI (dBm), PING, STATUS
+            float bx = c.X + MathF.Floor(c.Width * 0.3f), lx = bx + 40, rx = lx + 32, px = rx + 34, sx = px + 40;
             TPut(T.Up(Lang.T("Tracker")), c.X, y0, T.DIM);
             TPut("BATT", bx, y0, T.DIM);
+            TPut(Lang.C("slimevr", "LEFT"), lx, y0, T.DIM);
             TPut("RSSI", rx, y0, T.DIM);
             TPut("PING", px, y0, T.DIM);
             TPut(T.Up(Lang.T("Status")), sx, y0, T.DIM);
@@ -173,6 +193,7 @@ public sealed partial class WristPanel
                 string v = T.Up(e.Value);
                 TPut(v, bx, y, !e.On ? T.DIM : low ? T.HOT : T.INK);
                 if (e.Charging && e.On) TPut("+", bx + T.W(v) + 1, y, T.HOT);
+                TPut(e.LeftShort.Length > 0 ? SvTFit(T.Up(e.LeftShort), rx - lx - 4) : "-", lx, y, e.LeftShort.Length > 0 ? ink : T.DIM);
                 TPut(e.SigFrac >= 0 ? e.Rssi : "-", rx, y, e.SigLv == StatLevel.Ok ? ink : T.HOT);
                 TPut(e.Ping.Length > 0 ? SvTFit(T.Up(e.Ping), sx - px - 4) : "-", px, y, T.MID);
                 TPut(SvTFit(T.Up(e.Status), c.Right - sx), sx, y, e.StLv == StatLevel.Ok ? ink : T.HOT);
@@ -184,12 +205,10 @@ public sealed partial class WristPanel
                 _p.Fill(new RectangleF(c.Right - 4, ty, 4, th), T.INK);
             }
         }
-        // the prompt: what is asked or counted, else (lying) the hint, else how many are up
+        // the prompt: what is asked or counted, else (lying) the hint, else the last reset, else how many are up
         bool lie = SvLying(d);
         if (lie) _svHints++;
-        string prompt = SvArmed95() || (d.SlimeVr is { ResetState: 0 } s && s.ResetKind >= 0 && s.ResetLeftMs / 1000.0 - (Clock.Now - s.ResetAt) > 0)
-            ? SvTPrompt(SvStatus95(d)) : lie ? SvTPrompt(Lang.T(LieHint)) : _svTPrompt;
-        TPut(SvTFit(prompt, c.Width), c.X, promptY, SvArmed95() || lie ? T.HOT : T.INK);
+        TPut(SvTFit(SvTPromptNow(d, lie), c.Width), c.X, promptY, SvArmed95() || lie ? T.HOT : T.INK);
         // the keys: [Y] YAW, [F] FULL, [M] MOUNT - "SURE?" while one asks, the countdown while the server counts; lying, [Y] YAW lit
         // with LYING? under it
         bool can = SvCan(d);
@@ -197,9 +216,117 @@ public sealed partial class WristPanel
         for (int k = 0; k < 3; k++)
         {
             var (label, asking, counting) = SvButton(k, d, true);
-            bool hi = k == 0 && lie && !asking && !counting;
+            bool hi = ((k == 0 && lie) || SvGuideLit(k, d)) && !asking && !counting;
+            string line2 = asking ? Lang.T("SURE?") : counting ? T.Up(label) : hi ? (k == 0 && lie ? _svTLieKey : Lang.T("NOW")) : null;
+            if (TKey(SvIds[k], new RectangleF(c.X + k * (kw + 4), keyY, kw, 22), SvTKeys[k], asking || counting || hi, can, line2)) SvResetTap(k, d);
+        }
+    }
+
+    // the prompt's words now: what is asked or counted (the status line's), lying's hint, the last reset, how many are up
+    string SvTPromptNow(PanelData d, bool lie)
+    {
+        bool counting = d.SlimeVr is { ResetState: 0 } s && s.ResetKind >= 0 && (s.ResetLeftMs / 1000.0 - (Clock.Now - s.ResetAt) > 0 || (s.ResetKind == 2 && SvStep(d)));
+        if (SvArmed95() || counting) return SvTPrompt(SvStatus95(d)[0]);
+        if (lie) return SvTPrompt(Lang.T(LieHint));
+        return _svRows.Count > 0 && SvLast(d) is { } last ? SvTPrompt(last) : _svTPrompt;
+    }
+
+    // the guide's command line
+    string SvTGuideCmd(PanelData d, Guide g) => g == Guide.FullFirst ? "$ slimevr reset --full" : SvStep(d) ? "$ slimevr mount --step" : "$ slimevr mount --pose";
+
+    // the stick figures of characters: standing straight, the step (an arrow ahead), the ski pose, on its toes
+    static readonly string[][] SvTFigs =
+    {
+        new[] { "  O  ", " /|\\ ", "  |  ", " / \\ ", " | | " },
+        new[] { "  O     ", " /|\\ -->", "  |     ", " / \\    ", "/   \\   " },
+        new[] { "   O  ", "  /|_ ", "  \\   ", "  /\\  ", " /  \\ " },
+        new[] { "   O  ", "  /|_ ", "  \\   ", "  /\\  ", "  ' ' " },
+    };
+
+    // The guide on the tube: the figure at the left; the title, the line, the big word (the phase, the countdown), a [####----] bar, the
+    // note; [C] CANCEL (v22) while a mounting reset runs
+    void TSvGuide(RectangleF G, PanelData d, Guide g, int kind)
+    {
+        var (title, line, big, lv, note, frac) = SvGuideText(d, g, kind);
+        var fig = SvTFigs[SvGuideFigure(d, g)];
+        for (int i = 0; i < fig.Length; i++) TPut(fig[i], G.X + 2, G.Y + 4 + i * 11, lv == 2 ? T.HOT : T.INK);
+        float x = G.X + 62, w = G.Right - x;
+        TPut(SvTFit(T.Up(Lang.T(title)), w), x, G.Y + 4, T.DIM);
+        TPut(SvTFit(T.Up(Lang.T(line)), w), x, G.Y + 15, lv == 2 && big == null ? T.HOT : T.INK);
+        float y = G.Y + 30;
+        if (big != null)
+        {
+            string b = T.Up(Lang.T(big));
+            if (b.Length == 1) { TBig(b, x, y, 3, lv == 2 ? T.HOT : T.INK); y += 26; }
+            else { TPut(SvTFit(SvTPrompt(Lang.T(big)), w), x, y, lv == 2 ? T.HOT : T.INK); y += 13; }
+        }
+        if (frac >= 0 && lv != 2) { SvTBar(x, y + 2, Math.Min(20, (int)(w / 6) - 2), frac, false); y += 13; }
+        if (note != null) TPut(SvTFit(T.Up(Lang.T(note)), w), x, y + 2, T.DIM);
+        if (SvCanCancel(d, g) && TKey("wsvcancel", new RectangleF(G.Right - 66, G.Bottom - 14, 66, 13), Lang.T("[C] CANCEL"))) SvCancel();
+    }
+
+    // The Body side on the tube: the figures (front, side) as thin lines, the legs in columns, the prompt, the groups' keys over the two
+    // resets' keys
+    static readonly string[] SvTGroupKeys = { "[A] ALL", "[L] LEGS", "[<] LEFT", "[>] RIGHT", "[U] UPPER" };
+    static readonly string[] SvTBodyKeys = { "[Y] YAW", "[F] FULL" };
+    static readonly string[] SvTBones = { "L THIGH", "L SHIN", "R THIGH", "R SHIN" };
+
+    void TSlimeBody(RectangleF c, PanelData d)
+    {
+        var p = SvPose(d);
+        float y0 = c.Y + 13, keyY = c.Bottom - 22, groupY = keyY - 16, promptY = groupY - 13;
+        var box = new RectangleF(c.X, y0, 118, promptY - 3 - y0);
+        T.Box(_p, box, T.FRAME);
+        var fa = new RectangleF(box.X + 2, box.Y + 2, 52, box.Height - 4);
+        var sa = new RectangleF(box.X + 56, box.Y + 2, box.Width - 58, MathF.Min(box.Height - 4, box.Width - 50));
+        if (p == null) TPut(SvTFit(T.Up(Lang.T(SvNoPose)), box.Width - 6), box.X + 4, box.Y + box.Height / 2 - 4, T.DIM);
+        else
+        {
+            var ink = new SvInk { Ok = T.INK, Warn = T.HOT, Bad = T.HOT, Sleep = T.DIM, Faint = T.FAINT, Sel = T.HOT, W = 1, WSel = 2, WFaint = 1, Labels = 4 };
+            SvFigure(fa, p, false, ink, true);
+            SvFigure(sa, p, true, ink, false);
+        }
+        // BONE TWIST SIDE
+        float x = box.Right + 8, tx = x + 48, dx = tx + 26, sx = dx + 26;
+        TPut(Lang.T("BONE"), x, y0 + 2, T.DIM);
+        TPut(Lang.T("TWIST"), tx, y0 + 2, T.DIM);
+        TPut(Lang.T("SIDE"), sx, y0 + 2, T.DIM);
+        for (int i = 0; i < 4; i++)
+        {
+            float y = y0 + 15 + i * 11;
+            TPut(SvTFit(Lang.T(SvTBones[i]), tx - x - 4), x, y, T.MID);
+            if (p == null || float.IsNaN(p.Twist[i])) { TPut("-", tx, y, T.DIM); continue; }
+            bool left = i < 2;
+            float t = p.Twist[i];
+            bool hot = MathF.Max(MathF.Abs(t), MathF.Abs(p.Side[i])) >= 15;
+            uint ink = hot ? T.HOT : T.INK;
+            TPut(t >= 0 ? SvDeg("+{0}", t) : SvDeg("-{0}", t), tx, y, ink);
+            if (MathF.Abs(t) >= 0.5f) TPut(Lang.T((left ? t > 0 : t < 0) ? "OUT" : "IN"), dx, y, ink);
+            TPut(SvDeg("{0}", p.Side[i]), sx, y, ink);
+        }
+        string note = p == null ? null : p.Rolled ? T.Up(Lang.T(SvRollHints[0])) : p.Lying ? T.Up(Lang.T("Lying")) : !float.IsNaN(p.HipHead) ? SvDeg("Hip {0}° from head", p.HipHead, true) : null;
+        if (note != null) TPut(SvTFit(note, c.Right - x), x, y0 + 15 + 4 * 11 + 6, p.Rolled ? T.HOT : T.DIM);
+        bool lie = SvLying(d);
+        TPut(SvTFit(SvTPromptNow(d, lie), c.Width), c.X, promptY, SvArmed95() || lie ? T.HOT : T.INK);
+        // the groups (lit when picked), the two resets
+        float words = 0;
+        for (int g = 0; g < SlimeGroups.Count; g++) words += T.W(Lang.T(SvTGroupKeys[g])) + 6;
+        float extra = MathF.Max(0, MathF.Floor((c.Width - 4 * 4 - words) / SlimeGroups.Count)), gx = c.X;
+        for (int g = 0; g < SlimeGroups.Count; g++)
+        {
+            string label = Lang.T(SvTGroupKeys[g]);
+            float gw = T.W(label) + 6 + extra;
+            if (TKey(SvGroupIds[g], new RectangleF(gx, groupY, gw, 13), label, _svGroup == g)) SvSetGroup(g);
+            gx += gw + 4;
+        }
+        bool can = SvCan(d);
+        float kw = MathF.Floor((c.Width - 4) / 2);
+        for (int k = 0; k < 2; k++)
+        {
+            var (label, asking, counting) = SvButton(k, d, true);
+            bool hi = ((k == 0 && lie) || SvGuideLit(k, d)) && !asking && !counting;
             string line2 = asking ? Lang.T("SURE?") : counting ? T.Up(label) : hi ? _svTLieKey : null;
-            if (TKey(SvIds[k], new RectangleF(c.X + k * (kw + 4), keyY, kw, 22), SvTKeys[k], asking || counting || hi, can, line2)) SvResetTap(k);
+            if (TKey(SvBodyIds[k], new RectangleF(c.X + k * (kw + 4), keyY, kw, 22), SvTBodyKeys[k], asking || counting || hi, can, line2)) SvResetTap(k, d, _svGroup);
         }
     }
 

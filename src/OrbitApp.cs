@@ -151,6 +151,8 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         _wrist.OnSendNewest = SendNewestPhoto;               // ... its Send: VR Gallery sends its newest photo to Discord (OrbitApp.Photos.cs)
         _wrist.OnWantHi = WantHiPhoto;                       // ... its zoom: the photo read sharp (OrbitApp.Photos.cs)
         _wrist.OnSlimeReset = k => _slime.Reset((SlimeVrLink.ResetKind)k);     // SlimeVR's resets, after their second tap (OrbitApp.SlimeVr.cs)
+        _wrist.OnSlimeResetParts = (k, g) => _slime.Reset((SlimeVrLink.ResetKind)k, SlimeGroups.Mask(g));    // ... of some trackers (the Body side)
+        _wrist.OnSlimeCancel = () => _slime.CancelReset();
         _kb = new KeyboardPanel(_gpu, _painter, _cfg);
         _settingsPanel = new SettingsPanel(_gpu, _painter, _cfg, this, PreparePreviews);
         _dockFaces = new HexpadFaces();
