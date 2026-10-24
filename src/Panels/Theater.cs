@@ -124,6 +124,7 @@ public sealed partial class Theater : IDisposable
         _dim.SetFlag(Valve.VR.VROverlayFlags.IsPremultiplied, true);
         _dim.SetTexture(_black.Tex);
         _cityOn = false;                    // (Cyber: the night city, TheaterCyber.cs)
+        Cold = false;                       // (SteamVR connected: warmed as ever - TheaterWarm.cs)
         _ringR = -1;
         _dim.SetCurvature(1f);
         CreateCyber();
@@ -163,6 +164,7 @@ public sealed partial class Theater : IDisposable
         Blend();
         _screen.Theater = _view;
         On = true;
+        Cold = false;                       // (its textures let go meanwhile: made in this first frame, then warm again - TheaterWarm.cs)
         _checked = false;
         Log.Info($"theater: on - {screen.TheaterLabel} ({screen.TheaterState}), {(_glide ? "grows out of its place" : "fades in")}");
     }

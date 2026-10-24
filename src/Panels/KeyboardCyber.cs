@@ -121,6 +121,14 @@ public sealed partial class KeyboardPanel
     readonly Key[] _cyHoverKey = new Key[3];
     readonly double[] _cyHoverAt = new double[3];
 
+    // the style changed a while ago (OrbitApp.GpuSweep, Erik 10-24: Orbit's VRAM): what the style in use never draws let go, made again by
+    // the next draw that wants it - in a retro style the kept picture (the modern and the Cyber keyboard's, 10-18), else the half-size canvas
+    public void ReleaseStyle()
+    {
+        if (Theme.Classic) { _cyBase?.Dispose(); _cyBase = null; _cyBaseOk = false; }
+        else { _canvas95?.Dispose(); _canvas95 = null; }
+    }
+
     int CyBaseSig(bool shift, bool altgr)
     {
         var h = new HashCode();

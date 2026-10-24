@@ -23,6 +23,7 @@ public sealed class SettingsWindow : Form
     double _nextRefresh;        // when the page is next asked whether it shows anything new (SettingsView.LiveSig)
     double _wake = double.PositiveInfinity;    // a style's animation wants its next frame then (AnimWake.cs)
     int _liveSig;
+    public double LastShown;    // when it was last on screen (hidden a minute after: its page's kept textures let go - OrbitApp.GpuSweep)
 
     public SettingsWindow(Gpu g, Painter p, SettingsView view, Action beforeDraw, Icon icon)
     {
@@ -384,6 +385,7 @@ public sealed class SettingsWindow : Form
     public void Tick(double now)
     {
         if (!Visible || WindowState == FormWindowState.Minimized || _swap == null) return;
+        LastShown = now;
         if (StyleChanged) ApplyStyle();
         // 95: busy in the background (the updater) - the cursor is the arrow with the hourglass, as 1995's was. Set on every tick,
         // not only after a draw: a page that does not show the updater is not drawn again when it starts or finishes

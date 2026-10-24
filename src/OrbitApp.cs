@@ -409,6 +409,8 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         w.Pause = GC.GetTotalPauseDuration() - _gcPauseMark;
         w.Gc = GC.GetGCMemoryInfo(GCKind.Any);      // (one read for the heap, the committed memory and the gc: line - GetGCMemoryInfo() is GCKind.Any too)
         _allocWatch.Cut(ref w.AllocTypes, ref w.AllocThreads);     // the alloc: line's sums (empty ones collect the next window)
+        w.Surfaces = Surface.LiveCount; w.SurfaceBytes = Surface.LiveBytes;     // the textures Orbit holds (OrbitApp.GpuRelease.cs)
+        w.VramMb = OwnVramMb();                     // its VRAM (DXGI, read here: the adapter is this thread's)
         Array.Clear(_allocSum);
         MemMarks();
         Array.Copy(_perfSum, w.Sum, PerfNames.Length); Array.Copy(_perfMax, w.Max, PerfNames.Length);
@@ -808,7 +810,9 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         _win.Tick(now);
         Spikes.Piece("the settings window", wt); wt = System.Diagnostics.Stopwatch.GetTimestamp();
         _cfg.SaveIfDue();
-        Spikes.Piece("config save", wt);
+        Spikes.Piece("config save", wt); wt = System.Diagnostics.Stopwatch.GetTimestamp();
+        GpuSweep(now);                      // the textures of what is not in use let go, outside every draw (OrbitApp.GpuRelease.cs)
+        Spikes.Piece("gpu: release", wt);
         Spikes.Mark(Spikes.Window);
         Spikes.End();                       // (the frame's parts kept if it was the window's slowest: Sys/Spikes.cs)
     }
@@ -897,6 +901,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         _roomPanel.CreateOverlay(_vr);
         _whatsNewPanel.CreateOverlay(_vr);
         _theater.CreateOverlay();           // (here, not a step: a monitor can play as soon as its overlay is made)
+        _gpuIdleFrom = Clock.Now;           // (theater's textures go 20 minutes without a sign of theater, from here on: OrbitApp.GpuRelease.cs)
         _theaterBar.CreateOverlay();
         _notifyPanel.CreateOverlay();       // (here, not a step: its cards are dropped while it has none - NoteVersion's waits in the queue)
         try { _winrtDev ??= MonitorCapture.CreateWinRtDevice(_gpu); }
@@ -1016,6 +1021,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             _dashThumb.SetFlag(VROverlayFlags.IsPremultiplied, true);
             _dashThumb.SetTexture(_thumbSurf.Tex);
             _dashDirty = true;
+            _dashClosedAt = Clock.Now;
         }
         catch (Exception e) { Log.Error("dashboard: " + e.Message); }
     }
@@ -1029,7 +1035,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         if (_dash == null) return;
         if (!dashOpen)
         {
-            if (_dashWasOpen) { _dashWasOpen = false; _dashPtr.Leave(); _dashDirty = true; }
+            if (_dashWasOpen) { _dashWasOpen = false; _dashPtr.Leave(); _dashDirty = true; _dashClosedAt = now; }   // (its picture goes a minute on)
             return;
         }
         _dashWasOpen = true;
@@ -1064,6 +1070,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         if (!_dashDirty && now < _dashNext) return;
         _dashDirty = false;
         _dashNext = now + 0.5;
+        _dashSurf ??= new Surface(_gpu, DashW, DashH);         // (let go while the dashboard was closed: OrbitApp.GpuRelease.cs)
         PreparePreviews(_dashView);
         AnimWake.Take();             // the previews' asks are their own panels', not the dashboard's
         DrawDashboard();
@@ -2455,6 +2462,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         _temps.Dispose();
         _weather.Dispose();
         _lumos.Dispose();
+        _vramAdapter?.Dispose();
         _dxgi?.Dispose();
         _eyes.Dispose();
         _mixtape.Dispose();

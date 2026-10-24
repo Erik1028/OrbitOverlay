@@ -25,9 +25,9 @@ public sealed class VrOverlay : IDisposable
     public static class Calls
     {
         public const int Texture = 0, Transform = 1, Width = 2, Alpha = 3, Curvature = 4, Bounds = 5, Show = 6, Hide = 7, Color = 8, Sort = 9,
-            MouseScale = 10, Aspect = 11, Flag = 12, Kinds = 13;
+            MouseScale = 10, Aspect = 11, Flag = 12, Clear = 13, Kinds = 14;
         public static readonly string[] Names = { "SetTexture", "SetTransform", "SetWidth", "SetAlpha", "SetCurvature", "SetTextureBounds", "Show", "Hide",
-            "SetColor", "SetSortOrder", "SetMouseScale", "SetTexelAspect", "SetFlag" };
+            "SetColor", "SetSortOrder", "SetMouseScale", "SetTexelAspect", "SetFlag", "ClearOverlayTexture" };
         public static readonly int[] Sent = new int[Kinds], Spared = new int[Kinds];
         public static int TextureSame;           // SetTexture with the handle the overlay already showed
         public static bool Sizes;                // sum the textures' bytes (TextureBytes)
@@ -119,6 +119,16 @@ public sealed class VrOverlay : IDisposable
             _nextWarn = Clock.Now + 10;
             Log.Warn($"SetOverlayTexture({Key}): {e}");
         }
+    }
+
+    // SteamVR lets go of the texture it was given last - before that texture is disposed (OrbitApp.GpuRelease.cs). Only with the overlay
+    // hidden: it shows nothing until its next SetTexture.
+    public void ClearTexture()
+    {
+        if (_lastTex == IntPtr.Zero) return;
+        _lastTex = IntPtr.Zero;
+        Calls.Sent[Calls.Clear]++;
+        if (!Fake) Ov?.ClearOverlayTexture(Handle);
     }
 
     // ComputeOverlayIntersection takes the overlay's aspect from the mouse scale, so keep it = texture size.

@@ -28,6 +28,8 @@ public sealed partial class OrbitApp
         public int Gc0, Gc1, Gc2;
         public TimeSpan Pause;
         public GCMemoryInfo Gc;
+        public int Surfaces;                     // the textures Orbit holds and its VRAM (OrbitApp.GpuRelease.cs; VramMb -1: not known)
+        public long SurfaceBytes, VramMb;
         // alloc: the window's sums (AllocWatch.Cut swaps them out, empty ones in; left empty again once the line is made)
         public ConcurrentDictionary<string, long> AllocTypes = new();
         public ConcurrentDictionary<int, long> AllocThreads = new();
@@ -51,7 +53,9 @@ public sealed partial class OrbitApp
     readonly StringBuilder _perfSa = new(), _perfSb = new();       // (the perf log's thread only)
 
     void PerfLogStart() =>
-        new Thread(PerfLogRun) { IsBackground = true, Name = "OrbitOverlay perf log", Priority = ThreadPriority.BelowNormal }.Start();
+        // (Normal, not BelowNormal: under VRChat's full cores a BelowNormal thread waited seconds and the window's lines came stamped late,
+        // after the main loop's own - 10-24 review; it works a few ms every 10 s)
+        new Thread(PerfLogRun) { IsBackground = true, Name = "OrbitOverlay perf log", Priority = ThreadPriority.Normal }.Start();
 
     void PerfLogRun()
     {
@@ -98,7 +102,8 @@ public sealed partial class OrbitApp
                      $"all threads {w.AllBytes / secs / 1024:0.0} KB/s, " +
                      $"GC {w.Gc0}/{w.Gc1}/{w.Gc2} " +
                      $"({w.Pause.TotalMilliseconds:0.0} ms pause), heap {w.Gc.HeapSizeBytes / 1048576.0:0.0} MB, " +
-                     $"{ProcessCounters()}, gc committed {w.Gc.TotalCommittedBytes / 1048576.0:0} MB | bytes/loop:{_perfSa}";      // (Environment.WorkingSet: no - it may read every process too)
+                     $"{ProcessCounters()}, gc committed {w.Gc.TotalCommittedBytes / 1048576.0:0} MB | bytes/loop:{_perfSa}" +      // (Environment.WorkingSet: no - it may read every process too)
+                     $" | surfaces {w.Surfaces}, {w.SurfaceBytes / 1048576.0:0} MB{(w.VramMb >= 0 ? $", vram {w.VramMb} MB" : "")}";
         string al = _allocWatch.TakeLine(w.AllocTypes, w.AllocThreads, secs);
         var gi = w.Gc;
         string gc = null;

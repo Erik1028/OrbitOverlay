@@ -13,12 +13,23 @@ namespace Orbit;
 // overlay count is precious: none sits there for a theater never started). The rule "only the style in use has a texture" stays:
 // Cyber's pieces go when a backdrop is made, the backdrop when the city is. Everything ready: a few flag tests a frame. The tools
 // without VR (no overlay) never warm, so their numbers are their own.
+// (Erik 10-24: Orbit's VRAM - "release the GPU memory of what is not in use".) Kept warm for good they were 17 MB in Cyber (the wall, the
+// band, the floor, the horizon), 8 in every other style (the backdrop), all evening for a theater that may never come. So after 20
+// minutes in VR without a sign of theater (OrbitApp.GpuSweep: not on, no laser on the bar or the watch, no full-screen video waiting for
+// auto theater) they are let go - their overlays hidden and told first - and Cold keeps this from making them again the next frame. The
+// next sign (every way into theater goes through one) clears it and they are warmed as above before a tap can start a theater; a glance
+// at the watch for the time does not (10-24 review: warmed again on every use, they were made and let go all evening, on the frames the
+// watch and the lasers were used). One started cold anyway makes what it needs in its first frame, as before 10-18. The lamps' list and
+// the backdrop's buffer (CPU memory) stay.
 public sealed partial class Theater
 {
+    public bool Cold;                    // its textures let go, no sign of theater a while (OrbitApp.GpuSweep): not warmed until the next one
+    public bool Resting => !On && _screen == null && _leaving == null;      // nothing of theater shows (what WarmTheater runs with)
+
     // from Update, with theater off and no screen on its way out
     void WarmTheater()
     {
-        if (_dim == null || _p == null) return;
+        if (_dim == null || _p == null || Cold) return;
         if (WarmAmbilight()) return;                                        // (the glow's shape, once a run: TheaterAmbilight.cs)
         if (!Theme.Cyber) { BackdropTextures(BackdropFor()); return; }     // (the city's textures let go; the picture drawn, then uploaded)
         if (_backTex != null) FreeBackdrop();
@@ -29,5 +40,34 @@ public sealed partial class Theater
         if (_carTex == null || _droneTex == null) { CarTextures(); return; }
         if (!CyberFx.Full) { LifeDrop(); return; }                         // (Motion turned down half way through the read-back: let go)
         if (_lifeState != 2 && _lifeState != 4) LifeBase();                 // (a frame each: the bare band and its copy, the map, the read-out)
+    }
+
+    // no sign of theater for a while, theater at rest (OrbitApp.GpuSweep): every texture warmed above let go. An overlay that was given one is
+    // hidden and SteamVR told to let go of it before it is disposed (the wall gets its black texture back: it is never let go); every
+    // "given once" flag goes with its texture, so the next theater gives them again. The cars' tiny textures stay (with their overlays).
+    public void ReleaseTextures()
+    {
+        if (!Resting) return;
+        Cold = true;
+        if (_cityOn && _dim != null) { _dim.SetTexture(_black.Tex); _ringR = -1; }      // (as BackdropTextures: the city off the wall first)
+        _cityOn = false;
+        _band?.Hide(); _band?.ClearTexture();
+        _city?.Dispose(); _city = null;
+        _sky?.Dispose(); _sky = null;
+        LifeDrop();                                                     // (a read-back half way: its thread joined, the copy unmapped, let go)
+        FloorHide();
+        foreach (var o in _floorOv) o?.ClearTexture();
+        FloorFree();                                                    // (_floorSet false: given again)
+        DisposeHorizon();                                               // (its overlays too: they are given their textures only when made)
+        _back?.Hide(); _back?.ClearTexture();
+        FreeBackdrop();                                                 // (_backSet None: given again)
+    }
+
+    // the style changed a while ago (OrbitApp.GpuSweep): the horizon's textures and overlays are Cyber's alone, and the style rule above
+    // never let them go (only the city, the band, the floor and the read-back); hidden already (HorizonOff), made again by the next Cyber
+    // theater (EnsureHorizon) or its warm-up
+    public void ReleaseStyle()
+    {
+        if (!Theme.Cyber && !_hzShown) DisposeHorizon();
     }
 }

@@ -85,6 +85,13 @@ public sealed class Surface : IDisposable
     public readonly ID3D11Texture2D Tex;
     public readonly ID2D1Bitmap1 Bitmap;
 
+    // every surface alive and its bytes (made, not disposed yet): the perf log's mem: line; a release logs what this dropped by
+    // (OrbitApp.GpuRelease.cs). Interlocked: a tool may make one off the main thread.
+    public static int LiveCount;
+    public static long LiveBytes;
+    public long Bytes => (long)W * H * 4;            // (both formats: 32 bits a texel)
+    bool _gone;                                      // (disposed: a second Dispose - SystemCursor, the bar's retired one - counts nothing)
+
     // RGBA is only for the dashboard thumbnail: the web dashboard reads it as RGBA whatever the format says.
     public Surface(Gpu gpu, int w, int h, bool rgba = false)
     {
@@ -98,6 +105,8 @@ public sealed class Surface : IDisposable
         });
         using var surf = Tex.QueryInterface<IDXGISurface>();
         Bitmap = gpu.CreateTargetBitmap(surf, true, fmt);
+        System.Threading.Interlocked.Increment(ref LiveCount);
+        System.Threading.Interlocked.Add(ref LiveBytes, Bytes);
     }
 
     // Reads the texture back and writes a PNG (alpha un-premultiplied). Used by --snapshot.
@@ -165,5 +174,14 @@ public sealed class Surface : IDisposable
         finally { gpu.Ctx.Unmap(staging, 0); }
     }
 
-    public void Dispose() { Bitmap?.Dispose(); Tex?.Dispose(); }
+    public void Dispose()
+    {
+        if (!_gone)
+        {
+            _gone = true;
+            System.Threading.Interlocked.Decrement(ref LiveCount);
+            System.Threading.Interlocked.Add(ref LiveBytes, -Bytes);
+        }
+        Bitmap?.Dispose(); Tex?.Dispose();
+    }
 }

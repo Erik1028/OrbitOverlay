@@ -38,7 +38,9 @@ public sealed partial class OrbitApp
         else WindowLook.Look(watch, ref _autoWatched);
         // ready: worn too - with "pause when off" turned off the panels stay awake, but a theater nobody sees should not start
         bool ready = awake && _vr.HeadsetWorn && _vr.HmdValid, on = _theater.On;
-        bool playing = _auto.WantsPlaying(on, ready, _autoFront, _autoScreens) && AutoPlaying(now, _autoFront.Process);
+        bool wants = _auto.WantsPlaying(on, ready, _autoFront, _autoScreens);
+        bool playing = wants && AutoPlaying(now, _autoFront.Process);
+        _autoWants = wants;                 // (a video waiting: theater's textures kept / warmed again - OrbitApp.GpuRelease.cs)
         var act = _auto.Step(now, true, ready, on, on && _theater.Screen == _autoScreen, _autoFront, _autoWatched, playing, _autoScreens);
         if (_auto.LatchedNow) Log.Info("auto theater: ended by hand - not again until that video leaves full screen");
         if (act == AutoTheater.Act.Start)
@@ -88,5 +90,6 @@ public sealed partial class OrbitApp
     {
         _auto.Reset();
         _autoScreen = null;
+        _autoWants = false;
     }
 }

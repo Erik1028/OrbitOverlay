@@ -707,6 +707,9 @@ public sealed partial class DockPanel : IPointerTarget, IDisposable
         if (_ui.Button95("dk95.no", new RectangleF(box.X + box.Width / 2 + 5, box.Bottom - 32, 75, 23), "&No")) _in.ConfirmNo();
     }
 
+    // no retro style on a while (OrbitApp.GpuSweep, Erik 10-24: Orbit's VRAM): its half-size canvas let go, made again by the next retro draw
+    public void ReleaseStyle() { if (!Theme.Classic) { _canvas95?.Dispose(); _canvas95 = null; } }
+
     public void Dispose()
     {
         DestroyOverlay();
