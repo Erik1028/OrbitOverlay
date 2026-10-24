@@ -100,6 +100,16 @@ static class Program
         }
 
         Log.Init("orbit.log");
+        // multicore JIT (10-24): the methods this start compiles are noted in startup.jitprofile, and the next start compiles them on
+        // background cores while it starts - the first frames after SteamVR connects no longer compile every method they meet on the main
+        // loop (the log's boot: line: the first frame 78 ms, the watch's first draw 134 ms). ReadyToRun did the same but grew the
+        // installer from 52 to 74 MB.
+        try
+        {
+            System.Runtime.ProfileOptimization.SetProfileRoot(Log.Dir);
+            System.Runtime.ProfileOptimization.StartProfile("startup.jitprofile");
+        }
+        catch (Exception e) { Log.Warn("multicore JIT: " + e.Message); }
         AppFiles.EnsureNextToExe();    // SteamVR manifest + input bindings next to the exe
         bool elevated = Elevation.IsElevated;
         Log.Info($"Orbit {typeof(Program).Assembly.GetName().Version} start, args: {string.Join(' ', args)}, elevated: {elevated}");
