@@ -44,6 +44,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
     RoomWatcher.Snapshot _roomSnap = new();
     RoomPanel _roomPanel;
     StatusLine _status;
+    VrcCamera _camera;               // the watch's camera button: VRChat's shutter over OSC (Sys/VrcCamera.cs)
     double _nextStatus;
     HexpadFaces _dockFaces;
     DockPanel _dockPanel;
@@ -170,6 +171,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             OnSeekTo = s => _media.SeekTo(s),
         };
         _status = new StatusLine(_osc);
+        _camera = new VrcCamera(_osc);
         _data.Dock = _dockSnap;
         _data.DockFaces = _dockFaces;
         _hexpad.Start();
@@ -772,6 +774,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
                 _status.Update(now, C.Chatbox.StatusLine, C.General.OscPort,
                     StatusLine.Compose(C.Chatbox, (m.has, m.title, m.artist, m.playing), DateTime.Now, _data.VrSince, C.Appearance.Clock24h));
             }
+            _camera.Update(now);                // the camera button's release when it is due (one compare at rest)
             Spikes.Piece("rest: status line", rp); rp = System.Diagnostics.Stopwatch.GetTimestamp();
             UpdateGpuPriority(now);
             Spikes.Piece("rest: gpu priority", rp);
@@ -2371,6 +2374,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
                 _roomPanel.Toggle();
                 break;
             case "theater": ToggleTheater(); break;
+            case VrcCamera.Id: _camera.Shutter(Now, C.General.OscPort); break;     // VRChat takes the photo (with its camera open)
             case "status":
                 C.Chatbox.StatusLine = !C.Chatbox.StatusLine;
                 _cfg.MarkDirty();
