@@ -114,6 +114,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         _startHidden = startHidden;
         _cfg.Background = true;              // the config written on a worker (Config.cs)
         InputQueue.On = true;                // what goes to Windows, on its own thread (Sys/InputQueue.cs)
+        PerfLogStart();                      // the perf log's lines made on a thread of their own (OrbitApp.PerfLog.cs)
         int adapter = -1;
         // If SteamVR already runs, connect first so the GPU device is created on its adapter.
         if (VrSession.RuntimeRunning() && _vr.TryConnect(ActionManifest, out _, AppKey))
@@ -377,7 +378,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         catch (Exception e) { Log.Warn("gpu probe: " + e.Message); _gpuProbe = null; }
     }
 
-    long _lastGcLogged;
+    long _lastGcLogged;          // (the perf log's thread only)
 
     void MemMarks()
     {
@@ -392,94 +393,92 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         _perfFrames++;
         if (_perfStart < 0) { _perfStart = now; MemMarks(); return; }
         if (now - _perfStart < 10) return;
+        // the window's numbers into a PerfWindow and a new window - nothing formatted, nothing logged here: the perf log's own thread
+        // makes the lines (OrbitApp.PerfLog.cs; Erik 10-24: this frame took 7-13 ms while it wrote them itself)
+        if (!_perfFree.TryDequeue(out var w)) w = new PerfWindow();     // (two reused; a third only if that thread fell 20 s behind)
         double secs = now - _perfStart;
-        var sa = new System.Text.StringBuilder();
-        for (int i = 0; i < PerfNames.Length; i++) sa.Append($" {PerfNames[i]} {_allocSum[i] / _perfFrames}");
-        Log.Info($"mem: main thread {(GC.GetAllocatedBytesForCurrentThread() - _allocThreadMark) / secs / 1024:0.0} KB/s, " +
-                 $"all threads {(GC.GetTotalAllocatedBytes() - _allocAllMark) / secs / 1024:0.0} KB/s, " +
-                 $"GC {GC.CollectionCount(0) - _gcMark[0]}/{GC.CollectionCount(1) - _gcMark[1]}/{GC.CollectionCount(2) - _gcMark[2]} " +
-                 $"({(GC.GetTotalPauseDuration() - _gcPauseMark).TotalMilliseconds:0.0} ms pause), heap {GC.GetGCMemoryInfo().HeapSizeBytes / 1048576.0:0.0} MB, " +
-                 $"{ProcessCounters()}, gc committed {GC.GetGCMemoryInfo().TotalCommittedBytes / 1048576.0:0} MB | bytes/loop:{sa}");      // (Environment.WorkingSet: no - it may read every process too)
-        if (_allocWatch.TakeLine(secs) is { } al) Log.Info(al);
-        var gi = GC.GetGCMemoryInfo(GCKind.Any);
-        if (gi.Index > 0 && gi.Index != _lastGcLogged)
-            Log.Info($"gc: last #{gi.Index} gen{gi.Generation}{(gi.Concurrent ? " background" : "")}{(gi.Compacted ? " compacting" : "")}, " +
-                     $"pause {gi.PauseDurations[0].TotalMilliseconds:0.0} ms, promoted {gi.PromotedBytes / 1024} KB, " +
-                     $"load {gi.MemoryLoadBytes * 100 / Math.Max(1, gi.TotalAvailableMemoryBytes)} %, finalization pending {gi.FinalizationPendingCount}");
-        _lastGcLogged = gi.Index;
+        w.Culture = System.Globalization.CultureInfo.CurrentCulture;    // its lines in this thread's culture (Lang.cs ApplyCulture: 7,5 in Magyar)
+        w.Secs = secs; w.Frames = _perfFrames; w.WaitSum = _perfWaitSum;
+        Array.Copy(_allocSum, w.AllocSum, PerfNames.Length);
+        w.ThreadBytes = GC.GetAllocatedBytesForCurrentThread() - _allocThreadMark;      // (this thread's own: read here)
+        w.AllBytes = GC.GetTotalAllocatedBytes() - _allocAllMark;
+        w.Gc0 = GC.CollectionCount(0) - _gcMark[0]; w.Gc1 = GC.CollectionCount(1) - _gcMark[1]; w.Gc2 = GC.CollectionCount(2) - _gcMark[2];
+        w.Pause = GC.GetTotalPauseDuration() - _gcPauseMark;
+        w.Gc = GC.GetGCMemoryInfo(GCKind.Any);      // (one read for the heap, the committed memory and the gc: line - GetGCMemoryInfo() is GCKind.Any too)
+        _allocWatch.Cut(ref w.AllocTypes, ref w.AllocThreads);     // the alloc: line's sums (empty ones collect the next window)
         Array.Clear(_allocSum);
         MemMarks();
-        var sb = new System.Text.StringBuilder();
-        double total = 0;
-        for (int i = 0; i < PerfNames.Length; i++)
-        {
-            total += _perfSum[i];
-            sb.Append($" {PerfNames[i]} {_perfSum[i] / _perfFrames:0.00}/{_perfMax[i]:0.0}");
-        }
-        string rays = RayStats.TakeLine();
-        if (rays != null) Log.Info(rays);
-        string gpuq = _gpuProbes > 0 ? $", gpu late {100.0 * _gpuLate / _gpuProbes:0.0}%" : "";
+        Array.Copy(_perfSum, w.Sum, PerfNames.Length); Array.Copy(_perfMax, w.Max, PerfNames.Length);
+        w.HasRays = RayStats.Take(out w.Rays);
+        w.GpuLate = _gpuLate; w.GpuProbes = _gpuProbes;
         _gpuLate = _gpuProbes = 0;
-        Log.Info($"perf: {_perfFrames / (now - _perfStart):0} loops/s{CompositorRates(now - _perfStart)}, work {total / _perfFrames:0.00} ms, wait {_perfWaitSum / _perfFrames:0.0} ms{gpuq} | avg/max ms:{sb}");
-        if (Spikes.Take() is { } spike) Log.Info(spike);        // where the window's slowest frame went (Sys/Spikes.cs)
-        string show = _vr.Connected ? ShowLine(now - _perfStart) : null;
-        if (show != null && Laser.Trace) Log.Info(show);           // (the diagnostics switch: Vr/Laser.cs Trace)
+        CompositorRates(secs, w);                   // (OpenVR, 0.01-0.15 ms: here - before ShowTake, it sets _reproDelta / _dropDelta)
+        Spikes.Take(w.Spike);                       // where the window's slowest frame went (Sys/Spikes.cs; this frame counts in the next window)
+        w.Trace = Laser.Trace;                      // (the diagnostics switch: Vr/Laser.cs Trace)
+        w.Show = _vr.Connected;
+        if (w.Show) ShowTake(w);                    // (its counters start again every window, traced or not)
         Array.Clear(_perfSum); Array.Clear(_perfMax);
         _perfFrames = 0; _perfWaitSum = 0; _perfStart = now;
+        _perfFull.Enqueue(w);
+        _perfWake.Set();
     }
 
     bool _waitWarned;
 
     // what the game and the compositor managed meanwhile, next to the loop's own rate (the loop runs at the headset's
-    // rate on its own clock; the compositor can only show as many frames as it presents)
+    // rate on its own clock; the compositor can only show as many frames as it presents) - the frames into the window, the perf
+    // log's thread writes them (Rates false: nothing to say)
     Compositor_CumulativeStats _cstats;
     uint _cSubmits, _cPresents;
 
-    string CompositorRates(double secs)
+    void CompositorRates(double secs, PerfWindow w)
     {
+        w.Rates = false;
         try
         {
             var c = OpenVR.Compositor;
-            if (c == null || secs <= 0) return "";
+            if (c == null || secs <= 0) return;
             c.GetCumulativeStats(ref _cstats, (uint)Marshal.SizeOf<Compositor_CumulativeStats>());
             uint s = _cstats.m_nNumFrameSubmits, p = _cstats.m_nNumFramePresents;
-            string r = _cPresents == 0 || p < _cPresents ? "" : $" (game {(s - _cSubmits) / secs:0}, compositor {(p - _cPresents) / secs:0} fps)";
+            w.Rates = !(_cPresents == 0 || p < _cPresents);
+            w.GameFrames = s - _cSubmits; w.CompFrames = p - _cPresents;
             uint re = _cstats.m_nNumReprojectedFrames, dr = _cstats.m_nNumDroppedFrames;
             (_reproDelta, _dropDelta) = _cPresents == 0 || re < _cRepro || dr < _cDropped ? (0, 0) : (re - _cRepro, dr - _cDropped);
             _cRepro = re; _cDropped = dr;
             _cSubmits = s; _cPresents = p;
-            return r;
         }
-        catch { return ""; }
+        catch { w.Rates = false; }
     }
 
     // What the overlays got meanwhile, to tell the game's share from Orbit's (Erik 10-19: "azt veszem eszre hogyha meg van nyitva a
     // steamvr overlay is, a mi overlayunk sokkal jobb fps-el renderelodik"): the share of the loops the SteamVR dashboard was open, the
     // compositor's reprojected / dropped frames, how late the loop woke after its slot (p99, max), the monitors' new pictures and the
-    // textures handed to SteamVR, the share at GPU priority 7. Read beside the perf line (dashboard open vs closed).
+    // textures handed to SteamVR, the share at GPU priority 7. Read beside the perf line (dashboard open vs closed). The line itself:
+    // ShowText (OrbitApp.PerfLog.cs), on the perf log's thread.
     uint _cRepro, _cDropped, _reproDelta, _dropDelta;
     int _dashLoops, _prioLoops, _lateN, _texMark;
-    readonly float[] _lateMs = new float[4096];
+    const int LateMax = 4096;                    // (the late wake-ups kept per window; PerfWindow.Late is as long)
+    readonly float[] _lateMs = new float[LateMax];
     long _capMark;
 
-    string ShowLine(double secs)
+    // the show: line's numbers into the window (the main loop; the sort moved to that thread), and the next window's counters
+    void ShowTake(PerfWindow w)
     {
-        Array.Sort(_lateMs, 0, _lateN);
-        float p99 = _lateN == 0 ? 0 : _lateMs[Math.Min(_lateN - 1, (int)(_lateN * 0.99))], max = _lateN == 0 ? 0 : _lateMs[_lateN - 1];
         long caps = 0;
         int shown = 0;
         foreach (var d in _desktops) { caps += d.CaptureFrames; if (d.Shown) shown++; }
         int tex = VrOverlay.Calls.Sent[VrOverlay.Calls.Texture];
-        long newCaps = caps >= _capMark ? caps - _capMark : caps;
-        int newTex = tex >= _texMark ? tex - _texMark : tex;
-        int loops = Math.Max(1, _perfFrames);
-        string s = $"show: dashboard open {100.0 * _dashLoops / loops:0}%, compositor reprojected {_reproDelta / secs:0}/s dropped {_dropDelta / secs:0}/s, " +
-                   $"loop woke late p99 {p99:0.0} max {max:0.0} ms, monitors shown {shown} with {newCaps / secs:0} new pictures/s, " +
-                   $"textures to SteamVR {newTex / secs:0}/s, GPU priority high {100.0 * _prioLoops / loops:0}%, " +
-                   $"tip pose missing L {_vr.AimFallbacks[0] / secs:0.0}/s R {_vr.AimFallbacks[1] / secs:0.0}/s";
+        w.NewCaps = caps >= _capMark ? caps - _capMark : caps;
+        w.NewTex = tex >= _texMark ? tex - _texMark : tex;
+        w.Shown = shown;
+        w.Loops = Math.Max(1, _perfFrames);
+        w.DashLoops = _dashLoops; w.PrioLoops = _prioLoops;
+        w.Repro = _reproDelta; w.Drop = _dropDelta;
+        w.Aim0 = _vr.AimFallbacks[0]; w.Aim1 = _vr.AimFallbacks[1];
+        w.LateN = _lateN;
+        Array.Copy(_lateMs, w.Late, _lateN);
         _vr.AimFallbacks[0] = _vr.AimFallbacks[1] = 0;
         _capMark = caps; _texMark = tex; _lateN = 0; _dashLoops = _prioLoops = 0;
-        return s;
     }
 
     int _tickErrors;

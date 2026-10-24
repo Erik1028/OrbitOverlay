@@ -43,16 +43,33 @@ public static class RayStats
         else World.Add(hs, hl, ds, uvs, ps, ns, dl, uvl, pl, nl);
     }
 
-    // one log line per window, then reset
-    public static string TakeLine()
+    // a window's numbers, copied for the perf log's thread (Take on the main loop, Line there)
+    public struct Window
     {
-        if (SteamCalls == 0 && LocalCalls == 0) return null;
-        double us(long ticks, int calls) => calls == 0 ? 0 : ticks * 1e6 / System.Diagnostics.Stopwatch.Frequency / calls;
-        string line = $"raycast: steamvr {SteamCalls} calls {us(SteamTicks, SteamCalls):0.0} us/call (max {us(SteamMax, 1):0} us), " +
-                      $"local {LocalCalls} calls {us(LocalTicks, LocalCalls):0.00} us/call (max {us(LocalMax, 1):0} us)" +
-                      (World.Compared + Device.Compared > 0 ? $" | world panels: {World} | device panels: {Device}" : "");
+        public Group World, Device;
+        public long SteamTicks, LocalTicks, SteamMax, LocalMax;
+        public int SteamCalls, LocalCalls;
+    }
+
+    // the window's numbers, then reset - false (and nothing reset) when no ray was cast (the main loop)
+    public static bool Take(out Window w)
+    {
+        w = default;
+        if (SteamCalls == 0 && LocalCalls == 0) return false;
+        w.World = World; w.Device = Device;
+        w.SteamTicks = SteamTicks; w.LocalTicks = LocalTicks; w.SteamMax = SteamMax; w.LocalMax = LocalMax;
+        w.SteamCalls = SteamCalls; w.LocalCalls = LocalCalls;
         World = default; Device = default;
         SteamTicks = LocalTicks = SteamMax = LocalMax = 0; SteamCalls = LocalCalls = 0;
-        return line;
+        return true;
+    }
+
+    // one log line per window (the perf log's thread)
+    public static string Line(Window w)
+    {
+        double us(long ticks, int calls) => calls == 0 ? 0 : ticks * 1e6 / System.Diagnostics.Stopwatch.Frequency / calls;
+        return $"raycast: steamvr {w.SteamCalls} calls {us(w.SteamTicks, w.SteamCalls):0.0} us/call (max {us(w.SteamMax, 1):0} us), " +
+               $"local {w.LocalCalls} calls {us(w.LocalTicks, w.LocalCalls):0.00} us/call (max {us(w.LocalMax, 1):0} us)" +
+               (w.World.Compared + w.Device.Compared > 0 ? $" | world panels: {w.World} | device panels: {w.Device}" : "");
     }
 }

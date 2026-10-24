@@ -4,6 +4,7 @@ using System.Diagnostics.Tracing;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 
 namespace Orbit;
 
@@ -11,10 +12,11 @@ namespace Orbit;
 // runtime's own GCAllocationTick event - one about every 100 KB allocated, with the type of the object that crossed the mark - summed
 // by type and by thread (its name as Windows keeps it: .NET writes a named thread's name there). The perf log's "alloc:" line every
 // 10 s, only when the window allocated more than 1 MB a second (a calm window says nothing). ~50 events a second at 5 MB/s: nothing.
+// The main loop only cuts the window (Cut: two swaps); the line is made on the perf log's thread (OrbitApp.PerfLog.cs).
 public sealed class AllocWatch : EventListener
 {
-    readonly ConcurrentDictionary<string, long> _byType = new();
-    readonly ConcurrentDictionary<int, long> _byThread = new();
+    ConcurrentDictionary<string, long> _byType = new();          // (swapped for empty ones at each window's end: Cut)
+    ConcurrentDictionary<int, long> _byThread = new();
     readonly ConcurrentDictionary<int, string> _names = new();
     int _amountAt = -1, _typeAt = -1;
 
@@ -35,17 +37,25 @@ public sealed class AllocWatch : EventListener
         if (_amountAt < 0 || _amountAt >= e.Payload.Count) return;
         long amount = Convert.ToInt64(e.Payload[_amountAt]);
         string type = _typeAt >= 0 && _typeAt < e.Payload.Count ? e.Payload[_typeAt] as string ?? "?" : "?";
-        _byType.AddOrUpdate(type, amount, (_, v) => v + amount);
-        _byThread.AddOrUpdate((int)e.OSThreadId, amount, (_, v) => v + amount);
+        Volatile.Read(ref _byType).AddOrUpdate(type, amount, (_, v) => v + amount);
+        Volatile.Read(ref _byThread).AddOrUpdate((int)e.OSThreadId, amount, (_, v) => v + amount);
     }
 
-    // the window's line (null: under 1 MB a second), and a fresh window
-    public string TakeLine(double secs)
+    // the window ends (the main loop: two pointer swaps, nothing copied) - the given empty ones collect the next window, the
+    // window's sums come back in them (an event already under way may still add to them: one ~100 KB tick, harmless)
+    public void Cut(ref ConcurrentDictionary<string, long> types, ref ConcurrentDictionary<int, long> threads)
     {
-        var types = _byType.ToArray();
-        var threads = _byThread.ToArray();
-        _byType.Clear();
-        _byThread.Clear();
+        types = Interlocked.Exchange(ref _byType, types);
+        threads = Interlocked.Exchange(ref _byThread, threads);
+    }
+
+    // a cut window's line (null: under 1 MB a second) - the perf log's thread; the two are left empty for the next Cut
+    public string TakeLine(ConcurrentDictionary<string, long> byType, ConcurrentDictionary<int, long> byThread, double secs)
+    {
+        var types = byType.ToArray();
+        var threads = byThread.ToArray();
+        byType.Clear();
+        byThread.Clear();
         long total = types.Sum(t => t.Value);
         if (secs <= 0 || total / secs < 1 << 20) return null;
         var sb = new StringBuilder($"alloc: {total / secs / 1048576:0.0} MB/s - types:");
