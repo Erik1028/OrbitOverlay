@@ -175,6 +175,9 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         };
         _kb.OnChatTyping = on => { _status.Typing = on; _osc.SendMessage(C.General.OscPort, "/chatbox/typing", on); };
         SyncMonitors(force: true);
+        // the screens' places noted, the full query again in a minute: the first frame's monitor check asked Windows for the very same
+        // monitors once more (QueryDisplayConfig: ms on some drivers - Erik 10-24, the startup hitch)
+        if (_monitorKey.Length > 0) { ScreensMoved(); _nextMonitorFull = Now + 60; }
         SyncWindowPanels();
         NoteVersion();
         try
@@ -581,22 +584,28 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             GpuProbeCheck();
             double t = Clock.Now;
             Spikes.Begin();
+            if (_vrFrames < 1000000) _vrFrames++;      // (the connect's steps and the watchers go by it: BootTick, VrAfter)
             _allocMark = GC.GetAllocatedBytesForCurrentThread();
             _vr.Idle = VrOverlay.ShownCount == 0 && !_vr.Suppress[0] && !_vr.Suppress[1];     // nothing of Orbit's in view (VrSession.Idle)
+            long vp = System.Diagnostics.Stopwatch.GetTimestamp();
             _vr.Update();
+            Spikes.Piece("vr: poses + input", vp); vp = System.Diagnostics.Stopwatch.GetTimestamp();
             // the look: the eyes while they are tracked, else the head (VrSession.Gaze)
             _eyes.Update(now, C.General.EyeTracking && _vr.HmdValid);
             _vr.EyesValid = _eyes.Valid && _vr.HmdValid;
             _vr.Gaze = _vr.EyesValid ? _eyes.WorldDir(_vr.Hmd) : MathUtil.Forward(_vr.Hmd);
             _vr.GazeOrigin = _vr.EyesValid ? _eyes.WorldOrigin(_vr.Hmd) : _vr.Hmd.Translation;
+            Spikes.Piece("vr: eyes", vp); vp = System.Diagnostics.Stopwatch.GetTimestamp();
             bool watched = (_wrist?.Alpha ?? 0) > 0.02f;
             _data.Vr.Watched = watched;                 // the batteries every second while the watch shows, else every 5 s
             _gpuStats.Active = watched;                 // the GPU counters (a few ms a sample) only while the watch can show them
             _data.Vr.Update(_vr, now);
+            Spikes.Piece("vr: frame stats + batteries", vp); vp = System.Diagnostics.Stopwatch.GetTimestamp();
             FirstUseIfPending();
             if (_warmAt > 0 && now >= _warmAt) WarmAgain();
             if (_wrist.WantsFrames) _data.Vr.SampleFrame(_vr);
             PlaceMissing();
+            Spikes.Piece("vr: placing (+ the warm-up 8 s in)", vp);
             bool dash = _vr.Ov.IsDashboardVisible();
             if (dash) _dashLoops++;
             if (_gpuPrio == 7) _prioLoops++;
@@ -645,16 +654,21 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
                 awake && _vr.HeadsetWorn && _data.VrSince is { } since && (DateTime.Now - since).TotalSeconds > 3);
             Perf(4, ref t);
             Spikes.Mark(Spikes.Settings);
+            long dp = System.Diagnostics.Stopwatch.GetTimestamp();
             _screens.Clear();
             foreach (var d in _desktops) _screens.Add(d);           // (AddRange of another element type boxed an enumerator each time)
             foreach (var w in _windowPanels) _screens.Add(w);
             bool theaterWas = _theater.On;
             _theater.AmbilightOn = C.Theater.Ambilight;
+            _theater.MayWarm = _bootStep < 0;                       // its textures made ready after the connect's steps (BootTick)
             _theater.Update(_vr, dt, C.Theater.Dim, _screens);
             if (theaterWas && !_theater.On) StopTheater(glide: false);      // its screen went away
             if (_theater.View is { } tv && tv.Size != C.Theater.Width) { C.Theater.Width = tv.Size; _cfg.MarkSoftDirty(); }
+            Spikes.Piece("desktops: theater", dp); dp = System.Diagnostics.Stopwatch.GetTimestamp();
             UpdateAutoTheater(now, awake);      // a video in full screen starts / ends theater by itself (OrbitApp.AutoTheater.cs)
+            Spikes.Piece("desktops: auto theater", dp); dp = System.Diagnostics.Stopwatch.GetTimestamp();
             UpdateTheaterBar(now, dt);
+            Spikes.Piece("desktops: theater bar", dp);
             // headset off: no capturing (the overlays keep their last picture)
             if (awake)
             {
@@ -668,7 +682,15 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
                 bool dimLook = C.General.DimUnlooked && _vr.EyesValid;
                 foreach (var d in _desktops) { d.SmartCapture = C.General.SmartCapture; d.DimUnlooked = dimLook; d.Update(_vr, now, C.General.DesktopsVisible, C.General.CaptureFps); }
                 foreach (var w in _windowPanels) { w.DimUnlooked = dimLook; w.Update(_vr, now, C.General.DesktopsVisible, C.General.CaptureFps, C.General.SmartCapture); }
-                if (now >= _nextWindowScan) { _nextWindowScan = now + 2; ScanWindows(); }
+                // (not in the first frame after connecting - it is every part's first run - but in the second, before BootTick makes the
+                // windows' overlays: each one's capture then starts with its overlay, one a frame, not all here at once)
+                if (now >= _nextWindowScan && _vrFrames >= 1)
+                {
+                    long ws = System.Diagnostics.Stopwatch.GetTimestamp();
+                    _nextWindowScan = now + 2;
+                    ScanWindows();
+                    Spikes.Piece("desktops: window scan", ws);
+                }
             }
             Perf(5, ref t);
             Spikes.Mark(Spikes.Desktops);
@@ -708,13 +730,16 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             PerfFrame(now);
             Spikes.Piece("the perf log", gp);
             Spikes.Mark(Spikes.PerfLog);
+            BootTick();                         // the connect's one-time work, a step a frame; monitors rebuilt later, one a frame
+            Spikes.Mark(Spikes.Boot);
         }
 
         long ap = System.Diagnostics.Stopwatch.GetTimestamp();       // (each watcher's time: the spike line's slowest piece, Sys/Spikes.cs)
-        _notifyIn.SetEnabled(C.General.Notifications && _vr.Connected);
+        // (the watchers wake one a frame after the connect's steps: VrAfter)
+        _notifyIn.SetEnabled(C.General.Notifications && VrAfter(1));
         _media.Active = _vr.Connected;
         WatchWidgets.DockAvailable = C.Dock.Enabled && _hexpad.Present;     // the editor offers the dock widget (also on the desktop)
-        _room.Active = _vr.Connected && C.Room.Enabled;
+        _room.Active = VrAfter(2) && C.Room.Enabled;
         _data.Room = C.Room.Enabled ? _roomSnap : null;
         Spikes.Piece("app: notifications, media, room", ap); ap = System.Diagnostics.Stopwatch.GetTimestamp();
         UpdatePhotos(now);                  // VRChat's photos for the latest photo widget (OrbitApp.Photos.cs)
@@ -761,7 +786,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         _prisma.Active = C.Wrist.Face == "custom" && WatchPages.Any(C.Wrist, "rgb");
         // Mixtape: linked while a page has Now playing (Mixtape's song and player in it) and SteamVR runs (or the settings preview shows
         // it), faster while the watch shows it
-        _mixtape.Active = C.Wrist.Face == "custom" && WatchPages.Any(C.Wrist, "media") && (_vr.Connected || now - _photoPreview < 3);
+        _mixtape.Active = C.Wrist.Face == "custom" && WatchPages.Any(C.Wrist, "media") && (VrAfter(8) || now - _photoPreview < 3);
         _mixtape.Watched = _wrist?.Alpha > 0.02f;
         _mixtape.Pump();
         Spikes.Piece("app: light + rgb", ap);
@@ -846,6 +871,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
 
     void OnVrConnected()
     {
+        long c0 = System.Diagnostics.Stopwatch.GetTimestamp();
         // the overlay textures must live on the adapter SteamVR renders with
         try
         {
@@ -866,31 +892,108 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         _lasers[0].Cursor = _lasers[1].Cursor = _sysCursor;
         _wrist.CreateOverlay(_vr);
         _kb.CreateOverlay(_vr);
-        // first draws load fonts (~25 ms each): do it now, not when you first look at the watch / keyboard
-        try { _wrist.Draw(_data); _kb.Draw(); _settingsPanel.Warm(); } catch (Exception e) { Log.Warn("warm-up draw: " + e.Message); }
-        _warmAt = Clock.Now + 8;            // and again once the data is in (WarmAgain)
+        _warmAt = Clock.Now + 8;            // the watch's first draw: a connect step (BootTick); again once the data is in (WarmAgain)
         _settingsPanel.CreateOverlay(_vr);
         _dockPanel.CreateOverlay(_vr);
         _roomPanel.CreateOverlay(_vr);
         _whatsNewPanel.CreateOverlay(_vr);
-        _theater.CreateOverlay();
+        _theater.CreateOverlay();           // (here, not a step: a monitor can play as soon as its overlay is made)
         _theaterBar.CreateOverlay();
-        _notifyPanel.CreateOverlay();
+        _notifyPanel.CreateOverlay();       // (here, not a step: its cards are dropped while it has none - NoteVersion's waits in the queue)
         try { _winrtDev ??= MonitorCapture.CreateWinRtDevice(_gpu); }
         catch (Exception e) { Log.Error("WinRT device: " + e); }
-        for (int i = 0; i < _desktops.Count; i++)
-        {
-            int di = i;
-            if (_desktops[di].Cfg.Enabled && _winrtDev != null) SafeCreate(() => _desktops[di].CreateOverlay(_vr, _winrtDev, di), _desktops[di].Cfg.Name);
-        }
-        foreach (var w in _windowPanels)
-            if (w.Cfg.Enabled && _winrtDev != null) SafeCreate(() => w.CreateOverlay(_vr, _winrtDev), w.Cfg.Title);
+        // the rest a step a frame (BootTick): the monitors' and windows' overlays and captures, the dashboard tab, the first draws, the
+        // auto-start; the window scan in the second frame
+        _deskNext = _winNext = 0;
+        _bootStep = 0;
+        _vrFrames = -1;
         _nextWindowScan = 0;
-        CreateDashboard();
-        ApplyAutoStart();
+        _connectAt = Clock.Now;
+        Spikes.BootBegin();                 // the next 60 frames into the log's "boot:" line (Sys/Spikes.cs)
         _vrStatus = $"SteamVR · {_vr.DisplayHz:0} Hz";
         _win.Dirty = true;
+        Log.Info($"connect: what every frame needs made in {System.Diagnostics.Stopwatch.GetElapsedTime(c0).TotalMilliseconds:0} ms - " +
+                 "the monitors, the dashboard tab, the first draws and the auto-start follow, a step a frame");
     }
+
+    // The connect's one-time work, a step a frame (Erik 10-24, the startup hitch: the first frames after SteamVR connected took 92-131
+    // ms - every monitor's capture, the dashboard tab, the warm-up draws and the watchers' first work in one or two frames). OnVrConnected
+    // makes only what every frame needs; the first frame after it runs every per-frame part for the first time, the second scans the
+    // windows; from the third one thing a frame: each enabled monitor's and window's overlay and capture (5-15 ms: the capture item, a
+    // 1920 x 1080 texture, the frame pool, the session), then the SteamVR dashboard tab, the watch's and the keyboard's first draws (the
+    // watch ~25 ms: its fonts, one draw that cannot be split), the settings panel's tabs (2-18 ms each: their D2D flush waits while the
+    // game fills the GPU) and the auto-start. The budget is that step a frame, 10-15 ms; the watch's draw and a flush behind the game go
+    // over it. Erik's 3 monitors: all made by frame ~16, ~0.2 s at 90 Hz (headset off, 20 Hz: ~0.8 s - nobody looks then); the watchers
+    // follow, one a frame (VrAfter). Monitors rebuilt later (SyncMonitors, a layout turning some on) come one a frame the same way.
+    int _vrFrames = -1;                     // VR frames since connecting (0: the first)
+    int _bootStep = -1;                     // the next connect step (-1: none left)
+    int _bootEnd;                           // the frame the last step ran in
+    double _connectAt;
+    // the first monitor / window panel whose overlay may still be missing (past the list's end: none; made only while SteamVR runs)
+    int _deskNext = int.MaxValue, _winNext = int.MaxValue;
+
+    void BootTick()
+    {
+        if (_vrFrames < 2) return;
+        if (CreatePendingOverlay()) return;          // the monitors and windows first (a rebuild later too)
+        if (_bootStep < 0) return;
+        int s = _bootStep++, tabs = SettingsView.TabCount;
+        long b0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        try
+        {
+            if (s == 0) { CreateDashboard(); Spikes.Piece("boot: dashboard tab", b0); }
+            else if (s == 1) { if (_wrist.Alpha <= 0.02f) _wrist.Draw(_data); Spikes.Piece("boot: the watch's first draw", b0); }
+            else if (s == 2) { if (!C.Keyboard.Visible) _kb.Draw(); Spikes.Piece("boot: the keyboard's first draw", b0); }
+            else if (s < 3 + tabs)
+            {
+                // (the Watch tab's preview notes a preview shown: not the watchers' cue to start now - they go one a frame, VrAfter)
+                double pp = _photoPreview;
+                if (!_settingsPanel.IsOpen) _settingsPanel.WarmTab(s - 3);
+                _photoPreview = pp;
+                Spikes.Piece("boot: a settings tab's first draw", b0);
+            }
+            else { ApplyAutoStart(); Spikes.Piece("boot: auto-start", b0); }
+        }
+        catch (Exception e) { Log.Warn($"connect step {s}: {e.Message}"); }
+        if (s < 3 + tabs) return;
+        _bootStep = -1;
+        _bootEnd = _vrFrames;
+        Log.Info($"connect: everything made by frame {_vrFrames}, {Clock.Now - _connectAt:0.00} s after connecting");
+    }
+
+    // one enabled monitor's or window's missing overlay and capture made: true when one was (that is the frame's step). Nothing to make:
+    // two compares.
+    bool CreatePendingOverlay()
+    {
+        if (_winrtDev == null) return false;
+        while (_deskNext < _desktops.Count)
+        {
+            int i = _deskNext++;
+            var d = _desktops[i];
+            if (!d.Cfg.Enabled || d.Ov != null) continue;
+            long c0 = System.Diagnostics.Stopwatch.GetTimestamp();
+            try { d.CreateOverlay(_vr, _winrtDev, i); }
+            catch (Exception e) { Log.Warn($"overlay for {d.Cfg.Name}: {e.Message}"); }       // (one that can't must not stop the rest)
+            Spikes.Piece("monitor: overlay + capture made", c0);
+            return true;
+        }
+        while (_winNext < _windowPanels.Count)
+        {
+            var w = _windowPanels[_winNext++];
+            if (!w.Cfg.Enabled || w.Ov != null) continue;
+            long c0 = System.Diagnostics.Stopwatch.GetTimestamp();
+            try { w.CreateOverlay(_vr, _winrtDev); }
+            catch (Exception e) { Log.Warn($"overlay for {w.Cfg.Title}: {e.Message}"); }
+            Spikes.Piece("window: overlay + capture made", c0);
+            return true;
+        }
+        return false;
+    }
+
+    // SteamVR connected and the watchers' turn: n frames after the connect's last step. They wake one a frame, not all in the first
+    // frame (Erik 10-24: their threads, sockets and first reads were 20-45 ms of it - the spike line's "app (photos, friends, temps,
+    // avatar...)"): notifications 1, room 2, photos 3, friends 4, on this day 5, temperatures 6, avatar 7, Mixtape 8, Hexpad 9 (~0.1 s).
+    bool VrAfter(int n) => _vr.Connected && _bootStep < 0 && _vrFrames >= _bootEnd + n;
 
     void CreateDashboard()
     {
@@ -1016,6 +1119,8 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         _notifyPanel.DestroyOverlay();
         foreach (var d in _desktops) d.DestroyOverlay();
         foreach (var w in _windowPanels) w.DestroyOverlay();
+        _deskNext = _winNext = int.MaxValue;         // nothing left to make, no step left (BootTick)
+        _bootStep = _vrFrames = -1;
         _dash?.Dispose(); _dashThumb?.Dispose();
         _dash = _dashThumb = null;
         if (C.General.Osc) SendOsc(Now, allOff: true);
@@ -1057,12 +1162,9 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             dc.Name = m.Name;
             _desktops.Add(new DesktopPanel(_gpu, _cfg, _mouse, m, dc) { Layout = _layout });
         }
-        if (_vr.Connected && _winrtDev != null)
-            for (int i = 0; i < _desktops.Count; i++)
-            {
-                int di = i;
-                if (_desktops[di].Cfg.Enabled) SafeCreate(() => _desktops[di].CreateOverlay(_vr, _winrtDev, di), _desktops[di].Cfg.Name);
-            }
+        // their overlays and captures one a frame from the next frame on, while SteamVR runs (BootTick: 5-15 ms each - all of them here
+        // were one long frame, in front of you when the monitors changed); called again meanwhile, it starts over on the new panels
+        _deskNext = 0;
         if (_win != null) _win.Dirty = true;
     }
 
@@ -1599,6 +1701,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             p.Dispose();
             _windowPanels.Remove(p);
         }
+        if (gone.Count > 0 && _winNext < int.MaxValue) _winNext = 0;    // (the rest moved up: overlays still to make looked for from the top - BootTick)
         foreach (var wc in C.Windows)
         {
             if (_windowPanels.Any(p => p.Cfg == wc)) continue;
@@ -1748,7 +1851,8 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
     {
         int i = _desktops.FindIndex(x => x.Cfg == d);
         if (i < 0 || !_vr.Connected || _winrtDev == null) return;
-        if (d.Enabled && _desktops[i].Ov == null) SafeCreate(() => _desktops[i].CreateOverlay(_vr, _winrtDev, i), d.Name);
+        // made from the next frame on, one a frame (BootTick): a layout switch turning on three monitors made three captures in one frame
+        if (d.Enabled && _desktops[i].Ov == null) _deskNext = Math.Min(_deskNext, i);
         if (!d.Enabled) _desktops[i].DestroyOverlay();
     }
 
@@ -2108,6 +2212,9 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
 
     static bool SteamVrJustStarted()
     {
+        // the vrserver process RuntimeRunning keeps first (Erik 10-24: listing every process was 9-13 ms of the first frame after
+        // connecting - the spike line's "app: light + rgb"); the list only when none is kept or it may not be asked
+        if (VrSession.ServerStart is { } st) return (DateTime.Now - st).TotalMinutes < 3;
         try
         {
             foreach (var p in System.Diagnostics.Process.GetProcessesByName("vrserver"))
@@ -2195,7 +2302,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
     {
         var d = C.Dock;
         bool widget = C.Wrist.Face == "custom" && WatchPages.Any(C.Wrist, "dock");
-        _hexpad.Active = _vr.Connected && d.Enabled && (d.Visible || widget);
+        _hexpad.Active = VrAfter(9) && d.Enabled && (d.Visible || widget);
         int v = _hexpad.Version;
         if (v != _dockSnap.Version)
         {

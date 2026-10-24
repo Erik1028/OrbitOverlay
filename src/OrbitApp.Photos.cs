@@ -16,7 +16,7 @@ public sealed partial class OrbitApp
 
     void UpdatePhotos(double now)
     {
-        bool want = C.Wrist.Face == "custom" && WatchPages.Any(C.Wrist, "photo") && (_vr.Connected || now - _photoPreview < 3);
+        bool want = C.Wrist.Face == "custom" && WatchPages.Any(C.Wrist, "photo") && (VrAfter(3) || now - _photoPreview < 3);
         _photos.Active = want;
         if (!want) { _data.Photos = null; _photoPending = null; return; }
         var s = _photos.Get();

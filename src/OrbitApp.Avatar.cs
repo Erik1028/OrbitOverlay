@@ -11,7 +11,7 @@ public sealed partial class OrbitApp
 
     void UpdateAvatar(double now)
     {
-        bool want = C.Wrist.Face == "custom" && WatchPages.Any(C.Wrist, "avatar") && (_vr.Connected || now - _photoPreview < 3);
+        bool want = C.Wrist.Face == "custom" && WatchPages.Any(C.Wrist, "avatar") && (VrAfter(7) || now - _photoPreview < 3);
         _avatar.Send ??= (address, value) => _avatarOsc.SendMessage(_avatar.SendPort, address, value);
         _avatar.OscPort = C.General.OscPort;
         _avatar.Active = want;

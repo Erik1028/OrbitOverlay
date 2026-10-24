@@ -18,7 +18,7 @@ public sealed partial class OrbitApp
 
     void UpdateSocial(double now)
     {
-        bool want = C.Wrist.Face == "custom" && WatchPages.Any(C.Wrist, "friends") && (_vr.Connected || now - _photoPreview < 3);
+        bool want = C.Wrist.Face == "custom" && WatchPages.Any(C.Wrist, "friends") && (VrAfter(4) || now - _photoPreview < 3);
         if (want)
         {
             _friends.VrcxDb = _room.VrcxDb;

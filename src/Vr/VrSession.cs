@@ -116,6 +116,17 @@ public sealed class VrSession : IDisposable
         catch { return false; }
     }
 
+    // the vrserver process RuntimeRunning keeps: when it started (null: none kept, or not allowed to ask) - "SteamVR just started" for
+    // the light without listing every process (OrbitApp.SteamVrJustStarted)
+    public static DateTime? ServerStart
+    {
+        get
+        {
+            try { return _vrserver?.StartTime; }
+            catch (Exception) { return null; }
+        }
+    }
+
     public bool TryConnect(string actionManifestPath, out string error, string appKey = null)
     {
         error = null;
