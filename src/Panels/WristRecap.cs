@@ -13,6 +13,7 @@ namespace Orbit;
 // Modern: Bento cards. Cyber: the RECAP tag, the time in the condensed bold, plates with segment bars. The retro styles that draw the
 // shared windows (95, XP, 7, the Mac): a little window and a "Session Summary" dialog of the era's fields and a details list of the
 // worlds. The Terminal: its log (WristSocial.Term.cs). Nothing allocated a frame at rest (the texts are made per recap and language).
+// Opened, it has a second side: Today, the whole day across sessions (Erik 10-24; WristToday.cs) - Session | Today over it.
 public sealed partial class WristPanel
 {
     // ================= the texts =================
@@ -231,6 +232,8 @@ public sealed partial class WristPanel
     void RecapDetail(RectangleF E, PanelData d)
     {
         if (Theme.Cyber) { CyberRecapDetail(E, d); return; }
+        RcTabs(E.Right - 22 - 46 - 14, E.Y + 17);              // Session | Today, left of the X (WristToday.cs)
+        if (_rcToday) { TodayDetail(E, d); return; }
         var t = Rct(d);
         float x = E.X + 24, right = E.Right - 24;
         if (!t.Has)
@@ -376,11 +379,14 @@ public sealed partial class WristPanel
 
     void CyberRecapDetail(RectangleF E, PanelData d)
     {
-        var t = Rct(d);
         CyFrame();
-        float nx = E.X + 24 + CyberHud.TagWidth(_p, Upper(WatchWidgets.Find("recap").Name), 18) + 14, nr = E.Right - 22 - 46 - 14;
-        if (nr - nx > 40) CyMono(FrCut(t.CyHead, nr - nx, CyNote, FontWeight.SemiBold, CyberHud.Mono), nx, E.Y + 23 + (26 + CyberHud.CapH(_p, CyNote)) / 2, nr - nx, CyG);
+        // Session | Today left of the X (WristToday.cs), the head between the tag and them
+        float nx = E.X + 24 + CyberHud.TagWidth(_p, Upper(WatchWidgets.Find("recap").Name), 18) + 14, nr = RcTabs(E.Right - 22 - 46 - 14, E.Y + 17) - 14;
+        string head = _rcToday ? Tdt(d).CyHead : Rct(d).CyHead;
+        if (nr - nx > 40) CyMono(FrCut(head, nr - nx, CyNote, FontWeight.SemiBold, CyberHud.Mono), nx, E.Y + 23 + (26 + CyberHud.CapH(_p, CyNote)) / 2, nr - nx, CyG);
         var c = new RectangleF(E.X + 24, E.Y + 74, E.Width - 48, E.Height - 74 - 22);
+        if (_rcToday) { CyberTodayDetail(c, d); return; }
+        var t = Rct(d);
         if (!t.Has)
         {
             _rcMax = 0;
@@ -485,16 +491,19 @@ public sealed partial class WristPanel
     }
 
     // Opened ("Session Summary"), in the window the style draws: the hourglass, how long in VR bold, when; the readings as a column of
-    // fields; the worlds in a details list (world, arrived, stay); who you met beside OK
+    // fields; the worlds in a details list (world, arrived, stay); who you met beside OK - and left of that the Today button, pushed in
+    // while the window shows the day (WristToday.cs)
     Action<int, RectangleF, bool> _rcRow95;
     RcText _rcDraw95;
     float _rcAtX95, _rcStayX95;
 
     void Recap95Detail(RectangleF c, PanelData d)
     {
+        if (_ui.Button95("wrc95today", new RectangleF(c.X, c.Bottom + 5, 75, 23), "Today", true, false, _rcToday)) RcSetToday(!_rcToday);
+        if (_rcToday) { Today95Detail(c, d); return; }
         var t = Rct(d);
-        float sw = c.Right - 75 - 8 - c.X;
-        if (t.Has) _ui.Text95(FrFit95(t.Status95, sw), new RectangleF(c.X, c.Bottom + 10, sw, 13), Blk95);
+        float sx = c.X + 75 + 8, sw = c.Right - 75 - 8 - sx;
+        if (t.Has) _ui.Text95(FrFit95(t.Status95, sw), new RectangleF(sx, c.Bottom + 10, sw, 13), Blk95);
         W95Icons.Draw(_p, W95Icons.Id.Hourglass, c.X + 4, c.Y + 4);
         if (!t.Has)
         {

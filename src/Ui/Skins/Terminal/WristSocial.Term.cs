@@ -10,6 +10,8 @@ namespace Orbit;
 // many ("12 users"), the names under it; opened, `who -H` - NAME, LINE (the instance's kind: pub, fr+, inv...), TIME (since when),
 // COMMENT (the world in brackets) - the ones with you bright, a starred one with a *. The recap as its log, `tail session.log`: the
 // headset on, each world with its stay, the headset off and how long, the photos, worlds and people, the longest stay, who you met.
+// Opened, [F1] SESSION / [F2] TODAY along its bottom (Erik 10-24; WristToday.cs): today as `last -s 05:00` lists logins - a world a
+// line, when you came and left and (how long), or "still here"; who was there and the photos under it; the day's sums at the end.
 public sealed partial class WristPanel
 {
     // a text cut to w in the terminal's font, kept with the friends' other texts
@@ -157,7 +159,18 @@ public sealed partial class WristPanel
         if (_ui.CaptionClose95("wd95x", win.Right - 5 - 16, win.Y + 5, true, 6)) { CloseDetail(); return; }
         var c = new RectangleF(win.X + 8, win.Y + 27, win.Width - 16, win.Height - 27 - 8);
         if (kind == "friends") TWho(c, d);
-        else TLogDetail(c, d);
+        else TRecapDetail(c, d);
+    }
+
+    // the recap: its two keys along the bottom, the session's log or today's logins over them
+    void TRecapDetail(RectangleF c, PanelData d)
+    {
+        float ky = c.Bottom - 23;
+        if (TKey("wrcses", new RectangleF(c.X, ky, 78, 23), "[F1]", !_rcToday, true, "SESSION")) RcSetToday(false);
+        if (TKey("wrctoday", new RectangleF(c.X + 82, ky, 78, 23), "[F2]", _rcToday, true, "TODAY")) RcSetToday(true);
+        var lc = new RectangleF(c.X, c.Y, c.Width, c.Height - 28);
+        if (_rcToday) TLastDetail(lc, d);
+        else TLogDetail(lc, d);
     }
 
     void TWho(RectangleF c, PanelData d)
@@ -238,5 +251,68 @@ public sealed partial class WristPanel
             _p.Fill(new RectangleF(c.Right - 4, ty, 4, th), T.INK);
         }
         TPut("$ _", c.X, c.Bottom - 9, T.INK);
+    }
+
+    // ---- today: `last` ----
+
+    const string TLastCmd = "$ last -s 05:00";
+
+    void TLastDetail(RectangleF c, PanelData d)
+    {
+        var t = Tdt(d);
+        TPut(TLastCmd, c.X, c.Y, T.MID);
+        float y0 = c.Y + 15;
+        if (!t.Has)
+        {
+            TPut(FrTFit(Upper(t.Msg), c.Width), c.X, y0 + 2, T.HOT);
+            if (t.Hint.Length > 0) TPut(FrTFit(t.Hint, c.Width), c.X, y0 + 13, T.DIM);
+            TPut("$ _", c.X, y0 + 28, T.INK);
+            return;
+        }
+        var log = TTodayLog(t);
+        int n = log.Count, rows = Math.Max(1, (int)((c.Bottom - 13 - y0) / 11)), maxTop = Math.Max(0, n - rows);
+        if (_ui.Wheel != 0 && maxTop > 0 && _ui.OverNow(c)) { _tdTop -= Math.Sign(_ui.Wheel); _dirty = true; }
+        _tdTop = Math.Clamp(_tdTop, 0, maxTop);
+        float right = c.Right - 8;
+        for (int i = _tdTop; i < Math.Min(n, _tdTop + rows); i++)
+        {
+            var (text, when, ink, whenInk) = log[i];
+            float y = y0 + (i - _tdTop) * 11, ww = when.Length > 0 ? T.W(when) : 0;
+            if (ww > 0) TPut(when, right - ww, y, whenInk);
+            if (text.Length > 0) TPut(FrTFit(text, right - c.X - (ww > 0 ? ww + 12 : 0)), c.X, y, ink);
+        }
+        if (maxTop > 0)
+        {
+            float h = rows * 11, th = MathF.Max(8, MathF.Round(h * rows / n)), ty = MathF.Round(y0 + (h - th) * _tdTop / maxTop);
+            _p.Fill(new RectangleF(c.Right - 3, y0, 2, h), T.FAINT);
+            _p.Fill(new RectangleF(c.Right - 4, ty, 4, th), T.INK);
+        }
+        TPut("$ _", c.X, c.Bottom - 9, T.INK);
+    }
+
+    // today's logins, made per snapshot and language: a world's line (its name; "19:43 - 21:10 (01:27)" or "23:58   STILL HERE" at the
+    // right), who was there and the photos under it, dim; a blank line, then the day's sums and who you met (as `last` ends with
+    // "wtmp begins")
+    readonly List<(string text, string when, uint ink, uint whenInk)> _tToday = new();
+    TodayLog.Snapshot _tTodayOf;
+    int _tTodayLang = -1;
+
+    List<(string text, string when, uint ink, uint whenInk)> TTodayLog(TdText t)
+    {
+        if (ReferenceEquals(t.S, _tTodayOf) && _tTodayLang == Lang.Version) return _tToday;
+        (_tTodayOf, _tTodayLang) = (t.S, Lang.Version);
+        _tToday.Clear();
+        static string Hm(DateTime x) => x.ToString("HH:mm", CultureInfo.InvariantCulture);
+        foreach (var r in t.Rows)
+        {
+            int m = Math.Max(0, (int)r.Minutes);
+            string when = r.Here ? Hm(r.Start) + "   " + T.Up(Lang.T("still here")) : $"{Hm(r.Start)} - {Hm(r.End)} ({m / 60:00}:{m % 60:00})";
+            _tToday.Add((T.Up(r.Name), when, r.Longest ? T.HOT : T.INK, r.Here ? T.HOT : T.MID));
+            _tToday.Add(("  " + T.Up(r.Sub), T.Up(r.PhotosText), T.DIM, T.DIM));
+        }
+        _tToday.Add(("", "", T.DIM, T.DIM));
+        _tToday.Add((T.Up(t.Line.Replace(" · ", " - ")), "", T.INK, T.DIM));
+        if (t.Met.Length > 0) _tToday.Add((T.Up(t.Met.Replace(" · ", " - ")), "", T.MID, T.DIM));
+        return _tToday;
     }
 }

@@ -89,8 +89,8 @@ static class SocialViewTools
 
     // ---- the data's checks ----
 
-    // writes a made-up database (winsqlite3, read-write: the test's own file only)
-    static class MadeUp
+    // writes a made-up database (winsqlite3, read-write: the test's own file only; the recap's Today writes its own with it: TodayViewTest.cs)
+    internal static class MadeUp
     {
         const string Dll = "winsqlite3.dll";
         [DllImport(Dll, CallingConvention = CallingConvention.StdCall)] static extern int sqlite3_open_v2(byte[] name, out IntPtr db, int flags, IntPtr vfs);
@@ -300,9 +300,9 @@ static class SocialViewTools
 
     // ---- the views ----
 
-    static void Draw2(WristPanel wrist, PanelData data) { wrist.Draw(data); wrist.Draw(data); }
+    internal static void Draw2(WristPanel wrist, PanelData data) { wrist.Draw(data); wrist.Draw(data); }
 
-    static void Tap(WristPanel wrist, PanelData data, Vector2 p)
+    internal static void Tap(WristPanel wrist, PanelData data, Vector2 p)
     {
         wrist.PointerMove(Hand.Left, p); wrist.Draw(data);
         wrist.PointerButton(Hand.Left, PtrButton.Primary, true, p); wrist.Draw(data);
@@ -310,18 +310,18 @@ static class SocialViewTools
         wrist.PointerLeave(Hand.Left); wrist.Draw(data);
     }
 
-    static void Settle(WristPanel wrist, PanelData data)
+    internal static void Settle(WristPanel wrist, PanelData data)
     {
         for (int k = 0; k < 11; k++) { Thread.Sleep(40); wrist.Draw(data); }
     }
 
-    static Vector2 Middle(System.Drawing.RectangleF c)
+    internal static Vector2 Middle(System.Drawing.RectangleF c)
     {
         float s = Theme.Classic ? 2 : 1;
         return new Vector2((c.X + c.Width / 2) * s, (c.Y + c.Height / 2) * s);
     }
 
-    static WatchWidget W(string type, int x, int y, int w, int h) => new() { Type = type, X = x, Y = y, W = w, H = h };
+    internal static WatchWidget W(string type, int x, int y, int w, int h) => new() { Type = type, X = x, Y = y, W = w, H = h };
 
     // every size of both on the 6 x 4 grid, with a few others round them
     static List<WatchWidget> Face64() => new()

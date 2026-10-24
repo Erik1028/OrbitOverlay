@@ -53,8 +53,10 @@ public sealed partial class WristPanel
         _rcScroll = 0;
         _ui.ListScrollTo95(FriendsList95, 0);
         _ui.ListScrollTo95(RecapList95, 0);
+        _ui.ListScrollTo95(TodayList95, 0);
         _frTop = 0;
-        _rcTop = 0;
+        _rcTop = _tdTop = 0;
+        _tdSel = -1;
     }
 
     // a text cut to w, kept until the list changes (Ellipsize makes a new string each time it cuts)
