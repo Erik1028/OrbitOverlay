@@ -677,6 +677,11 @@ public sealed partial class WristPanel
                 CyNote, FontWeight.SemiBold, TextAlignment.Center);
             return;
         }
+        // a photo lying as big as the card lets it (Erik 10-24: "a cyber felületen túl kicsi a fotó" - the plates' column took a third of
+        // it): CyberPhotoWide. One standing up keeps the plates beside it.
+        var (aw0, ah0) = PhotoAspect(p);
+        var wide = PhotoFit(aw0, ah0, RectangleF.Inflate(c, -8, -8));
+        if (wide.Width >= c.Width * 0.62f) { CyberPhotoWide(E, c, wide, p, words); return; }
         // the plates' column, the photo's area beside it
         const float colW = 156, gap = 18;
         var col = new RectangleF(c.Right - colW, c.Y, colW, c.Height);
@@ -726,6 +731,43 @@ public sealed partial class WristPanel
         }
         float k = PhotoPopK();
         if (k > 0) _p.Fill(box, Theme.WithAlpha(0xFFFFFFFF, 0.5f * k * k));
+        PhotoActions(box, p);
+        DeleteNoteModern(E);
+    }
+
+    // The whole card under the heading, the photo in its bracketed frame; the HUD strip over its foot - the world in the condensed
+    // capitals, how long ago at the right; the time stamp in cyan, the people after it -, the arrows at its sides, Gallery and Delete
+    // at its top right
+    void CyberPhotoWide(RectangleF E, RectangleF c, RectangleF box, PhotoWatcher.Photo p, PhotoWords words)
+    {
+        var bmp = PhotoBitmap(p);
+        if (bmp != null) _p.ImagePart(bmp, box, new RectangleF(0, 0, p.TW, p.TH));
+        else { _p.Fill(box, CyberHud.Card2); _p.Icon(PhotoKindIcon, box, CyberHud.Faint, 36); }
+        float sh = 62;
+        var strip = new RectangleF(box.X, box.Bottom - sh, box.Width, sh);
+        _p.FillGradient(new RectangleF(box.X, strip.Y - 30, box.Width, 30), 0x000B0A0C, 0x000B0A0C, 0xB30B0A0C, 0, 90);
+        _p.Fill(strip, 0xD90B0A0C);
+        _p.Fill(new RectangleF(strip.X, strip.Y, strip.Width, 1), CyberHud.Edge);
+        float x = box.X + 16, right = box.Right - 16;
+        string ago = Upper(words.Ago);
+        float agw = CyMonoW(ago);
+        CyMono(ago, right, strip.Y + 26, agw + 2, CyG, CyNote, FontWeight.SemiBold, TextAlignment.Trailing);
+        string world = p.World != null ? Upper(p.World) : Upper("World not known");
+        TextAt(PhotoCut(world, right - x - agw - 20, 20, FontWeight.Bold, Theme.Display), x, strip.Y + 27, right - x - agw - 18,
+            p.World != null ? CyW : CyberHud.Faint, 20, FontWeight.Bold, TextAlignment.Leading, Theme.Display);
+        float sw = CyMonoW(words.Stamp), by = strip.Bottom - 12;
+        CyMono(words.Stamp, x, by, sw + 2, CyC, CyNote, FontWeight.Bold);
+        string people = PhotoPeople(p, right - x - sw - 22, SmallText);
+        if (people != null) TextAt(people, x + sw + 18, by + 1, right - x - sw - 16, CyG, SmallText, FontWeight.Normal);
+        _p.Stroke(RectangleF.Inflate(box, 0.6f, 0.6f), CyberHud.CyanDim, 1.25f);
+        float k = PhotoPopK();
+        PhotoCorners(RectangleF.Inflate(box, 6, 6), k > 0 ? Theme.Mix(CyY, CyC, k) : CyY, 16);
+        if (k > 0) _p.Fill(box, Theme.WithAlpha(0xFFFFFFFF, 0.5f * k * k));
+        // the arrows at its sides (only where there is one that way)
+        float ay = box.Y + (box.Height - sh) / 2 - 26;
+        int n = PhotoCount;
+        if (_phIndex < n - 1 && Press("wphprev", new RectangleF(box.X + 12, ay, 52, 52), PhPrev, null, false, true, 20, true)) PhotoStep(1);
+        if (_phIndex > 0 && Press("wphnext", new RectangleF(box.Right - 64, ay, 52, 52), PhNext, null, false, true, 20, true)) PhotoStep(-1);
         PhotoActions(box, p);
         DeleteNoteModern(E);
     }
@@ -848,8 +890,15 @@ public sealed partial class WristPanel
         float ty = win.Y + 40;
         _p.EtchedLine(win.X + 3, win.Right - 3, ty - 2);
         int n = PhotoCount;
-        if (_ui.GlyphButton95("wph95p", new RectangleF(win.X + 6, ty + 1, 26, 22), PhPrev95, !grid && _phIndex < n - 1)) PhotoStep(1);
-        if (_ui.GlyphButton95("wph95n", new RectangleF(win.X + 33, ty + 1, 26, 22), PhNext95, !grid && _phIndex > 0)) PhotoStep(-1);
+        if (grid)
+        {
+            if (_ui.Button95("wgdays", new RectangleF(win.X + 6, ty + 1, 53, 22), "Days", true, false, C.GalleryDays)) GalSetDays(!C.GalleryDays);
+        }
+        else
+        {
+            if (_ui.GlyphButton95("wph95p", new RectangleF(win.X + 6, ty + 1, 26, 22), PhPrev95, _phIndex < n - 1)) PhotoStep(1);
+            if (_ui.GlyphButton95("wph95n", new RectangleF(win.X + 33, ty + 1, 26, 22), PhNext95, _phIndex > 0)) PhotoStep(-1);
+        }
         ActionButtons95(win.X + 63, ty + 1, 26, 22, p);
         float cx = win.X + 63 + 53 + 6;
         var close = new RectangleF(win.Right - 6 - 56, ty + 1, 56, 22);

@@ -866,6 +866,8 @@ static class Hu
         ("LOADING...", "BETÖLTÉS..."),
         // the photo view's gallery and Delete (WristGallery.cs, Sys/PhotoAlbum.cs)
         ("Gallery", "Galéria"),
+        ("Days", "Napok"),
+        ("DAYS", "NAPOK"),
         ("Delete?", "Törlöd?"),
         ("Deleting...", "Törlés..."),
         ("Moved to the Recycle Bin", "A Lomtárba került"),

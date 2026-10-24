@@ -94,8 +94,18 @@ public sealed partial class WristPanel
         _p.Fill(new RectangleF(bar.X, bar.Y, bar.Width, 1), XpViewerBar);
         int n = PhotoCount;
         float bx = bar.X + 6, by = bar.Y + 3;
-        if (XpRound("wph95p", new RectangleF(bx, by, 24, 22), false, !grid && _phIndex < n - 1)) PhotoStep(1);
-        if (XpRound("wph95n", new RectangleF(bx + 26, by, 24, 22), true, !grid && _phIndex > 0)) PhotoStep(-1);
+        if (grid)
+        {
+            // the view: Days (held in while on - the viewer's own toggles' way)
+            var dr = new RectangleF(bx, by, 50, 22);
+            if (C.GalleryDays) Theme.RetroSkin.ButtonFace(_p, dr, false, true, false, false);
+            if (XpTool("wgdays", dr, "Days", false, true)) GalSetDays(!C.GalleryDays);
+        }
+        else
+        {
+            if (XpRound("wph95p", new RectangleF(bx, by, 24, 22), false, _phIndex < n - 1)) PhotoStep(1);
+            if (XpRound("wph95n", new RectangleF(bx + 26, by, 24, 22), true, _phIndex > 0)) PhotoStep(-1);
+        }
         _p.Fill(new RectangleF(bx + 56, by + 2, 1, 18), XpViewerBar);
         // the viewer's own Delete (its red X), and the thumbnails' four squares for the gallery
         if (XpGlyphTool("wphall", new RectangleF(bx + 61, by, 24, 22), Grid95, 0xFF316AC5, true, grid)) GalleryToggle(p);

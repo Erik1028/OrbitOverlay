@@ -33,6 +33,29 @@ static class GalleryViewTools
         return true;
     }
 
+    static bool TapCell(WristPanel wrist, PanelData data, int slot)
+    {
+        var at = wrist.GalleryCellPoint(data, slot);
+        if (at is not { } a) return false;
+        Tap(wrist, data, a);
+        return true;
+    }
+
+    // the laser held on the sheet and pulled up by dy px (the panel's), a step a frame
+    static void Drag(WristPanel wrist, PanelData data, Vector2 from, float dy, bool rail = false)
+    {
+        wrist.PointerMove(Hand.Left, from); wrist.Draw(data);
+        wrist.PointerButton(Hand.Left, PtrButton.Primary, true, from); wrist.Draw(data);
+        for (int i = 1; i <= 8; i++)
+        {
+            Thread.Sleep(12);
+            wrist.PointerMove(Hand.Left, from + new Vector2(0, -dy * i / 8)); wrist.Draw(data);
+        }
+        var to = from + new Vector2(0, -dy);
+        wrist.PointerButton(Hand.Left, PtrButton.Primary, false, to); wrist.Draw(data);
+        wrist.PointerLeave(Hand.Left); wrist.Draw(data);
+    }
+
     static void Settle(WristPanel wrist, PanelData data)
     {
         for (int k = 0; k < 11; k++) { Thread.Sleep(40); wrist.Draw(data); }
@@ -58,7 +81,7 @@ static class GalleryViewTools
         s.Recent.AddRange(latest.Recent);
         var now = DateTime.Now;
         int k = 0;
-        foreach (var (days, n) in new[] { (1, 7), (3, 9), (40, 6), (366, 4) })
+        foreach (var (days, n) in new[] { (1, 7), (3, 9), (40, 6), (100, 12), (366, 4), (400, 10) })
             for (int i = 0; i < n; i++, k++)
             {
                 int scene = (k * 5 + 1) % 6;
@@ -131,8 +154,21 @@ static class GalleryViewTools
         // the stick scrolls it
         Scroll(wrist, data, -6);
         bool scrolled = wrist.GalleryScroll > 0;
+        // the laser pulls the sheet up: it scrolls, nothing opens (and let go it glides on a little: modern, Cyber)
+        float s1 = wrist.GalleryScroll;
+        var c0 = wrist.GalleryCellPoint(data, 6);
+        if (c0 is { } cp) Drag(wrist, data, cp, 120);
+        bool dragged = c0 != null && wrist.GalleryScroll > s1 + (Theme.Classic ? 35 : 80) && wrist.GalleryGridShown;     // (retro: half the px)
+        Settle(wrist, data);
+        // Days: the headings; All again: the one sheet, the photo at the top still there
+        bool daysTap = TapId(wrist, data, "wgdays");
+        bool days = daysTap && wrist.GalleryDaysShown;
+        Settle(wrist, data);
+        bool allTap = Theme.Classic ? TapId(wrist, data, "wgdays") : TapId(wrist, data, "wgall");
+        bool allAgain = allTap && !wrist.GalleryDaysShown;
+        Settle(wrist, data);
         // a tap on a photo: big, in all the photos
-        bool tapped = TapId(wrist, data, "wgc2");
+        bool tapped = TapCell(wrist, data, 2);
         Draw2(wrist, data);
         string pick = wrist.LastGalleryPick;
         int at = pick == null ? -1 : album.Recent.FindIndex(p => p.Path == pick);
@@ -180,7 +216,8 @@ static class GalleryViewTools
         Draw2(wrist, data);
         bool waits = wrist.GalleryGridShown && !wrist.PhotoEmptyShown;
         wrist.CloseForTest();
-        Log.Info($"gallery view{tag}: Gallery opened the grid {grid} (want True), the stick scrolled it {scrolled} (want True), a tap opened that photo big " +
+        Log.Info($"gallery view{tag}: Gallery opened the grid {grid} (want True), the stick scrolled it {scrolled} (want True), the laser dragged it " +
+                 $"{dragged} (want True), Days {days} and All again {allAgain} (want True True), a tap opened that photo big " +
                  $"{picked} (want True), its arrow stepped to the one before it {older} (want True), Gallery went back to the grid {back} and to the photo " +
                  $"again {again} (want True True); Delete asked first {asks} (want True), then handed it over and stepped off it {moved} (want True), " +
                  $"a refusal said why and stayed {refused} (want True); opened again: the latest photo's view {fresh} (want True), its Delete too " +
@@ -210,7 +247,13 @@ static class GalleryViewTools
         Scroll(wrist, data, -9);
         Settle(wrist, data);
         Save("scrolled");
-        TapId(wrist, data, "wgc1");
+        TapId(wrist, data, "wgdays");
+        Scroll(wrist, data, -4);
+        Settle(wrist, data);
+        Save("days");
+        if (Theme.Classic) TapId(wrist, data, "wgdays"); else TapId(wrist, data, "wgall");
+        Settle(wrist, data);
+        TapCell(wrist, data, 1);
         wrist.Settle();
         Settle(wrist, data);
         Save("open");
@@ -223,7 +266,7 @@ static class GalleryViewTools
         wrist.CloseForTest();
         Preview.RemoveAll(p => p.tag == tag);
         Preview.Add((tag, grid, ask));
-        Log.Info($"gallery view{tag}: 5 pictures (wrist_gallery_*{tag}.png)");
+        Log.Info($"gallery view{tag}: 6 pictures (wrist_gallery_*{tag}.png)");
     }
 
     // what a frame allocates with the grid at rest: nothing is the goal (the layout, the headings, the bitmaps kept)
@@ -257,7 +300,7 @@ static class GalleryViewTools
             long grid = Frame();
             Scroll(wrist, data, -9);
             long scrolled = Frame();
-            TapId(wrist, data, "wgc1");
+            TapCell(wrist, data, 1);
             long open = Frame();
             wrist.CloseForTest();
             Log.Info($"gallery perf{tag}: the grid at rest {grid} B a frame, scrolled {scrolled} B, a photo of it open {open} B (want 0, 0, 0)");

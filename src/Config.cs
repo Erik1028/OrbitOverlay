@@ -45,6 +45,8 @@ public sealed class WristConfig
     public int Page { get; set; }                       // the page the watch shows (0 = page 1)
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public int PagesVersion { get; set; }               // 1 = the VRChat and Performance pages were added once (deleting them keeps them gone)
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool GalleryDays { get; set; }               // the photo view's gallery by day (false: All, one sheet - WristGallery.cs)
 }
 
 // A page of the custom watch face after the first (WristConfig.Widgets is page 1)

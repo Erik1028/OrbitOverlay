@@ -113,6 +113,7 @@ public sealed partial class WristPanel
         if (DelAero("wphdel", new RectangleF(bar.Right - 34, bar.Y + 3, 28, 24), p != null && !DeleteBusy, DeleteArmed(p))) DeleteTap(p);
         if (grid)
         {
+            if (TextAero("wgdays", new RectangleF(bar.X + 42, bar.Y + 4, WAero(Lang.T("Days"), 11) + 18, bar.Height - 8), "Days", C.GalleryDays)) GalSetDays(!C.GalleryDays);
             if (_ph is { Recent.Count: > 0 } a)
                 _p.Text(GalCountText(a.Recent.Count), new RectangleF(cx - 80, bar.Y, 160, bar.Height), 0xFFE8F0FB, 11, FontWeight.Normal, TextAlignment.Center,
                     ParagraphAlignment.Center, Ae.Font);
@@ -166,6 +167,21 @@ public sealed partial class WristPanel
         }
         else if (people != null)
             _p.Text(people, new RectangleF(view.X, iy, lw, 14), SubAero, 11, FontWeight.Normal, TextAlignment.Leading, ParagraphAlignment.Center, Ae.Font);
+    }
+
+    // a word on the control bar that toggles (the gallery's Days): flat, the bar's glass glow under the pointer and while on
+    bool TextAero(string id, RectangleF r, string label, bool on)
+    {
+        bool click = _ui.Clickable(id, r, out bool hover, out bool held);
+        if (hover || held || on)
+        {
+            _p.Smooth(true);
+            _p.FillRound(r, Theme.WithAlpha(0xFFFFFFFF, on ? 0.26f : held ? 0.2f : 0.14f), 3);
+            _p.StrokeRound(new RectangleF(r.X + 0.5f, r.Y + 0.5f, r.Width - 1, r.Height - 1), Theme.WithAlpha(0xFFFFFFFF, 0.5f), 1, 3);
+            _p.Smooth(false);
+        }
+        _p.Text(label, r, 0xFFE8F0FB, 11, FontWeight.Normal, TextAlignment.Center, ParagraphAlignment.Center, Ae.Font);
+        return click;
     }
 
     // the control bar's Delete: flat, its red X; under the pointer (and asking) the bar's soft glass glow

@@ -163,8 +163,15 @@ public sealed partial class WristPanel
         int n = PhotoCount;
         float ky = c.Bottom + 5, kw = MathF.Floor((c.Width - 75 - 2 * 26 - 4 * 4) / 3);
         RectangleF Key(int i) => new(c.X + 2 * 30 + i * (kw + 4), ky, kw, 23);
-        if (TGlyphKey("wph95p", new RectangleF(c.X, ky, 26, 23), PhPrev95, !grid && _phIndex < n - 1)) PhotoStep(1);
-        if (TGlyphKey("wph95n", new RectangleF(c.X + 30, ky, 26, 23), PhNext95, !grid && _phIndex > 0)) PhotoStep(-1);
+        if (grid)
+        {
+            if (TKey("wgdays", new RectangleF(c.X, ky, 56, 23), "DAYS", C.GalleryDays, true)) GalSetDays(!C.GalleryDays);
+        }
+        else
+        {
+            if (TGlyphKey("wph95p", new RectangleF(c.X, ky, 26, 23), PhPrev95, _phIndex < n - 1)) PhotoStep(1);
+            if (TGlyphKey("wph95n", new RectangleF(c.X + 30, ky, 26, 23), PhNext95, _phIndex > 0)) PhotoStep(-1);
+        }
         if (TKey("wphall", Key(0), "[F3]", grid, true, "ALL")) GalleryToggle(p);
         bool asking = DeleteArmed(p);
         if (TKey("wphdel", Key(1), "[F4]", asking, p != null && !DeleteBusy, asking ? "SURE?" : "DEL")) DeleteTap(p);

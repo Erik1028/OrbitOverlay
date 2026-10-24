@@ -36,8 +36,15 @@ public sealed partial class WristPanel
         // the buttons along the bottom: the arrows, Gallery and Delete, which one, Open in VR Gallery, OK
         float by = win.Bottom - 8 - 23;
         int n = PhotoCount;
-        if (_ui.GlyphButton95("wph95p", new RectangleF(c.X, by, 28, 23), PhPrev95, !grid && _phIndex < n - 1)) PhotoStep(1);
-        if (_ui.GlyphButton95("wph95n", new RectangleF(c.X + 32, by, 28, 23), PhNext95, !grid && _phIndex > 0)) PhotoStep(-1);
+        if (grid)
+        {
+            if (_ui.Button95("wgdays", new RectangleF(c.X, by, 60, 23), "Days", true, false, C.GalleryDays)) GalSetDays(!C.GalleryDays);
+        }
+        else
+        {
+            if (_ui.GlyphButton95("wph95p", new RectangleF(c.X, by, 28, 23), PhPrev95, _phIndex < n - 1)) PhotoStep(1);
+            if (_ui.GlyphButton95("wph95n", new RectangleF(c.X + 32, by, 28, 23), PhNext95, _phIndex > 0)) PhotoStep(-1);
+        }
         ActionButtons95(c.X + 64, by, 28, 23, p);
         float cx = c.X + 64 + 57 + 6;
         var ok = new RectangleF(win.Right - 8 - 60, by, 60, 23);

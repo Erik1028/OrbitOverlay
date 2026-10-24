@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Globalization;
 using System.IO;
+using System.Numerics;
 using Vortice.Direct2D1;
 using Vortice.DirectWrite;
 
@@ -153,7 +154,8 @@ public sealed partial class WristPanel
         }
     }
 
-    // ---- the grid's layout: each day a heading and its rows; kept per snapshot and size ----
+    // ---- the grid's layout: All - one sheet of photos, square, almost no gap (VR Gallery's All, Erik 10-24: "mutathatná az all listát
+    // folyamatosan mint a vrgallery"); Days - each day a heading and its rows. The months' first rows for the rail. Kept per snapshot and size ----
 
     sealed class GalDay { public DateTime Day; public int First, Count; public float Y, End; }
 
@@ -161,25 +163,36 @@ public sealed partial class WristPanel
     {
         public PhotoWatcher.Snapshot Snap;
         public int Cols;
+        public bool ByDay;
         public float CellW, CellH, HeadH, Gap, Height;
-        public readonly List<GalDay> Days = new();
+        public readonly List<GalDay> Days = new();              // (All: one, the whole sheet, no heading)
+        public readonly List<(float y, int year, int month)> Months = new();      // the newest month first
     }
 
     readonly GalLayout _galL = new();
 
-    GalLayout GalLayoutOf(PhotoWatcher.Snapshot s, int cols, float cw, float ch, float headH, float gap)
+    GalLayout GalLayoutOf(PhotoWatcher.Snapshot s, int cols, float cw, float ch, float headH, float gap, bool byDay)
     {
         var L = _galL;
-        if (ReferenceEquals(L.Snap, s) && L.Cols == cols && L.CellW == cw && L.CellH == ch && L.HeadH == headH && L.Gap == gap) return L;
-        (L.Snap, L.Cols, L.CellW, L.CellH, L.HeadH, L.Gap) = (s, cols, cw, ch, headH, gap);
+        if (ReferenceEquals(L.Snap, s) && L.Cols == cols && L.CellW == cw && L.CellH == ch && L.HeadH == headH && L.Gap == gap && L.ByDay == byDay)
+            return L;
+        (L.Snap, L.Cols, L.CellW, L.CellH, L.HeadH, L.Gap, L.ByDay) = (s, cols, cw, ch, headH, gap, byDay);
         L.Days.Clear();
+        L.Months.Clear();
         float y = 0;
         var list = s?.Recent;
-        for (int i = 0; list != null && i < list.Count;)
+        int n = list?.Count ?? 0;
+        if (!byDay && n > 0)
+        {
+            int rows = (n + cols - 1) / cols;
+            L.Days.Add(new GalDay { Day = PhotoWatcher.DayOf(list[0].Taken), First = 0, Count = n, Y = 0, End = rows * (ch + gap) });
+            y = rows * (ch + gap);
+        }
+        for (int i = 0; byDay && i < n;)
         {
             var day = PhotoWatcher.DayOf(list[i].Taken);
             int j = i + 1;
-            while (j < list.Count && PhotoWatcher.DayOf(list[j].Taken) == day) j++;
+            while (j < n && PhotoWatcher.DayOf(list[j].Taken) == day) j++;
             int rows = (j - i + cols - 1) / cols;
             float end = y + headH + rows * (ch + gap);
             L.Days.Add(new GalDay { Day = day, First = i, Count = j - i, Y = y, End = end });
@@ -187,6 +200,17 @@ public sealed partial class WristPanel
             i = j;
         }
         L.Height = y;
+        int ym = -1;
+        for (int i = 0; i < n; i++)
+        {
+            var d = PhotoWatcher.DayOf(list[i].Taken);
+            int k = d.Year * 12 + d.Month;
+            if (k == ym) continue;
+            ym = k;
+            float my = GalRowY(L, i);
+            if (byDay) foreach (var g in L.Days) if (g.First == i) { my = g.Y; break; }
+            L.Months.Add((my, d.Year, d.Month));
+        }
         return L;
     }
 
@@ -257,31 +281,33 @@ public sealed partial class WristPanel
         return _galFolder;
     }
 
-    // ---- the cells' bitmaps: a few dozen kept by their pixels, the least recently drawn let go ----
+    // ---- the cells' bitmaps: a few dozen kept by their pixels, the least recently drawn let go; each with when it came (its fade-in) ----
 
-    readonly uint[][] _gbPx = new uint[48][];
-    readonly ID2D1Bitmap[] _gbBmp = new ID2D1Bitmap[48];
-    readonly long[] _gbUsed = new long[48];
+    readonly uint[][] _gbPx = new uint[64][];
+    readonly ID2D1Bitmap[] _gbBmp = new ID2D1Bitmap[64];
+    readonly long[] _gbUsed = new long[64];
+    readonly double[] _gbBorn = new double[64];
     long _gbTick;
 
     // a grid cell's picture: its own thumbnail when it has one (the big view's, the made-up photos'), else the album's cell
-    ID2D1Bitmap GalBitmap(PhotoWatcher.Photo p, IPhotoCells cells, out float w, out float h)
+    ID2D1Bitmap GalBitmap(PhotoWatcher.Photo p, IPhotoCells cells, out float w, out float h, out double born)
     {
         uint[] px = p.Thumb;
         int pw = p.TW, ph = p.TH;
         if (px == null && cells != null) (px, pw, ph) = cells.Cell(p.Path);
-        (w, h) = (pw, ph);
+        (w, h, born) = (pw, ph, 0);
         if (px == null) return null;
         int free = 0;
         for (int i = 0; i < _gbPx.Length; i++)
         {
-            if (ReferenceEquals(_gbPx[i], px)) { _gbUsed[i] = ++_gbTick; return _gbBmp[i]; }
+            if (ReferenceEquals(_gbPx[i], px)) { _gbUsed[i] = ++_gbTick; born = _gbBorn[i]; return _gbBmp[i]; }
             if (_gbUsed[i] < _gbUsed[free]) free = i;
         }
         _gbBmp[free]?.Dispose();
         _gbPx[free] = px;
         _gbBmp[free] = _p.CreateBitmap(px, pw, ph);
         _gbUsed[free] = ++_gbTick;
+        born = _gbBorn[free] = Clock.Now;
         return _gbBmp[free];
     }
 
@@ -291,19 +317,41 @@ public sealed partial class WristPanel
         for (int i = 0; i < _album.Bmps.Length; i++) { _album.Bmps[i].bmp?.Dispose(); _album.Bmps[i] = default; }
     }
 
-    // ---- the grid itself (every style but the Terminal): the stick scrolls it, the visible days' headings and cells drawn ----
-    // look: 0 modern, 1 Cyber, 2 a retro style (its list box, scroll bar, font and selection; v is in the retro canvas)
+    // ---- the grid itself (every style but the Terminal). The sheet is one control: a tap opens the photo under it, a drag scrolls it
+    // (the laser takes hold of the sheet; let go it glides on - modern, Cyber), the stick scrolls it; at its right the rail - the years
+    // and months, dragged to jump (a retro style: its own scroll bar, its thumb dragged). Days: the day's heading stays at the top while
+    // its photos scroll under it. look: 0 modern, 1 Cyber, 2 a retro style (its list box, scroll bar, font and selection; v in the
+    // retro canvas) ----
 
-    const string CellId = "wgc";
+    bool _galHeld, _galDrag, _galRailHeld;
+    Vector2 _galPressAt;
+    float _galPressScroll, _galVel, _galLastY;
+    double _galLastAt, _galTickAt;
+    readonly RectangleF[] _galCells = new RectangleF[128];     // the cells drawn this frame (a tap's; --snapshot's GalleryCellPoint)
+    readonly int[] _galCellIdx = new int[128];
+    int _galCellN;
+
+    // the view: All (one sheet) or Days (C.GalleryDays: kept in the config, as VR Gallery keeps its level)
+    void GalSetDays(bool days)
+    {
+        if (C.GalleryDays == days) return;
+        // the photo at the top stays at the top
+        _galAnchorTop = _galTopPhoto;
+        C.GalleryDays = days;
+        _cfg.MarkDirty();
+        _dirty = true;
+    }
+    string _galAnchorTop, _galTopPhoto;
 
     void GalGrid(RectangleF v, int look)
     {
         var s = _ph;
         var cells = s?.Source as IPhotoCells;
-        bool retro = look == 2;
+        bool retro = look == 2, days = C.GalleryDays;
         var sk = Theme.RetroSkin;
         if (retro) sk.ListBox(_p, v);
         var inner = retro ? RectangleF.Inflate(v, -2, -2) : v;
+        _galCellN = 0;
         int n = s?.Recent.Count ?? 0;
         if (s == null || !s.Ready || n == 0)
         {
@@ -316,64 +364,227 @@ public sealed partial class WristPanel
             return;
         }
         PhotoEmptyShown = false;
-        int cols = retro ? 3 : 4;
-        float bar = retro ? 16 : 10, gap = retro ? 4 : 10, headH = retro ? 17 : 38;
-        float gw = inner.Width - bar - (retro ? gap : 0);
-        float cw = MathF.Floor((gw - (cols - 1) * gap) / cols), ch = MathF.Floor(cw * 9 / 16);
-        var L = GalLayoutOf(s, cols, cw, ch, headH, gap);
-        float viewH = inner.Height - (retro ? 2 * gap : 0), top0 = inner.Y + (retro ? gap : 0), left = inner.X + (retro ? gap : 0);
+        int cols = retro ? (days ? 3 : 5) : (days ? 4 : 5);
+        float gap = retro ? (days ? 4 : 2) : (days ? 10 : 4), headH = days ? (retro ? 17 : 38) : 0;
+        float railW = retro ? 16 : 40, pad = retro ? gap : 0;
+        float gw = inner.Width - railW - 2 * pad - (retro ? 0 : 4);
+        float cw = MathF.Floor((gw - (cols - 1) * gap) / cols), ch = days ? MathF.Floor(cw * 9 / 16) : cw;
+        gw = cols * cw + (cols - 1) * gap;
+        var L = GalLayoutOf(s, cols, cw, ch, headH, gap, days);
+        float viewH = inner.Height - 2 * pad, top0 = inner.Y + pad, left = inner.X + pad;
         float max = MathF.Max(0, L.Height - viewH);
-        float step = (ch + gap) / 3;
-        if (_galAnchor != null)
+        double now = Clock.Now;
+        float fdt = (float)Math.Clamp(now - _galTickAt, 0, 0.1);
+        _galTickAt = now;
+        // where it opens: the photo that was big in the middle; Days / All switched: the photo at the top stays there
+        if (_galAnchor != null || _galAnchorTop != null)
         {
+            string a = _galAnchor ?? _galAnchorTop;
             for (int i = 0; i < n; i++)
-                if (s.Recent[i].Path == _galAnchor) { _galScroll = GalRowY(L, i) - (viewH - ch) / 2; break; }
-            _galAnchor = null;
+                if (s.Recent[i].Path == a) { _galScroll = GalRowY(L, i) - (_galAnchor != null ? (viewH - ch) / 2 : (days ? headH : 0)); break; }
+            _galAnchor = _galAnchorTop = null;
+            _galVel = 0;
         }
-        if (_ui.Wheel != 0 && !_ui.Inert) { _galScroll -= _ui.Wheel * step; _dirty = true; }
-        _galScroll = Math.Clamp(_galScroll, 0, max);
-        if (retro && max > 0)
+        // the stick
+        if (_ui.Wheel != 0 && !_ui.Inert) { _galScroll -= _ui.Wheel * (ch + gap) / 3; _galVel = 0; _dirty = true; }
+        // the sheet: held - a drag past a few px scrolls it with the pointer; a release without one is the tap (below, on the cell under it)
+        var sheet = new RectangleF(left, top0, gw, viewH);
+        bool tap = GalSheet(sheet, retro, now, out bool over, out bool held);
+        var m = _ui.Mouse;
+        // let go: it glides on, slowing (1995 did not)
+        if (!held && !retro && MathF.Abs(_galVel) > 25)
         {
-            // the style's own scroll bar: its arrows a row each, the thumb where the grid is
-            var sb = new RectangleF(inner.Right - 16, inner.Y, 16, inner.Height);
-            var up = new RectangleF(sb.X, sb.Y, 16, 16);
-            var dn = new RectangleF(sb.X, sb.Bottom - 16, 16, 16);
-            if (_ui.Clickable("wgup", up, out _, out bool uh) && !_ui.Inert) _galScroll = MathF.Max(0, _galScroll - (ch + gap));
-            if (_ui.Clickable("wgdn", dn, out _, out bool dh) && !_ui.Inert) _galScroll = MathF.Min(max, _galScroll + (ch + gap));
-            float track = sb.Height - 32, th = MathF.Max(8, track * viewH / L.Height), ty = sb.Y + 16 + (track - th) * _galScroll / max;
-            sk.ScrollBar(_p, sb, up, dn, new RectangleF(sb.X, MathF.Round(ty), 16, MathF.Round(th)), uh, dh);
+            _galScroll += _galVel * fdt;
+            _galVel *= MathF.Exp(-3.2f * fdt);
+            if (_galScroll <= 0 || _galScroll >= max) _galVel = 0;
+            _ui.Animating = true;
         }
+        else if (!held) _galVel = 0;
+        // the rail / the scroll bar
+        if (max > 0)
+        {
+            if (retro) GalScrollBar95(new RectangleF(inner.Right - 16, inner.Y, 16, inner.Height), L, viewH, max, ch + gap);
+            else GalRail(new RectangleF(inner.Right - railW, top0, railW, viewH), L, viewH, max, look);
+        }
+        else _galRailHeld = false;
+        _galScroll = Math.Clamp(_galScroll, 0, max);
         float scroll = retro ? MathF.Round(_galScroll) : _galScroll;
-        var clip = new RectangleF(inner.X, top0 - (retro ? 0 : 2), gw + (retro ? gap : 0), viewH + (retro ? 0 : 4));
+        var clip = retro ? new RectangleF(inner.X, top0, inner.Width - 16, viewH) : new RectangleF(left - 3, top0 - 3, gw + 6, viewH + 6);
         _p.PushClip(clip);
-        int slot = 0;
+        bool pressing = held && !_galDrag;
+        _galTopPhoto = null;
         foreach (var day in L.Days)
         {
             if (day.Y - scroll > viewH) break;
             if (day.End - scroll < 0) continue;
             float hy = top0 + day.Y - scroll;
-            if (hy + headH > top0 && hy < top0 + viewH) GalHeading(GalHead(day.Day, day.Count), left, hy, gw, headH, look);
-            for (int k = 0; k < day.Count; k++)
+            if (days && hy + headH > top0 && hy < top0 + viewH) GalHeading(GalHead(day.Day, day.Count), left, hy, gw, headH, look);
+            int k0 = Math.Max(0, (int)((scroll - day.Y - headH) / (ch + gap)) * cols);         // (the rows above the view skipped whole)
+            for (int k = k0; k < day.Count; k++)
             {
                 float cy = hy + headH + k / cols * (ch + gap);
                 if (cy > top0 + viewH) break;
                 if (cy + ch < top0) continue;
                 int i = day.First + k;
                 var r = new RectangleF(left + k % cols * (cw + gap), cy, cw, ch);
-                var hit = RectangleF.Intersect(r, clip);
-                string id = Ui.Id(CellId, slot++ % 64);
-                bool hover = false, tap = false;
-                if (hit.Height > 4) tap = _ui.Clickable(id, hit, out hover, out _) && !_ui.Inert;
-                GalCell(r, s.Recent[i], cells, look, hover && !_ui.Inert, _galPicked && i == _album.Index && _album.Path == s.Recent[i].Path);
-                if (tap) GalleryPick(i, s.Recent[i].Path);
+                if (_galTopPhoto == null && cy >= top0 - ch / 2) _galTopPhoto = s.Recent[i].Path;
+                if (_galCellN < _galCells.Length) { _galCells[_galCellN] = r; _galCellIdx[_galCellN] = i; _galCellN++; }
+                bool hover = over && !_galDrag && !_ui.Inert && r.Contains(m.X, m.Y);
+                GalCell(r, s.Recent[i], cells, look, hover, pressing && r.Contains(_galPressAt.X, _galPressAt.Y),
+                    _galPicked && i == _album.Index && _album.Path == s.Recent[i].Path, days ? (retro ? 0 : 10) : (retro ? 0 : 5));
             }
         }
+        // Days: the heading of the day at the top stays there, pushed up by the next one
+        if (days)
+            for (int d = 0; d < L.Days.Count; d++)
+            {
+                var day = L.Days[d];
+                if (day.Y >= scroll || day.End <= scroll) continue;
+                float next = d + 1 < L.Days.Count ? L.Days[d + 1].Y - scroll : float.MaxValue;
+                float hy = top0 + MathF.Min(0, next - headH);
+                var band = new RectangleF(clip.X, hy - (retro ? 0 : 3), clip.Width, headH + (retro ? 0 : 3));
+                _p.Fill(band, retro ? sk.Window : Bento.Card);
+                GalHeading(GalHead(day.Day, day.Count), left, hy, gw, headH, look);
+                break;
+            }
         _p.PopClip();
-        if (!retro && max > 0)
+        // a tap: the photo under it
+        if (tap)
+            for (int c = 0; c < _galCellN; c++)
+                if (_galCells[c].Contains(_galPressAt.X, _galPressAt.Y) && RectangleF.Intersect(_galCells[c], clip).Contains(_galPressAt.X, _galPressAt.Y))
+                {
+                    int i = _galCellIdx[c];
+                    GalleryPick(i, s.Recent[i].Path);
+                    break;
+                }
+    }
+
+    // The sheet's one control: held, a move past a few px is a drag - the sheet follows the pointer (its speed kept for the throw);
+    // released without one: the tap (true), on whatever is under the press point
+    bool GalSheet(RectangleF sheet, bool retro, double now, out bool over, out bool held)
+    {
+        bool tap = _ui.Clickable("wgrid", sheet, out over, out held) && !_ui.Inert;
+        var m = _ui.Mouse;
+        if (held && !_galHeld)
+            (_galHeld, _galDrag, _galPressAt, _galPressScroll, _galVel, _galLastY, _galLastAt) = (true, false, m, _galScroll, 0, m.Y, now);
+        else if (held)
         {
-            float bh = MathF.Max(24, viewH * viewH / L.Height), by = top0 + (viewH - bh) * (_galScroll / max);
-            _p.Fill(new RectangleF(inner.Right - 4, by, 4, bh), look == 1 ? Theme.WithAlpha(CyC, 0.55f) : Theme.WithAlpha(Bento.Text, 0.3f), 2);
+            if (!_galDrag && MathF.Abs(m.Y - _galPressAt.Y) > (retro ? 4 : 9)) { _galDrag = true; _galPressAt.Y = m.Y; _galPressScroll = _galScroll; }
+            if (_galDrag)
+            {
+                float dt = (float)Math.Max(0.004, now - _galLastAt);
+                _galVel = _galVel * 0.5f - (m.Y - _galLastY) / dt * 0.5f;
+                _galScroll = _galPressScroll - (m.Y - _galPressAt.Y);
+                (_galLastY, _galLastAt) = (m.Y, now);
+                _dirty = true;
+            }
         }
+        if (!held && _galHeld)
+        {
+            _galHeld = false;
+            if (!_galDrag || retro || now - _galLastAt > 0.08) _galVel = 0;        // (held still before the release: no throw)
+        }
+        return tap && !_galDrag;
+    }
+
+    // the rail (modern, Cyber): the months as ticks, each year's label where it starts, where the view is as a bar; held: the view goes
+    // where the pointer is on it, its month in a bubble beside
+    void GalRail(RectangleF rail, GalLayout L, float viewH, float max, int look)
+    {
+        bool cyber = look == 1;
+        _ui.Clickable("wgrail", rail, out bool hover, out bool held);
+        held &= !_ui.Inert;
+        _galRailHeld = held;
+        float top = rail.Y + 6, h = rail.Height - 12;
+        float Y(float contentY) => top + h * Math.Clamp(contentY / L.Height, 0, 1);
+        if (held)
+        {
+            float f = Math.Clamp((_ui.Mouse.Y - top) / h, 0, 1);
+            _galScroll = f * L.Height - viewH / 2;
+            _galVel = 0;
+            _dirty = true;
+        }
+        uint ink = cyber ? CyG : Sub, faint = cyber ? CyberHud.Edge : Theme.WithAlpha(Bento.Text, 0.18f);
+        float x = rail.Right - 4;
+        // the view's bar
+        float sc = Math.Clamp(_galScroll, 0, max);
+        float b0 = Y(sc), b1 = Y(sc + viewH);
+        _p.Fill(new RectangleF(rail.Right - 5, top, 2, h), faint, 1);
+        _p.Fill(new RectangleF(rail.Right - 6, b0, 4, MathF.Max(10, b1 - b0)), cyber ? CyC : held || hover ? Bento.Accent : Theme.WithAlpha(Bento.Text, 0.45f), 2);
+        // the months' ticks, each year's label (where there is room for one)
+        float lastLabel = float.MinValue;
+        int lastYear = -1;
+        foreach (var (my, year, month) in L.Months)
+        {
+            float ty = Y(my);
+            _p.Fill(new RectangleF(x - 9, ty, 4, 1), faint);
+            if (year == lastYear) continue;
+            lastYear = year;
+            if (ty - lastLabel < 16 || ty > top + h - 4) continue;
+            lastLabel = ty;
+            string ys = GalYear(year);
+            if (cyber) CyMono(ys, rail.Right - 12, ty + 5, rail.Width - 12, ink, CyNote - 2, FontWeight.SemiBold, TextAlignment.Trailing);
+            else TextAt(ys, rail.X, ty + 5, rail.Width - 12, ink, 13, FontWeight.SemiBold, TextAlignment.Trailing);
+        }
+        if (!held) return;
+        // the bubble: the month the view is at
+        int at = 0;
+        float mid = sc + viewH / 2;
+        for (int i = 0; i < L.Months.Count; i++) if (L.Months[i].y <= mid) at = i;
+        if (L.Months.Count == 0) return;
+        string t = GalMonth(L.Months[at].year, L.Months[at].month);
+        float tw = cyber ? CyMonoW(t) : _p.MeasureWidth(t, SmallText, FontWeight.SemiBold);
+        float by = Math.Clamp(_ui.Mouse.Y - 19, rail.Y, rail.Bottom - 38);
+        var bub = new RectangleF(rail.X - tw - 34, by, tw + 26, 38);
+        if (cyber)
+        {
+            CyberHud.CardShape(_p, bub, CyberHud.Card2, CyC);
+            CyMono(t, bub.X + 13, bub.Y + 24, tw + 4, CyC, CyNote, FontWeight.Bold);
+        }
+        else
+        {
+            _p.Fill(bub, 0xF0101418, 12);
+            _p.Stroke(RectangleF.Inflate(bub, -0.5f, -0.5f), Bento.Accent, 1.5f, 11.5f);
+            TextAt(t, bub.X + 13, bub.Y + 26, tw + 4, 0xFFFFFFFF, SmallText, FontWeight.SemiBold);
+        }
+    }
+
+    // a retro style's own scroll bar: its arrows a row each, the track dragged (or tapped) puts the thumb there
+    void GalScrollBar95(RectangleF sb, GalLayout L, float viewH, float max, float row)
+    {
+        var up = new RectangleF(sb.X, sb.Y, sb.Width, 16);
+        var dn = new RectangleF(sb.X, sb.Bottom - 16, sb.Width, 16);
+        var trk = new RectangleF(sb.X, sb.Y + 16, sb.Width, sb.Height - 32);
+        if (_ui.Clickable("wgup", up, out _, out bool uh) && !_ui.Inert) _galScroll = MathF.Max(0, _galScroll - row);
+        if (_ui.Clickable("wgdn", dn, out _, out bool dh) && !_ui.Inert) _galScroll = MathF.Min(max, _galScroll + row);
+        float th = MathF.Max(8, trk.Height * viewH / L.Height);
+        _ui.Clickable("wgtrk", trk, out _, out bool tk);
+        if (tk && !_ui.Inert)
+        {
+            _galScroll = Math.Clamp((_ui.Mouse.Y - trk.Y - th / 2) / MathF.Max(1, trk.Height - th), 0, 1) * max;
+            _dirty = true;
+        }
+        float ty = trk.Y + (trk.Height - th) * Math.Clamp(_galScroll, 0, max) / max;
+        Theme.RetroSkin.ScrollBar(_p, sb, up, dn, new RectangleF(sb.X, MathF.Round(ty), sb.Width, MathF.Round(th)), uh, dh);
+    }
+
+    // a year as text, a month as "2025 Oct" in the language's way: made once each
+    readonly Dictionary<int, string> _galYears = new(), _galMonths = new();
+    int _galMonthsLang = -1;
+    string GalYear(int y)
+    {
+        if (!_galYears.TryGetValue(y, out var s)) _galYears[y] = s = y.ToString(CultureInfo.InvariantCulture);
+        return s;
+    }
+    string GalMonth(int y, int m)
+    {
+        if (_galMonthsLang != Lang.Version) { _galMonths.Clear(); _galMonthsLang = Lang.Version; }
+        if (!_galMonths.TryGetValue(y * 12 + m, out var s))
+        {
+            var c = CultureInfo.CurrentCulture;
+            _galMonths[y * 12 + m] = s = Capital(new DateTime(y, m, 1).ToString(c.DateTimeFormat.YearMonthPattern, c));
+        }
+        return s;
     }
 
     void GalHeading(string text, float x, float y, float w, float h, int look)
@@ -381,58 +592,97 @@ public sealed partial class WristPanel
         if (look == 2) { _ui.Text95(PhotoCut(text, w, Ui.F95, FontWeight.Bold, null, 1), new RectangleF(x, y + 1, w, 13), Blk95, true); return; }
         if (look == 1)
         {
-            string t = Upper(text);
-            CyMono(PhotoCut(t, w, CyNote, FontWeight.Bold, CyberHud.Mono), x, y + h - 12, w, CyY, CyNote, FontWeight.Bold);
-            float tw = MathF.Min(w, CyMonoW(PhotoCut(t, w, CyNote, FontWeight.Bold, CyberHud.Mono), CyNote, FontWeight.Bold));
+            string t = PhotoCut(Upper(text), w, CyNote, FontWeight.Bold, CyberHud.Mono);
+            CyMono(t, x, y + h - 12, w, CyY, CyNote, FontWeight.Bold);
+            float tw = MathF.Min(w, CyMonoW(t, CyNote, FontWeight.Bold));
             if (x + tw + 12 < x + w) _p.Fill(new RectangleF(x + tw + 10, y + h - 17, w - tw - 10, 1), CyberHud.Edge);
             return;
         }
         TextAt(PhotoCut(text, w, SmallText), x, y + h - 10, w + 2, Bento.Text, SmallText, FontWeight.SemiBold);
     }
 
-    void GalCell(RectangleF r, PhotoWatcher.Photo p, IPhotoCells cells, int look, bool hover, bool current)
+    void GalCell(RectangleF r, PhotoWatcher.Photo p, IPhotoCells cells, int look, bool hover, bool pressed, bool current, float radius)
     {
-        var bmp = GalBitmap(p, cells, out float w, out float h);
+        var bmp = GalBitmap(p, cells, out float w, out float h, out double born);
         if (look == 2)
         {
             // the thumbnail view's: the picture inside its square-cornered frame, the style's selection round the one under the pointer
-            if (hover || current) Theme.RetroSkin.ListSelection(_p, RectangleF.Inflate(r, 2, 2));
+            if (hover || current || pressed) Theme.RetroSkin.ListSelection(_p, RectangleF.Inflate(r, 2, 2));
             var f = RectangleF.Inflate(r, -1, -1);
             if (bmp != null) _p.ImagePart(bmp, f, PhotoCover(w, h, f));
             else _p.Fill(f, 0xFFD4D0C8);
             _p.Stroke(new RectangleF(r.X + 0.5f, r.Y + 0.5f, r.Width - 1, r.Height - 1), 0xFF808080, 1);
             return;
         }
+        // a picture that just came fades in (a fifth of a second)
+        float fade = bmp == null ? 0 : (float)Math.Clamp((Clock.Now - born) / 0.2, 0, 1);
+        if (fade < 1 && bmp != null) _ui.Animating = true;
+        if (pressed) r = RectangleF.Inflate(r, -r.Width * 0.03f, -r.Height * 0.03f);
         if (look == 1)
         {
-            if (bmp != null) _p.ImagePart(bmp, r, PhotoCover(w, h, r));
-            else _p.Fill(r, CyberHud.Card2);
+            _p.Fill(r, CyberHud.Card2);
+            if (bmp != null)
+            {
+                if (fade < 1) _p.PushFade(fade);
+                _p.ImagePart(bmp, r, PhotoCover(w, h, r));
+                if (fade < 1) _p.PopFade();
+            }
             _p.Stroke(RectangleF.Inflate(r, 0.5f, 0.5f), hover || current ? CyC : CyberHud.CyanDim, hover ? 1.5f : 1);
             if (hover) PhotoCorners(RectangleF.Inflate(r, 3, 3), CyY, 9);
             return;
         }
-        _p.PushRoundedClip(r, 10);
-        if (bmp != null) _p.ImagePart(bmp, r, PhotoCover(w, h, r));
-        else _p.Fill(r, Bento.Tile);
-        if (hover) _p.Fill(r, 0x22FFFFFF);
+        _p.PushRoundedClip(r, radius);
+        _p.Fill(r, Bento.Tile);
+        if (bmp != null)
+        {
+            if (fade < 1) _p.PushFade(fade);
+            _p.ImagePart(bmp, r, PhotoCover(w, h, r));
+            if (fade < 1) _p.PopFade();
+        }
+        if (hover) _p.Fill(r, 0x26FFFFFF);
         _p.PopRoundedClip();
-        if (hover || current) _p.Stroke(RectangleF.Inflate(r, 1, 1), current && !hover ? Theme.WithAlpha(Bento.Accent, 0.7f) : Bento.Accent, 2.5f, 11);
+        if (hover || current) _p.Stroke(RectangleF.Inflate(r, 1, 1), current && !hover ? Theme.WithAlpha(Bento.Accent, 0.7f) : Bento.Accent, 2.5f, radius + 1);
     }
 
-    // ---- modern / Cyber: the grid in the card (its heading DrawDetail's: "Gallery", the count after it, Gallery lit left of the X) ----
+    // --snapshot: where the grid's cell 'slot' (the slot-th drawn, top left first) is, in the panel's pixels
+    public Vector2? GalleryCellPoint(PanelData d, int slot)
+    {
+        Draw(d);
+        if (slot < 0 || slot >= _galCellN) return null;
+        var r = _galCells[slot];
+        float k = Theme.Classic ? 2 : 1;
+        return new Vector2((r.X + r.Width / 2) * k, (r.Y + r.Height / 2) * k);
+    }
+    public bool GalleryDaysShown => C.GalleryDays;
+
+    // ---- modern / Cyber: the grid in the card (its heading DrawDetail's: "Gallery", the count after it; All / Days, Gallery lit left of the X) ----
+
+    // All | Days, right-aligned to 'right' at y: returns its left edge
+    float GalViewChips(float right, float y)
+    {
+        bool days = C.GalleryDays;
+        float wa = MathF.Ceiling(_p.MeasureWidth(Lang.T("All"), 17, FontWeight.SemiBold) + 30);
+        float wd = MathF.Ceiling(_p.MeasureWidth(Lang.T("Days"), 17, FontWeight.SemiBold) + 30);
+        var rd = new RectangleF(right - wd, y, wd, 40);
+        var ra = new RectangleF(rd.X - 6 - wa, y, wa, 40);
+        if (Press("wgall", ra, null, "All", !days, true, 18)) GalSetDays(false);
+        if (Press("wgdays", rd, null, "Days", days, true, 18)) GalSetDays(true);
+        return ra.X;
+    }
 
     void GalleryModern(RectangleF E)
     {
         PhotoOpenShown = null;
         var s = _ph;
         var back = new RectangleF(E.Right - 22 - 46 - 12 - 46, E.Y + 14, 46, 46);
+        float chips = GalViewChips(back.X - 14, E.Y + 17);
         if (s is { Ready: true, Recent.Count: > 0 })
         {
-            float nx = E.X + 24 + _p.MeasureWidth(Lang.T(GalleryWord), 24, FontWeight.SemiBold) + 12, room = back.X - 12 - nx;
-            if (room > 40) TextAt(PhotoCut(GalCountText(s.Recent.Count), room, 24), nx, E.Y + 45, room + 2, Sub, 24, FontWeight.SemiBold);
+            float nx = E.X + 24 + _p.MeasureWidth(Lang.T(GalleryWord), 24, FontWeight.SemiBold) + 12, room = chips - 12 - nx;
+            if (room > 40) TextAt(PhotoCut(GalCountText(s.Recent.Count), room, 20), nx, E.Y + 44, room + 2, Sub, 20, FontWeight.SemiBold);
         }
         if (Press("wphall", back, GridGlyph, null, true, true, 18, true)) GalleryToggle(null);
-        GalGrid(new RectangleF(E.X + 24, E.Y + 76, E.Width - 48, E.Height - 76 - 18), 0);
+        GalGrid(new RectangleF(E.X + 20, E.Y + 74, E.Width - 34, E.Height - 74 - 14), 0);
         DeleteNoteModern(E);
     }
 
@@ -441,14 +691,15 @@ public sealed partial class WristPanel
         PhotoOpenShown = null;
         var s = _ph;
         var back = new RectangleF(E.Right - 22 - 46 - 12 - 46, E.Y + 14, 46, 46);
+        float chips = GalViewChips(back.X - 14, E.Y + 17);
         if (s is { Ready: true, Recent.Count: > 0 })
         {
             string cnt = Upper(GalCountText(s.Recent.Count));
-            float x = E.X + 24 + CyberHud.TagWidth(_p, Upper(GalleryWord), 18) + 14, room = back.X - 14 - x;
+            float x = E.X + 24 + CyberHud.TagWidth(_p, Upper(GalleryWord), 18) + 14, room = chips - 14 - x;
             if (CyMonoW(cnt) <= room) CyMono(cnt, x, E.Y + 23 + (26 + CyberHud.CapH(_p, CyNote)) / 2, room, CyC);
         }
         if (Press("wphall", back, GridGlyph, null, true, true, 18, true)) GalleryToggle(null);
-        GalGrid(new RectangleF(E.X + 24, E.Y + 76, E.Width - 48, E.Height - 76 - 18), 1);
+        GalGrid(new RectangleF(E.X + 20, E.Y + 74, E.Width - 34, E.Height - 74 - 14), 1);
         DeleteNoteModern(E);
     }
 
@@ -552,7 +803,8 @@ public sealed partial class WristPanel
         PhotoEmptyShown = false;
         const float rowH = 11;
         // a line a photo, a "#" line a day: as the layout's rows (one column, the heading a line)
-        var L = GalLayoutOf(s, 1, area.Width - 16, rowH - 1, rowH, 1);
+        bool days = C.GalleryDays;
+        var L = GalLayoutOf(s, 1, area.Width - 16, rowH - 1, days ? rowH : 0, 1, days);
         float max = MathF.Max(0, L.Height - area.Height);
         if (_galAnchor != null)
         {
@@ -561,7 +813,11 @@ public sealed partial class WristPanel
             _galAnchor = null;
         }
         if (_ui.Wheel != 0 && !_ui.Inert) { _galScroll -= _ui.Wheel * rowH; _dirty = true; }
-        _galScroll = MathF.Round(Math.Clamp(_galScroll, 0, max) / rowH) * rowH;
+        var sheet = new RectangleF(area.X, area.Y, area.Width - (max > 0 ? 14 : 0), area.Height);
+        bool tapped = GalSheet(sheet, true, Clock.Now, out bool over, out bool held);
+        var m = _ui.Mouse;
+        _galScroll = Math.Clamp(_galScroll, 0, max);
+        float shown = MathF.Round(_galScroll / rowH) * rowH;           // (whole lines on the tube; the drag keeps its own fraction)
         if (max > 0)
         {
             var sb = new RectangleF(area.Right - 12, area.Y, 12, area.Height);
@@ -569,33 +825,41 @@ public sealed partial class WristPanel
             var dn = new RectangleF(sb.X, sb.Bottom - 12, 12, 12);
             if (_ui.Clickable("wgup", up, out _, out bool uh) && !_ui.Inert) _galScroll = MathF.Max(0, _galScroll - 3 * rowH);
             if (_ui.Clickable("wgdn", dn, out _, out bool dh) && !_ui.Inert) _galScroll = MathF.Min(max, _galScroll + 3 * rowH);
-            float track = sb.Height - 24, th = MathF.Max(6, track * area.Height / L.Height), ty = sb.Y + 12 + (track - th) * _galScroll / max;
+            float track = sb.Height - 24, th = MathF.Max(6, track * area.Height / L.Height), ty = sb.Y + 12 + (track - th) * shown / max;
             Theme.RetroSkin.ScrollBar(_p, sb, up, dn, new RectangleF(sb.X, MathF.Round(ty), 12, MathF.Round(th)), uh, dh);
         }
         float w = area.Width - 16;
         _p.PushClip(new RectangleF(area.X, area.Y, w + 2, area.Height));
-        int slot = 0;
+        _galCellN = 0;
         foreach (var day in L.Days)
         {
-            float hy = area.Y + day.Y - _galScroll;
+            float hy = area.Y + day.Y - shown;
             if (hy > area.Bottom) break;
-            if (area.Y + day.End - _galScroll < area.Y) continue;
-            if (hy + rowH > area.Y) TCaps(PhotoCut(TName("# " , GalHead(day.Day, day.Count)), w, Ui.F95, FontWeight.Normal, null, 2), area.X, hy + 2, TerminalSkin.HOT);
-            for (int k = 0; k < day.Count; k++)
+            if (area.Y + day.End - shown < area.Y) continue;
+            if (days && hy + rowH > area.Y) TCaps(PhotoCut(TName("# " , GalHead(day.Day, day.Count)), w, Ui.F95, FontWeight.Normal, null, 2), area.X, hy + 2, TerminalSkin.HOT);
+            int k0 = Math.Max(0, (int)((shown - day.Y - L.HeadH) / rowH));
+            for (int k = k0; k < day.Count; k++)
             {
-                float y = hy + rowH + k * rowH;
+                float y = hy + L.HeadH + k * rowH;
                 if (y > area.Bottom) break;
                 if (y + rowH < area.Y) continue;
                 int i = day.First + k;
                 var p = s.Recent[i];
                 var row = new RectangleF(area.X, y, w, rowH);
-                bool tap = _ui.Clickable(Ui.Id(CellId, slot++ % 64), RectangleF.Intersect(row, area), out bool hover, out _) && !_ui.Inert;
+                if (_galCellN < _galCells.Length) { _galCells[_galCellN] = row; _galCellIdx[_galCellN] = i; _galCellN++; }
+                bool hover = over && !_galDrag && !_ui.Inert && row.Contains(m.X, m.Y);
                 bool cur = _galPicked && i == _album.Index && _album.Path == p.Path;
                 if (hover || cur) TerminalSkin.Lit(_p, row);
                 TCaps(PhotoCut(TName("", p.Name), w - 4, Ui.F95, FontWeight.Normal, null, 2), area.X + 2, y + 2, hover || cur ? TerminalSkin.BG : TerminalSkin.INK);
-                if (tap) GalleryPick(i, p.Path);
             }
         }
         _p.PopClip();
+        if (tapped)
+            for (int q = 0; q < _galCellN; q++)
+                if (_galCells[q].Contains(_galPressAt.X, _galPressAt.Y) && area.Contains(_galPressAt.X, _galPressAt.Y))
+                {
+                    GalleryPick(_galCellIdx[q], s.Recent[_galCellIdx[q]].Path);
+                    break;
+                }
     }
 }
