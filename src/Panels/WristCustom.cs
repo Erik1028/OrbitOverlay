@@ -1127,7 +1127,9 @@ public sealed partial class WristPanel
     // its name at the bottom, a wide one both side by side. Springy when pressed. In the widget's look (Bento.Cur): solid and
     // two-tone are a dark version of their fill when off, the fill with a check when on - and a button with no on / off (toggle
     // false: recenter, settings) is the fill, as the look promises.
-    bool TileButton(string id, RectangleF r, string icon, string label, bool on, bool wide, bool toggle)
+    // grey (the camera closed, WristCamera.cs): 1 the off look, nothing lit under the laser, its icon and name dim - still a button (a
+    // tap gives a hint); 2 the same with them in the warning colour (the hint)
+    bool TileButton(string id, RectangleF r, string icon, string label, bool on, bool wide, bool toggle, int grey = 0)
     {
         bool click = _ui.Clickable(id, r, out bool hover, out bool held);
         float s = _ui.Spring(Ui.Id(id, "#s"), held ? 0.92f : 1f, 420, 18);
@@ -1135,7 +1137,8 @@ public sealed partial class WristPanel
         bool scaled = MathF.Abs(s - 1) > 0.001f;
         if (scaled) _p.PushScale(s, r.X + r.Width / 2, r.Y + r.Height / 2);
         ref readonly var L = ref Bento.Cur;
-        bool full = !on && !toggle && L.Check;
+        bool full = !on && !toggle && L.Check && grey == 0;
+        if (grey > 0) hover = false;
         if (a >= 1) _p.FillGradient(r, L.On0, L.On1, CardRadius, L.Angle, L.Span);
         else if (full)
         {
@@ -1168,6 +1171,7 @@ public sealed partial class WristPanel
             _p.Stroke(RectangleF.Inflate(r, -bi, -bi), Theme.WithAlpha(L.OffBorder, 1 - a), L.OffBorderW, CardRadius - bi);
         }
         uint fg = full ? L.OnText : Theme.Mix(L.OffText, L.OnText, a);
+        if (grey > 0) fg = grey == 2 ? L.WarnInk : Theme.Mix(L.OffText, L.Off0, 0.55f);
         var lw = a > 0.5f ? FontWeight.Bold : FontWeight.SemiBold;
         float pad = PadX(r);
         bool check = a > 0 && L.Check;
@@ -1206,6 +1210,7 @@ public sealed partial class WristPanel
 
     void ButtonCell(int id, WatchWidget w, WatchWidgets.Kind k, RectangleF r, PanelData d)
     {
+        if (k.Id == VrcCamera.Id) { CameraTile(id, w, k, r, d); return; }      // VRChat's camera open or closed (WristCamera.cs)
         string icon = k.Id == "desktops" && !d.DesktopsVisible ? Theme.IcoHide : k.Icon;
         string label = k.Id == "layout" ? d.LayoutName : TileName(k, w.W >= 2);
         if (TileButton(Ui.Id("wcb", id), r, icon, label, IsOn(k.Id, d), w.W >= 2, IsToggle(k.Id))) Act(k.Id);
@@ -2752,6 +2757,7 @@ public sealed partial class WristPanel
 
     void Button95Widget(int id, WatchWidget w, WatchWidgets.Kind k, RectangleF r, PanelData d)
     {
+        if (k.Id == VrcCamera.Id) { CameraButton95(id, w, k, r, d, false); return; }     // closed: the skin's disabled button (WristCamera.cs)
         bool click;
         if (k.Id == "layout")
             click = _ui.Button95(Ui.Id("wcb", id), r, Ui.Esc95(Fit(d.LayoutName, r.Width - 8)), true, false, false);

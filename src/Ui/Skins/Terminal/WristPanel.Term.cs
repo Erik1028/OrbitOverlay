@@ -87,14 +87,16 @@ public sealed partial class WristPanel
     }
 
     // a button of the terminal: a line around it (lit when on or held), one or two lines of capitals in it
-    bool TKey(string id, RectangleF r, string label, bool on = false, bool enabled = true, string line2 = null)
+    // (faint: drawn as a disabled one but still taken - VRChat's camera closed, WristCamera.cs; 1 its words dim, 2 bright, the hint)
+    bool TKey(string id, RectangleF r, string label, bool on = false, bool enabled = true, string line2 = null, int faint = 0)
     {
         bool click = _ui.Clickable(id, r, out bool hover, out bool held) && enabled;
-        if (click) TFlash(id);
-        bool lit = (on || held || TFlashing(id)) && enabled;
+        if (faint > 0) hover = held = false;
+        if (click && faint == 0) TFlash(id);
+        bool lit = (on || held || TFlashing(id)) && enabled && faint == 0;
         if (lit) T.Lit(_p, r);
         else { _p.Fill(r, T.BG); T.Box(_p, r, hover && enabled ? T.INK : T.FRAME); }
-        uint c = lit ? T.BG : !enabled ? T.DIM : hover ? T.HOT : T.INK;
+        uint c = lit ? T.BG : faint == 2 ? T.HOT : !enabled || faint == 1 ? T.DIM : hover ? T.HOT : T.INK;
         if (line2 == null) TCapsC(TFit(label, r.Width - 4), r, r.Y + MathF.Floor((r.Height - 7) / 2), c);
         else
         {
@@ -407,11 +409,15 @@ public sealed partial class WristPanel
         if (k.Button)
         {
             var (key, word, wide) = TButtonWords(k.Id);
+            // VRChat's camera (WristCamera.cs): open, its mode; closed, "CAM OFF" on a dim key; tapped then, where to open it
+            var cam = k.Id == VrcCamera.Id ? CamNow(d) : CamLook.Normal;
+            if (cam != CamLook.Normal) (word, wide) = CamWordsTerm(cam, CamMode(d), word, wide);
+            int faint = cam == CamLook.Hint ? 2 : cam == CamLook.Closed ? 1 : 0;
             (word, wide) = (Lang.T(word), Lang.T(wide));        // in the language picked (TKey measures what it draws)
             if (word == null) word = wide = T.Up(Lang.T(d.LayoutName ?? "LAYOUT"));
             bool click = w.W >= 2
-                ? TKey(Ui.Id("wcb", id), r, $"[{key}] {wide}", IsOn(k.Id, d))
-                : TKey(Ui.Id("wcb", id), r, $"[{key}]", IsOn(k.Id, d), true, word);
+                ? TKey(Ui.Id("wcb", id), r, $"[{key}] {wide}", IsOn(k.Id, d), true, null, faint)
+                : TKey(Ui.Id("wcb", id), r, $"[{key}]", IsOn(k.Id, d), true, word, faint);
             if (click) Act(k.Id);
             return;
         }

@@ -1210,13 +1210,20 @@ public sealed partial class WristPanel
 
     void CyTileFace(RectangleF t, WatchWidgets.Kind k, string kid, PanelData d, int mode, bool card, bool on, bool hover, float tl, float br)
     {
+        // VRChat's camera closed (WristCamera.cs): "nothing there" - faint, its outline a divider's, nothing lit under the laser; its
+        // hint in the warning red. Open: its mode's name.
+        var cam = kid == VrcCamera.Id ? CamNow(d) : CamLook.Normal;
+        bool dim = CamGrey(cam);
+        uint dc = cam == CamLook.Hint ? CyR : CyberHud.Faint;
+        if (dim) hover = false;
         _p.FillCut(t, on ? CyC : hover ? CyberHud.Card3 : card ? CyberHud.Card : CyberHud.Card2, tl, 0, br, 0);
         if (!on && (!card || CyEdgeShown))              // a button card booting: its outline is drawn in (WristCyberFx.cs)
-            _p.StrokeCut(RectangleF.Inflate(t, -0.6f, -0.6f), hover ? CyC : CyberHud.CyanDim, 1.25f, MathF.Max(0, tl - 0.3f), 0, MathF.Max(0, br - 0.3f), 0);
-        if (card || t.Height >= 54) CyberHud.Brackets(_p, t, on ? CyInk : CyC, card ? 10 : 7, card ? 7 : 5, 2);
-        uint ic = on ? CyInk : CyC, lc = on ? CyInk : CyG;
+            _p.StrokeCut(RectangleF.Inflate(t, -0.6f, -0.6f), dim ? (cam == CamLook.Hint ? CyR : CyberHud.Line) : hover ? CyC : CyberHud.CyanDim, 1.25f,
+                MathF.Max(0, tl - 0.3f), 0, MathF.Max(0, br - 0.3f), 0);
+        if (card || t.Height >= 54) CyberHud.Brackets(_p, t, dim ? dc : on ? CyInk : CyC, card ? 10 : 7, card ? 7 : 5, 2);
+        uint ic = dim ? dc : on ? CyInk : CyC, lc = dim ? dc : on ? CyInk : CyG;
         string icon = kid == "desktops" && !d.DesktopsVisible ? Theme.IcoHide : k.Icon;
-        string label = Upper(GroupLabel(kid, d));
+        string label = Upper(cam == CamLook.Normal ? GroupLabel(kid, d) : CamLabel(cam, CamMode(d), mode == 2, null));
         float isz = card ? 28 : 22;
         if (kid == "layout" && card && mode != 2)
         {
@@ -1237,7 +1244,7 @@ public sealed partial class WristPanel
             if (lw > room) { label = Ellipsize(label, room, CyNote, FontWeight.Bold, CyberHud.Mono); lw = CyMonoW(label, CyNote, FontWeight.Bold); }
             float lx = t.X + (t.Width - (isz + 10 + lw)) / 2;
             _p.Icon(icon, new RectangleF(lx - 2, t.Y, isz + 4, t.Height), ic, isz);
-            CyMono(label, lx + isz + 10, t.Y + t.Height / 2 + CyberHud.CapH(_p, CyNote, FontWeight.Bold) / 2, lw + 2, on ? CyInk : CyW, CyNote, FontWeight.Bold);
+            CyMono(label, lx + isz + 10, t.Y + t.Height / 2 + CyberHud.CapH(_p, CyNote, FontWeight.Bold) / 2, lw + 2, dim ? dc : on ? CyInk : CyW, CyNote, FontWeight.Bold);
         }
         else if (mode == 0)
         {
@@ -1253,7 +1260,9 @@ public sealed partial class WristPanel
     void CyberButton(int id, WatchWidget w, WatchWidgets.Kind k, RectangleF r, PanelData d)
     {
         int mode = w.W >= 2 ? 2 : 0;
-        if (mode == 0 && CyMonoW(Upper(GroupLabel(k.Id, d)), CyNote, FontWeight.Bold) > r.Width - 12) mode = 1;
+        var cam = k.Id == VrcCamera.Id ? CamNow(d) : CamLook.Normal;      // (the camera's words: WristCamera.cs)
+        string gl = cam == CamLook.Normal ? GroupLabel(k.Id, d) : CamLabel(cam, CamMode(d), false, null);
+        if (mode == 0 && CyMonoW(Upper(gl), CyNote, FontWeight.Bold) > r.Width - 12) mode = 1;
         CyberTile(Ui.Id("wcb", id), r, k.Id, d, mode, true);
     }
 }

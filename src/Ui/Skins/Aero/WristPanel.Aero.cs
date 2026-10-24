@@ -784,20 +784,33 @@ public sealed partial class WristPanel
     {
         bool layout = k.Id == "layout";
         bool click = _ui.Clickable(Ui.Id("wcb", id), r, out bool hover, out bool held);
-        Ae.ButtonFace(_p, r, false, held, !layout && IsOn(k.Id, d), hover);
+        // VRChat's camera (WristCamera.cs): open, its mode's name; closed, 7's disabled button - the flat light face, grey words, the
+        // picture faded - nothing lit or pressed, a tap still taken (its hint)
+        var cam = k.Id == VrcCamera.Id ? CamNow(d) : CamLook.Normal;
+        bool grey = CamGrey(cam);
+        if (grey) { Ae.OffFace(_p, r); held = false; }
+        else Ae.ButtonFace(_p, r, false, held, !layout && IsOn(k.Id, d), hover);
         var icon = k.Id == "desktops" && !d.DesktopsVisible ? W95Icons.Id.ComputerOff : k.Icon95;
-        string name = layout ? d.LayoutName : w.W >= 2 ? k.Name : k.Title95;
+        string name = layout ? d.LayoutName : CamLabel(cam, CamMode(d), w.W >= 2, w.W >= 2 ? k.Name : k.Title95);
+        if (cam == CamLook.Hint && w.W < 2 && WAero(name, 10) > r.Width - 6) name = CamWhere;      // (a 1x1 too narrow for "In VRChat")
+        uint ink = grey ? AeroSkin.OffText : 0xFF000000, ink2 = grey ? AeroSkin.OffText : 0xFF1E2B3A;
         float o = held ? 1 : 0;
-        if (layout && w.W >= 2)
+        if (grey) _p.PushFade(0.45f);       // (the picture only: popped before the words)
+        // (greyed words too long to stand beside the picture: the words alone, as the layout's - a point smaller where 11 would be cut)
+        if ((layout || (grey && WAero(name, 11) > r.Width - 34)) && w.W >= 2)
         {
-            _p.Text(Fit(name, r.Width - 10), new RectangleF(r.X + 4 + o, r.Y - 2 + o, r.Width - 8, r.Height + 4), 0xFF000000, 11, FontWeight.Normal,
+            if (grey) _p.PopFade();
+            float ts = layout || WAero(name, 11) <= r.Width - 8 ? 11 : 10;
+            string fit = layout ? Fit(name, r.Width - 10) : Fit(name, r.Width - 8, ts);
+            _p.Text(fit, new RectangleF(r.X + 4 + o, r.Y - 2 + o, r.Width - 8, r.Height + 4), ink, ts, FontWeight.Normal,
                 TextAlignment.Center, ParagraphAlignment.Center, Ae.Font);
         }
         else if (w.W >= 2)
         {
             float tw = MathF.Min(WAero(name, 11), r.Width - 34), x = MathF.Round(r.X + (r.Width - 16 - 5 - tw) / 2);
             W95Icons.Draw(_p, icon, x + o, MathF.Floor(r.Y + (r.Height - 16) / 2) + o);
-            _p.Text(Fit(name, tw + 1), new RectangleF(x + 21 + o, r.Y - 2 + o, tw + 4, r.Height + 4), 0xFF000000, 11, FontWeight.Normal,
+            if (grey) _p.PopFade();
+            _p.Text(Fit(name, tw + 1), new RectangleF(x + 21 + o, r.Y - 2 + o, tw + 4, r.Height + 4), ink, 11, FontWeight.Normal,
                 TextAlignment.Leading, ParagraphAlignment.Center, Ae.Font);
         }
         else
@@ -806,8 +819,9 @@ public sealed partial class WristPanel
             bool both = size > 0 && r.Height >= 36;
             float iy = both ? MathF.Floor(r.Y + (r.Height - 31) / 2) : MathF.Floor(r.Y + (r.Height - 16) / 2);
             W95Icons.Draw(_p, icon, MathF.Floor(r.X + (r.Width - 16) / 2) + o, iy + o);
+            if (grey) _p.PopFade();
             if (both)
-                _p.Text(name, new RectangleF(r.X + 1 + o, iy + 15 + o, r.Width - 2, 18), 0xFF1E2B3A, size, FontWeight.Normal, TextAlignment.Center,
+                _p.Text(name, new RectangleF(r.X + 1 + o, iy + 15 + o, r.Width - 2, 18), ink2, size, FontWeight.Normal, TextAlignment.Center,
                     ParagraphAlignment.Center, Ae.Font);
         }
         if (click) Act(k.Id);

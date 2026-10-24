@@ -579,7 +579,9 @@ public sealed partial class MacSkin : Win95Skin
             int n = W95Icons.Size(ic);
             float tw = string.IsNullOrEmpty(t) ? 0 : TextWidth(p, t, false, Ui.F95) + 4;
             float x = MathF.Round(b.X + (b.Width - n - tw) / 2), y = MathF.Round(b.Y + (b.Height - n) / 2);
+            if (!enabled) p.PushFade(0.45f);        // a dimmed control's icon is dimmed with it (the Appearance Manager's disabled transform)
             W95Icons.Draw(p, ic, x, y);
+            if (!enabled) p.PopFade();
             if (tw > 0) Say(p, t, new RectangleF(x + n + 4, b.Y, tw, b.Height), tc, false, TextAlignment.Leading);
             return;
         }
