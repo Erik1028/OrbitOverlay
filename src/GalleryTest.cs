@@ -120,6 +120,7 @@ static class GalleryViewTools
             wrist.OnOpenPhoto = _ => { };
             Checks(wrist, data, wcfg, tag);
             FilterChecks(wrist, data, wcfg, gpu, dir, tag);
+            if (!Theme.Classic) ViewChecks(wrist, data, wcfg, gpu, dir, tag);
             Pictures(wrist, data, wcfg, gpu, dir, tag);
         }
         catch (Exception e) { Log.Error("gallery view" + tag + ": " + e); }
@@ -312,6 +313,81 @@ static class GalleryViewTools
     }
 
     public static readonly List<(string tag, string world, string people)> FilterPreview = new();
+
+    // modern / Cyber's photo view: Send (VR Gallery's newest only - a made-up hand-over, nothing is sent), the slideshow, the zoom
+    static void ViewChecks(WristPanel wrist, PanelData data, WristConfig wcfg, Gpu gpu, string dir, string tag)
+    {
+        var snap = PhotoFake.Snap(5);
+        data.Photos = snap;
+        data.Album = Album(snap);
+        int sent = 0;
+        string hiAsked = null;
+        var send0 = wrist.OnSendNewest;
+        var hi0 = wrist.OnWantHi;
+        bool ready0 = wrist.SendReady;
+        int secs0 = wrist.SlideSeconds;
+        try
+        {
+            wrist.OnSendNewest = done => { sent++; done(null); };
+            wrist.OnWantHi = path => hiAsked = path;
+            wrist.SendReady = true;
+            wrist.SlideSeconds = 1;
+            wcfg.Widgets = new List<WatchWidget> { new() { Type = "photo", X = 0, Y = 2, W = 2, H = 1 } };
+            wrist.Settle();
+            wrist.OpenForTest("photo");
+            wrist.GalleryNoteForTest();
+            Draw2(wrist, data);
+            // Send: on the newest, asks first, then hands it over
+            bool shown = wrist.ControlPoint(data, "wphsend") != null;
+            TapId(wrist, data, "wphsend");
+            bool asks = sent == 0;
+            Settle(wrist, data);
+            wrist.Surf.SavePng(gpu, Path.Combine(dir, $"wrist_gallery_send{tag}.png"));
+            TapId(wrist, data, "wphsend");
+            Draw2(wrist, data);
+            bool handed = sent == 1 && wrist.GalleryNote == "Sent to Discord";
+            // not on an older one (VR Gallery sends its newest only)
+            TapId(wrist, data, "wphprev");
+            Draw2(wrist, data);
+            bool notOlder = wrist.ControlPoint(data, "wphsend") == null;
+            // the slideshow: on to the older one each SlideSeconds, Stop ends it
+            string before = wrist.PhotoOpenShown;
+            bool playTap = TapId(wrist, data, "wphplay");
+            bool playing = playTap && wrist.GalleryShowing;
+            Thread.Sleep(1150);
+            Draw2(wrist, data);
+            int i0 = snap.Recent.FindIndex(x => x.Path == before);
+            bool advanced = i0 >= 0 && i0 + 1 < snap.Recent.Count && wrist.PhotoOpenShown == snap.Recent[i0 + 1].Path;
+            bool stopTap = TapId(wrist, data, "wphstop");
+            bool stopped = stopTap && !wrist.GalleryShowing;
+            // the zoom: a tap on the photo - zoomed there, the sharp copy asked for; it comes, it is drawn; a tap again - whole
+            var at = wrist.ControlPoint(data, "wphzoom");
+            if (at is { } zp) Tap(wrist, data, zp);
+            bool zoomed = at != null && wrist.GalleryZoomShown && hiAsked == wrist.PhotoOpenShown;
+            if (hiAsked != null)
+            {
+                var (px, w, h) = PhotoFake.Pixels(snap.Recent.Find(x => x.Path == hiAsked) is { } hp && hp.TW < hp.TH ? 5 : 1, 1280, 720);
+                wrist.Hi = new WristPanel.HiPicture { Path = hiAsked, Px = px, W = w, H = h };
+            }
+            Settle(wrist, data);
+            wrist.Surf.SavePng(gpu, Path.Combine(dir, $"wrist_gallery_zoom{tag}.png"));
+            if (at is { } zp2) Tap(wrist, data, zp2);
+            bool whole = !wrist.GalleryZoomShown;
+            wrist.CloseForTest();
+            Log.Info($"gallery view{tag}: Send on the newest {shown} (want True), it asked first {asks} (want True), then handed it over {handed} (want True), " +
+                     $"none on an older one {notOlder} (want True); the slideshow played {playing} (want True), stepped on {advanced} (want True), Stop ended it " +
+                     $"{stopped} (want True); a tap zoomed in {zoomed} (want True), another made it whole {whole} (want True)");
+        }
+        finally
+        {
+            wrist.CloseForTest();
+            wrist.OnSendNewest = send0;
+            wrist.OnWantHi = hi0;
+            wrist.SendReady = ready0;
+            wrist.SlideSeconds = secs0;
+            wrist.Hi = null;
+        }
+    }
 
     static void Pictures(WristPanel wrist, PanelData data, WristConfig wcfg, Gpu gpu, string dir, string tag)
     {

@@ -67,6 +67,7 @@ public sealed partial class WristPanel
         _galFav = false;
         _galWorld = _galPerson = null;
         _galPeople = null;
+        _galShow = _galZoom = false;
         _galAnchor = null;
         _delArmed = null;
         FromNewest(_album);
@@ -114,6 +115,9 @@ public sealed partial class WristPanel
             if (cv != _galCellsSeen) { _galCellsSeen = cv; ch |= _galGrid; }
         }
         double now = Clock.Now;
+        if (_galShow && now - _galShowAt >= SlideSeconds) ch = true;           // the slideshow's next slide
+        if (!ReferenceEquals(Hi, _hiSeen)) { _hiSeen = Hi; ch |= _galZoom; }   // the zoom's sharp copy came
+        if (_sendDone || (_sendArmed != null && now - _sendArmAt > DelArmLen)) ch = true;
         if (_delArmed != null && now - _delArmAt > DelArmLen) { _delArmed = null; ch = true; }
         if (_delNote != null && now - _delNoteAt > DelNoteLen) { _delNote = null; ch = true; }
         return ch;
@@ -953,22 +957,187 @@ public sealed partial class WristPanel
         DeleteNoteModern(E);
     }
 
-    // ---- modern / Cyber: the buttons over the photo's top right, Delete's note at the card's foot ----
+    // ---- modern / Cyber: the buttons over the photo's top right - the slideshow, Send (VR Gallery's newest only), Gallery, Delete; while
+    // the slideshow plays, its Stop alone. A row too narrow for them (a photo standing up) goes on below ----
+
+    const string ShowGlyph = "", StopGlyph = "", SendGlyph = "";
+    const string SendAsk = "Send?", Sent = "Sent to Discord";
 
     void PhotoActions(RectangleF box, PhotoWatcher.Photo p)
     {
         if (p == null) return;
+        float bs = 46, y = box.Y + 10, right = box.Right - 10;
+        if (_galShow)
+        {
+            if (Press("wphstop", new RectangleF(right - bs, y, bs, bs), StopGlyph, null, true, true, 18, true)) ShowStop();
+            return;
+        }
         bool armed = DeleteArmed(p), busy = _delBusy == p.Path;
-        float bs = 46, y = box.Y + 10;
         float dw = armed || busy ? MathF.Ceiling(MathF.Max(bs, 18 + 8 + _p.MeasureWidth(Lang.T(busy ? "Deleting..." : DeleteAsk), 17, FontWeight.SemiBold) + 30)) : bs;
-        var del = new RectangleF(box.Right - 10 - dw, y, dw, bs);
-        var all = new RectangleF(del.X - 10 - bs, y, bs, bs);
-        if (all.X < box.X + 4) { all.X = box.X + 4; all.Y = y + bs + 8; }
-        if (Press("wphall", all, GridGlyph, null, false, true, 18, true)) GalleryToggle(p);
+        bool send = CanSend(p), sArmed = send && SendArmed(p), sBusy = send && _sendBusy;
+        float sw = sArmed || sBusy ? MathF.Ceiling(MathF.Max(bs, 18 + 8 + _p.MeasureWidth(Lang.T(sBusy ? "Sending..." : SendAsk), 17, FontWeight.SemiBold) + 30)) : bs;
+        // right to left: Delete, Gallery, Send, the slideshow
+        float x = right;
+        RectangleF Next(float w)
+        {
+            if (x - w < box.X + 4) { x = right; y += bs + 8; }
+            var r = new RectangleF(x - w, y, w, bs);
+            x -= w + 10;
+            return r;
+        }
+        var del = Next(dw);
+        var all = Next(bs);
+        var snd = send ? Next(sw) : RectangleF.Empty;
+        var play = PhotoCount > 1 ? Next(bs) : RectangleF.Empty;
         if (Press("wphdel", del, DeleteGlyph, armed || busy ? (busy ? "Deleting..." : DeleteAsk) : null, armed, !busy, 18, !(armed || busy), accentFill: false,
                 fill: Bento.Bad))
             DeleteTap(p);
+        if (Press("wphall", all, GridGlyph, null, false, true, 18, true)) GalleryToggle(p);
+        if (send) _sendSeen = true;
+        if (send && Press("wphsend", snd, SendGlyph, sArmed || sBusy ? (sBusy ? "Sending..." : SendAsk) : null, sArmed, !sBusy, 18, !(sArmed || sBusy)))
+            SendTap(p);
+        if (!play.IsEmpty && Press("wphplay", play, ShowGlyph, null, false, true, 18, true)) ShowStart();
     }
+
+    // ---- Send to Discord: VR Gallery sends its newest photo to the webhook set up in it (its local API; it cannot be told another) -
+    // so the button is there on the newest photo of them all only, once it is 10 s old (VR Gallery has listed it by then); a first tap
+    // asks ("Send?"), the second sends (the app: Sys/VrGalleryData.cs, on a thread) ----
+
+    public Action<Action<string>> OnSendNewest;      // the app; null in the tools: a second tap is only noted (LastSent) and taken as done
+    public volatile bool SendReady;                  // the app: VR Gallery's API on, with a token and a webhook (read every 20 s)
+    public string LastSent { get; private set; }
+    string _newestAll;                               // the newest photo of them all (the latest photo's watcher, else the album)
+    string _sendArmed;
+    double _sendArmAt;
+    volatile bool _sendBusy, _sendDone;
+    volatile string _sendWhy;
+
+    bool CanSend(PhotoWatcher.Photo p) => SendReady && p != null && p.Path == _newestAll && (DateTime.Now - p.Taken).TotalSeconds > 10;
+    bool SendArmed(PhotoWatcher.Photo p) => p != null && _sendArmed == p.Path && Clock.Now - _sendArmAt <= DelArmLen;
+    public bool SendShown(PanelData d) { _sendSeen = false; Draw(d); return _sendSeen; }       // --snapshot: was Send drawn
+    bool _sendSeen;
+
+    void SendTap(PhotoWatcher.Photo p)
+    {
+        if (p == null || _sendBusy) return;
+        _dirty = true;
+        if (!SendArmed(p)) { _sendArmed = p.Path; _sendArmAt = Clock.Now; _delNote = null; return; }
+        _sendArmed = null;
+        _sendBusy = true;
+        LastSent = p.Path;
+        if (OnSendNewest == null) { _sendWhy = null; _sendDone = true; return; }
+        OnSendNewest(why => { _sendWhy = why; _sendDone = true; });
+    }
+
+    // Send's answer and the newest photo's path, a frame (PhotoFrame: on the frame's thread)
+    void SendFrame(PanelData d)
+    {
+        var all = d.Photos is { Recent.Count: > 0 } ps ? ps : d.Album;
+        _newestAll = all is { Recent.Count: > 0 } a ? a.Recent[0].Path : null;
+        if (_sendArmed != null && Clock.Now - _sendArmAt > DelArmLen) _sendArmed = null;
+        if (!_sendDone) return;
+        _sendDone = false;
+        _sendBusy = false;
+        _delNoteBad = _sendWhy != null;
+        _delNote = _sendWhy ?? Sent;
+        _delNoteAt = Clock.Now;
+        _dirty = true;
+    }
+
+    // ---- the slideshow (VR Gallery's Play): from the photo shown, the next older one every SlideSeconds (VR Gallery's own setting),
+    // each fading in; Stop, a tap on the photo, an arrow or the stick end it, as the last photo does ----
+
+    public volatile int SlideSeconds = 4;            // the app: VR Gallery's slideshow_secs
+    bool _galShow;
+    double _galShowAt, _galSlideAt = -10;
+    public bool GalleryShowing => _galShow;
+
+    void ShowStart() { (_galShow, _galShowAt, _galSlideAt, _galZoom) = (true, Clock.Now, Clock.Now, false); _delArmed = _sendArmed = null; _dirty = true; }
+    void ShowStop() { _galShow = false; _dirty = true; }
+
+    // in the opened view's set (after PhotoFrame): the next slide when it is due
+    void ShowTick()
+    {
+        if (!_galShow) return;
+        double now = Clock.Now;
+        if (now - _galShowAt < SlideSeconds) return;
+        if (_phIndex >= PhotoCount - 1) { ShowStop(); return; }
+        int i = _phIndex + 1;
+        _phIndex = i;
+        _phPath = _ph.Recent[i].Path;
+        (_galShowAt, _galSlideAt) = (now, now);
+        _dirty = true;
+    }
+
+    // ---- the zoom (modern, Cyber): a tap on the photo - 2.2 x there, from a sharp copy of it (the app reads it at 1600 px: the
+    // shell's big thumbnail, else the file; the watch's 640 px one until it comes); a drag moves round it; a tap again - whole. The
+    // photo's controls stay over it; its words and arrows give way meanwhile ----
+
+    public sealed class HiPicture { public string Path; public uint[] Px; public int W, H; }
+    public Action<string> OnWantHi;                  // the app: the photo at 1600 px, on a thread; then Hi
+    public volatile HiPicture Hi;
+    HiPicture _hiSeen;
+    ID2D1Bitmap _hiBmp;
+    uint[] _hiBmpPx;
+    bool _galZoom, _zoomHeld, _zoomDrag;
+    Vector2 _zoomAt = new(0.5f, 0.5f), _zoomPress, _zoomFrom;
+    string _zoomPath;
+    const float ZoomK = 2.2f;
+    public bool GalleryZoomShown => _galZoom;
+
+    // the photo in its box: whole, faded in as a slide comes, or zoomed; a tap / drag on it (registered before the controls over it)
+    void PhotoImage(RectangleF box, PhotoWatcher.Photo p, ID2D1Bitmap bmp, uint fill)
+    {
+        if (_zoomPath != p.Path) { _galZoom = false; _zoomPath = p.Path; }
+        bool tap = _ui.Clickable("wphzoom", box, out _, out bool held) && !_ui.Inert;
+        var m = _ui.Mouse;
+        if (held && !_zoomHeld) (_zoomHeld, _zoomDrag, _zoomPress, _zoomFrom) = (true, false, m, _zoomAt);
+        else if (held && _galZoom)
+        {
+            if (!_zoomDrag && Vector2.Distance(m, _zoomPress) > 8) _zoomDrag = true;
+            if (_zoomDrag)
+            {
+                var dd = (m - _zoomPress) / new Vector2(box.Width * ZoomK, box.Height * ZoomK);
+                _zoomAt = Vector2.Clamp(_zoomFrom - dd, new Vector2(0.5f / ZoomK), new Vector2(1 - 0.5f / ZoomK));
+                _dirty = true;
+            }
+        }
+        if (!held) _zoomHeld = false;
+        if (tap && !_zoomDrag)
+        {
+            if (_galShow) ShowStop();
+            else if (_galZoom) _galZoom = false;
+            else
+            {
+                _galZoom = true;
+                var at = new Vector2((m.X - box.X) / box.Width, (m.Y - box.Y) / box.Height);
+                _zoomAt = Vector2.Clamp(at, new Vector2(0.5f / ZoomK), new Vector2(1 - 0.5f / ZoomK));
+                if (Hi?.Path != p.Path) OnWantHi?.Invoke(p.Path);
+            }
+            _dirty = true;
+        }
+        if (bmp == null) { _p.Fill(box, fill); _p.Icon(PhotoKindIcon, box, Theme.Cyber ? CyberHud.Faint : Bento.Faint, 40); return; }
+        float fade = _galShow ? (float)Math.Clamp((Clock.Now - _galSlideAt) / 0.35, 0, 1) : 1;
+        if (fade < 1) { _ui.Animating = true; _p.Fill(box, fill); _p.PushFade(fade); }
+        if (!_galZoom) _p.ImagePart(bmp, box, new RectangleF(0, 0, p.TW, p.TH));
+        else
+        {
+            // the sharp copy when it is this photo's, else the watch's own
+            var hi = Hi;
+            float W = p.TW, H = p.TH;
+            var b = bmp;
+            if (hi != null && hi.Path == p.Path && hi.Px != null)
+            {
+                if (!ReferenceEquals(_hiBmpPx, hi.Px)) { _hiBmp?.Dispose(); _hiBmp = _p.CreateBitmap(hi.Px, hi.W, hi.H); _hiBmpPx = hi.Px; }
+                (b, W, H) = (_hiBmp, hi.W, hi.H);
+            }
+            float sw = W / ZoomK, sh = H / ZoomK;
+            _p.ImagePart(b, box, new RectangleF(Math.Clamp(_zoomAt.X * W - sw / 2, 0, W - sw), Math.Clamp(_zoomAt.Y * H - sh / 2, 0, H - sh), sw, sh));
+        }
+        if (fade < 1) _p.PopFade();
+    }
+
+    void ZoomDispose() { _hiBmp?.Dispose(); _hiBmp = null; _hiBmpPx = null; }
 
     void DeleteNoteModern(RectangleF E)
     {

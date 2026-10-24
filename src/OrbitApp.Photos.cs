@@ -21,6 +21,7 @@ public sealed partial class OrbitApp
     void UpdatePhotos(double now)
     {
         bool want = C.Wrist.Face == "custom" && WatchPages.Any(C.Wrist, "photo") && (VrAfter(3) || now - _photoPreview < 3);
+        if (want || _memories.Active) UpdateVrg(now);
         _photos.Active = want;
         if (!want) { _data.Photos = null; _photoPending = null; return; }
         var s = _photos.Get();
@@ -69,6 +70,48 @@ public sealed partial class OrbitApp
             else Log.Info("photo bin: not moved - " + why);
             done(why);
         }) { IsBackground = true, Name = "photo bin" };
+        t.SetApartmentState(ApartmentState.STA);
+        t.Start();
+    }
+
+    // VR Gallery's settings (read only, every 20 s while a photo widget is in use): whether the photo view may offer Send, how long a slide stays
+    double _vrgNext;
+    void UpdateVrg(double now)
+    {
+        if (now < _vrgNext) return;
+        _vrgNext = now + 20;
+        System.Threading.Tasks.Task.Run(() =>
+        {
+            var s = VrGalleryData.ReadSettings();
+            _wrist.SendReady = s != null && s.Api && s.Webhook && !string.IsNullOrEmpty(s.Token);
+            _wrist.SlideSeconds = s?.SlideSeconds ?? 4;
+        });
+    }
+
+    // the photo view's Send (its second tap): VR Gallery sends its newest photo to its Discord webhook - done(null) or done(why), from that thread
+    void SendNewestPhoto(Action<string> done)
+    {
+        new Thread(() =>
+        {
+            string why;
+            try { why = VrGalleryData.SendNewest(VrGalleryData.ReadSettings()); }
+            catch (Exception e) { Log.Warn("vr gallery: " + e.Message); why = "VR Gallery did not send it"; }
+            done(why);
+        }) { IsBackground = true, Name = "vr gallery send" }.Start();
+    }
+
+    // the photo view's zoom: the photo at 1600 px (the shell's big thumbnail - an STA thread -, else the file), then the panel's Hi
+    void WantHiPhoto(string path)
+    {
+        var t = new Thread(() =>
+        {
+            try
+            {
+                var (px, w, h) = PhotoAlbum.Picture(path, 1600, 1000);
+                if (px != null) _wrist.Hi = new WristPanel.HiPicture { Path = path, Px = px, W = w, H = h };
+            }
+            catch (Exception e) { Log.Info("photo zoom: " + e.Message); }
+        }) { IsBackground = true, Name = "photo zoom" };
         t.SetApartmentState(ApartmentState.STA);
         t.Start();
     }

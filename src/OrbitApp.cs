@@ -145,6 +145,8 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         _wrist.Mixtape = _mixtape;                           // the Mixtape widget's link (Sys/MixtapeLink.cs)
         _wrist.OnOpenPhoto = PhotoGallery.Open;              // the latest photo's Open in VR Gallery, on a tap (Sys/PhotoWatcher.cs)
         _wrist.OnDeletePhoto = DeletePhoto;                  // the photo view's Delete, after its second tap: into the Recycle Bin (OrbitApp.Photos.cs)
+        _wrist.OnSendNewest = SendNewestPhoto;               // ... its Send: VR Gallery sends its newest photo to Discord (OrbitApp.Photos.cs)
+        _wrist.OnWantHi = WantHiPhoto;                       // ... its zoom: the photo read sharp (OrbitApp.Photos.cs)
         _kb = new KeyboardPanel(_gpu, _painter, _cfg);
         _settingsPanel = new SettingsPanel(_gpu, _painter, _cfg, this, PreparePreviews);
         _dockFaces = new HexpadFaces();

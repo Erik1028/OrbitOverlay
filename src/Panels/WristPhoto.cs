@@ -107,6 +107,7 @@ public sealed partial class WristPanel
     {
         if (_delDone) { _delDone = false; DeleteFinished(); }      // Delete's answer, before the view picks its photo (WristGallery.cs)
         DeleteTick();
+        SendFrame(d);
         long s = _ui.BeginStamp;
         if (s == _phStamp) return;
         _phStamp = s;
@@ -187,6 +188,7 @@ public sealed partial class WristPanel
         foreach (var b in new[] { _latest.Bmps, _memory.Bmps })
             for (int i = 0; i < b.Length; i++) { b[i].bmp?.Dispose(); b[i] = default; }
         GalleryDispose();
+        ZoomDispose();
         TArtDispose();
     }
 
@@ -358,6 +360,7 @@ public sealed partial class WristPanel
     {
         if (!(DetailIs("photo") || DetailIs("memory")) || _closing) return false;
         if (_gal && _galGrid) { _ptr.Wheel += n; _dirty = true; return true; }
+        if (_galShow) ShowStop();                   // (the slideshow ends: the stick steps by itself)
         using var set = UseOpenSet();
         double now = Clock.Now;
         if (now - _phScrollAt > 0.35) _phAcc = 2 * MathF.Sign(n);
@@ -375,6 +378,7 @@ public sealed partial class WristPanel
     // dir +1: the one before (older), -1: the one after (newer)
     void PhotoStep(int dir)
     {
+        if (_galShow) ShowStop();                   // (a step by hand ends the slideshow)
         int n = PhotoCount;
         if (n == 0) return;
         int i = Math.Clamp(_phIndex + dir, 0, n - 1);
@@ -514,6 +518,7 @@ public sealed partial class WristPanel
     {
         using var set = UseOpenSet();
         PhotoFrame(d);
+        ShowTick();                                 // the slideshow's next slide, when due (WristGallery.cs)
         if (Theme.Cyber) { CyberPhotoDetail(E, d); return; }
         if (_gal && _galGrid) { GalleryModern(E); return; }         // the gallery's grid (WristGallery.cs)
         var p = PhotoShown();
@@ -539,13 +544,12 @@ public sealed partial class WristPanel
         }
         var bmp = PhotoBitmap(p);
         _p.PushRoundedClip(box, 16);
-        if (bmp != null) _p.ImagePart(bmp, box, new RectangleF(0, 0, p.TW, p.TH));
-        else { _p.Fill(box, Bento.Tile); _p.Icon(PhotoKindIcon, box, Bento.Faint, 40); }
-        if (!side) _p.FillGradient(box, 0x00000000, 0x00000000, 0xC0000000, 0, 90);
+        PhotoImage(box, p, bmp, Bento.Tile);       // (a tap zooms, the slideshow fades in: WristGallery.cs)
+        if (!side && !_galZoom) _p.FillGradient(box, 0x00000000, 0x00000000, 0xC0000000, 0, 90);
         _p.PopRoundedClip();
         PhotoFlash(box, 16);
         if (side) PhotoWordsBeside(p, words, new RectangleF(box.Right + 24, c.Y, c.Right - 64 - 12 - box.Right - 24, c.Height));
-        else
+        else if (!_galZoom)
         {
             // the words over its foot: the world, when (and how long ago), the people
             // (the world and the people are links: their photos in the gallery - WristGallery.cs)
@@ -573,9 +577,12 @@ public sealed partial class WristPanel
         int n = PhotoCount;
         var pr = side ? new RectangleF(c.X, ay, 52, 52) : new RectangleF(box.X + 12, ay, 52, 52);
         var nr = side ? new RectangleF(c.Right - 52, ay, 52, 52) : new RectangleF(box.Right - 64, ay, 52, 52);
-        if (_phIndex < n - 1 && Press("wphprev", pr, PhPrev, null, false, true, 20, true)) PhotoStep(1);
-        if (_phIndex > 0 && Press("wphnext", nr, PhNext, null, false, true, 20, true)) PhotoStep(-1);
-        PhotoActions(box, p);                       // Gallery, Delete at its top right (WristGallery.cs)
+        if (!_galZoom && !_galShow)
+        {
+            if (_phIndex < n - 1 && Press("wphprev", pr, PhPrev, null, false, true, 20, true)) PhotoStep(1);
+            if (_phIndex > 0 && Press("wphnext", nr, PhNext, null, false, true, 20, true)) PhotoStep(-1);
+        }
+        PhotoActions(box, p);                       // the slideshow, Send, Gallery, Delete at its top right (WristGallery.cs)
         DeleteNoteModern(E);
     }
 
@@ -711,8 +718,7 @@ public sealed partial class WristPanel
         var (aw, ah) = PhotoAspect(p);
         var box = PhotoFit(aw, ah, area);
         var bmp = PhotoBitmap(p);
-        if (bmp != null) _p.ImagePart(bmp, box, new RectangleF(0, 0, p.TW, p.TH));
-        else { _p.Fill(box, CyberHud.Card2); _p.Icon(PhotoKindIcon, box, CyberHud.Faint, 36); }
+        PhotoImage(box, p, bmp, CyberHud.Card2);
         _p.Stroke(RectangleF.Inflate(box, 0.6f, 0.6f), CyberHud.CyanDim, 1.25f);
         PhotoCorners(RectangleF.Inflate(box, 6, 6), CyY, 14);
         // under it: the arrows, the timestamp, how long ago
@@ -771,9 +777,10 @@ public sealed partial class WristPanel
     void CyberPhotoWide(RectangleF E, RectangleF c, RectangleF box, PhotoWatcher.Photo p, PhotoWords words)
     {
         var bmp = PhotoBitmap(p);
-        if (bmp != null) _p.ImagePart(bmp, box, new RectangleF(0, 0, p.TW, p.TH));
-        else { _p.Fill(box, CyberHud.Card2); _p.Icon(PhotoKindIcon, box, CyberHud.Faint, 36); }
+        PhotoImage(box, p, bmp, CyberHud.Card2);
         float sh = 62;
+        if (!_galZoom)
+        {
         var strip = new RectangleF(box.X, box.Bottom - sh, box.Width, sh);
         _p.FillGradient(new RectangleF(box.X, strip.Y - 30, box.Width, 30), 0x000B0A0C, 0x000B0A0C, 0xB30B0A0C, 0, 90);
         _p.Fill(strip, 0xD90B0A0C);
@@ -794,6 +801,7 @@ public sealed partial class WristPanel
             TextAt(people, x + sw + 18, by + 1, right - x - sw - 16, CyG, SmallText, FontWeight.Normal);
             GalTapPeople("wphpeople", new RectangleF(x + sw + 18, by - 17, MathF.Min(right - x - sw - 18, _p.MeasureWidth(people, SmallText, FontWeight.Normal)), 22), p, CyC);
         }
+        }
         _p.Stroke(RectangleF.Inflate(box, 0.6f, 0.6f), CyberHud.CyanDim, 1.25f);
         float k = PhotoPopK();
         PhotoCorners(RectangleF.Inflate(box, 6, 6), k > 0 ? Theme.Mix(CyY, CyC, k) : CyY, 16);
@@ -801,8 +809,11 @@ public sealed partial class WristPanel
         // the arrows at its sides (only where there is one that way)
         float ay = box.Y + (box.Height - sh) / 2 - 26;
         int n = PhotoCount;
-        if (_phIndex < n - 1 && Press("wphprev", new RectangleF(box.X + 12, ay, 52, 52), PhPrev, null, false, true, 20, true)) PhotoStep(1);
-        if (_phIndex > 0 && Press("wphnext", new RectangleF(box.Right - 64, ay, 52, 52), PhNext, null, false, true, 20, true)) PhotoStep(-1);
+        if (!_galZoom && !_galShow)
+        {
+            if (_phIndex < n - 1 && Press("wphprev", new RectangleF(box.X + 12, ay, 52, 52), PhPrev, null, false, true, 20, true)) PhotoStep(1);
+            if (_phIndex > 0 && Press("wphnext", new RectangleF(box.Right - 64, ay, 52, 52), PhNext, null, false, true, 20, true)) PhotoStep(-1);
+        }
         PhotoActions(box, p);
         DeleteNoteModern(E);
     }
