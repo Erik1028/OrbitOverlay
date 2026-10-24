@@ -633,7 +633,7 @@ public sealed partial class SettingsView
         // three switches on the left (a little closer together to fit), the two sliders and Auto theater on the right
         bool b = t.Bar;
         if (ui.Toggle("th.bar", new RectangleF(lx - 10, 472, 362, 48), "Bar under the monitors", ref b,
-                "point at a monitor's bottom: Theater + settings")) t.Bar = b;
+                "always under the middle monitor: Theater + settings")) t.Bar = b;
         b = t.Curved;
         if (ui.Toggle("th.curve", new RectangleF(lx - 10, 521, 362, 48), "Curved", ref b, "bent around you, else flat")) { t.Curved = b; _h.TheaterEdited(); }
         b = t.Ambilight;

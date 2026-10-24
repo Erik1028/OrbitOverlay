@@ -1324,6 +1324,12 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             bool low = ts.Y > 0 && hpx.Y / ts.Y > BarLow;
             if (pointed == null || low) { pointed = s; lower = low; }
         }
+        // outside theater mode the bar is always there under the middle monitor while the monitors show (Erik 10-24: "a kijelző alatti
+        // ui, ahol van a theater mode, néha eltűnik, az mindig látszódhatna") - as if the laser stayed at its bottom; Layouts > "Bar
+        // under the monitors" off: none. (It came when the laser stayed at the screen's bottom 0.4 s and went 2 s after; the dwell was
+        // for the laser flap of 10-19 - a bar that is always there does not pop up between the screen and the keyboard.)
+        // Theater mode: as before (the switcher shows when it starts and when you point at the big screen).
+        if (!_theater.On && C.Theater.Bar && _barAnchor != null) { pointed = _barAnchor; lower = true; _barLowSince = now - BarDwell; }
         // the bottom of the screen opens the bar only when the laser stays there a moment (BarDwell): passing it on the way down to the
         // keyboard under the screen popped the bar up between the two, and the beam jumped onto it and back (Erik 10-19, the "laser
         // flap" log: the screen's bottom, nothing, the bar, nothing, the screen again). Theater mode: as before (the bar is its switcher).

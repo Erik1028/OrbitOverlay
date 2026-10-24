@@ -445,7 +445,7 @@ public sealed partial class SettingsView
         ui.Group95(new RectangleF(16, 300, 718, 130), "Theater mode");
         W95Icons.Draw(ui.P, W95Icons.Id.Theater, 28, 320);
         bool b = t.Bar;
-        if (ui.Check95("t95.bar", 52, 322, "Show a &bar under the monitor you point at (its lower part)", ref b)) t.Bar = b;
+        if (ui.Check95("t95.bar", 52, 322, "Show a &bar under the middle monitor (Theater, settings)", ref b)) t.Bar = b;
         Hint(ui, 70, 340, 640, "The bar has a Theater button and these settings; in theater mode it switches between monitors.", 30);
         ui.Label95("&Dim the world:", new RectangleF(28, 378, 90, 15));
         float v = t.Dim;
