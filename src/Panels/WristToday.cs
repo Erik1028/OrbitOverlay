@@ -59,7 +59,7 @@ public sealed partial class WristPanel
     {
         public string Name = "", CyName = "", At = "", Range = "", CyRange = "", Stay = "", CyStay = "", People = "", Photos = "", PhotosText = "", CyPhotos = "",
             Sub = "", CySub = "", Who95 = "";
-        public DateTime Start, End;
+        public DateTime Start, End;              // local (the visit's are instants)
         public double Minutes;
         public float Frac;
         public bool Longest, Here;
@@ -121,7 +121,7 @@ public sealed partial class WristPanel
         int minutes = Math.Max(0, (int)len.TotalMinutes);
         t.LenClock = $"{minutes / 60}:{minutes % 60:00}";
         string now = Lang.T("now");
-        t.Range = ShortClock(first.Start) + " – " + (last.Here ? now : ShortClock(last.End));
+        t.Range = ShortClock(first.Start.ToLocalTime()) + " – " + (last.Here ? now : ShortClock(last.End.ToLocalTime()));
         t.CyRange = t.Range.ToUpper(culture);
         t.When = today + " · " + t.Range;
         t.Photos = s.Photos >= 0 ? s.Photos.ToString(culture) : "–";
@@ -153,11 +153,11 @@ public sealed partial class WristPanel
         double total = Math.Max(1, s.Minutes);
         foreach (var v in s.Visits)
         {
-            var r = new TdRow { Start = v.Start, End = v.End, Minutes = v.Minutes, Longest = ReferenceEquals(v, longest), Here = v.Here };
+            var r = new TdRow { Start = v.Start.ToLocalTime(), End = v.End.ToLocalTime(), Minutes = v.Minutes, Longest = ReferenceEquals(v, longest), Here = v.Here };
             r.Name = TdName(v);
             r.CyName = r.Name.ToUpper(culture);
-            r.At = ShortClock(v.Start);
-            r.Range = r.At + " – " + (v.Here ? now : ShortClock(v.End));
+            r.At = ShortClock(r.Start);
+            r.Range = r.At + " – " + (v.Here ? now : ShortClock(r.End));
             r.CyRange = r.Range.ToUpper(culture);
             r.Stay = RecapStay(v.Minutes);
             r.CyStay = r.Stay.ToUpper(culture);

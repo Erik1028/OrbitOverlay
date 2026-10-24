@@ -27,6 +27,8 @@ namespace Orbit;
 //    names as the session's recap counts them (VRCX keeps no photos; VR Gallery's photos table would be its WAL's too).
 // Read only and never locked (Vrcx.Open: SQLite's immutable mode through winsqlite3.dll), never VRCX's cookies, configs or anything of
 // a login; nothing is written anywhere. Read on the Today reader's thread (TodayWatcher), never on a frame.
+// The times are instants (UTC) for every sum, end and merge, local only to show (TdMake): the night the clocks go back repeats an hour
+// of local time (Erik's 10-24 day runs to 5 AM on the 25th, 03:00 CEST is 02:00 CET again), and a stay across it is still its minutes.
 public static class TodayLog
 {
     // Off: not read yet; NoSource: neither VRCX nor VR Gallery; Unreadable: the database did not open (VRCX writing that page)
@@ -37,8 +39,8 @@ public static class TodayLog
     public sealed class Visit
     {
         public string World = "", Location = "";     // World "": the log had no name for it
-        public DateTime Start, End;                  // local; End: the read's time while you are still there
-        public bool Here;                            // still there (VRChat runs, no world after it)
+        public DateTime Start, End;                  // UTC (ToLocalTime to show); End: the read's time while you are still there
+        public bool Here;                            // still there (VRChat runs since before you came, no world after it)
         public int People, Friends, Photos = -1;     // Photos -1: not counted (no picture folder)
         public List<string> Names = new();           // the people met there, the friends first
         public double Minutes => Math.Max(0, (End - Start).TotalMinutes);
@@ -63,12 +65,14 @@ public static class TodayLog
     // the day's 5 AM
     public static DateTime Start(DateTime day) => day.AddHours(5);
 
-    // The day 'now' is in, from VRCX's database (vrcxDb), else VR Gallery's (galleryDb), the photos from 'pictures'. meId: you
-    // ("usr_..."; null: VRCX's account, else VR Gallery's most frequent player); vrchat: VRChat runs (the last visit may be going on).
-    public static Snapshot Read(string vrcxDb, string galleryDb, string pictures, DateTime now, string meId, bool vrchat)
+    // The day 'now' (local) is in, from VRCX's database (vrcxDb), else VR Gallery's (galleryDb), the photos from 'pictures'. meId: you
+    // ("usr_..."; null: VRCX's account, else VR Gallery's most frequent player); vrchat: VRChat's start (UTC; null: not running) - the
+    // last visit may be going on if it began since (one before it was cut short: VRChat crashed or was closed, then started again).
+    public static Snapshot Read(string vrcxDb, string galleryDb, string pictures, DateTime now, string meId, DateTime? vrchat)
     {
         var day = PhotoWatcher.DayOf(now);
         DateTime from = Start(day), to = from.AddDays(1);
+        now = now.ToUniversalTime();
         var s = new Snapshot { Day = day };
         bool vrcx = !string.IsNullOrEmpty(vrcxDb) && File.Exists(vrcxDb), gallery = !string.IsNullOrEmpty(galleryDb) && File.Exists(galleryDb);
         bool done = false, failed = false;
@@ -94,7 +98,7 @@ public static class TodayLog
 
     // ---- VRCX ----
 
-    static bool FromVrcx(Snapshot s, string path, DateTime from, DateTime to, DateTime now, bool vrchat, ref string me, out HashSet<string> friends)
+    static bool FromVrcx(Snapshot s, string path, DateTime from, DateTime to, DateTime now, DateTime? vrchat, ref string me, out HashSet<string> friends)
     {
         friends = null;
         var db = Vrcx.Open(path);
@@ -116,7 +120,11 @@ public static class TodayLog
             var rows = locs.Count == 0 ? new List<string[]>()
                 : Vrcx.Query(db, $"SELECT created_at, type, location, user_id, display_name FROM gamelog_join_leave WHERE created_at >= '{f}' AND created_at < '{Iso(to.AddHours(12))}' ORDER BY id", 5);
             // the visits: each arrival to its stay as VRCX wrote it when you left - else to the next arrival, to now (still there), or to
-            // the last join or leave VRCX saw there (it was closed before you left)
+            // the last join or leave VRCX saw there (it was closed before you left). A stay not written with another arrival after it
+            // (VRChat crashed or quit before VRCX logged the leave): to that arrival if it came soon after the last join or leave seen
+            // there, else to that last one - a long gap is VRChat closed in between (Erik's log since 09-01: 4 of 11 such stays had 7 to
+            // 18 hours before the next arrival, which made one world's stay most of the day). VRChat logs everyone leaving as you go: of
+            // the 783 stays VRCX wrote since 08-01, 781 had a join or leave in their last 10 minutes
             for (int i = 0; i < locs.Count; i++)
             {
                 var l = locs[i];
@@ -128,9 +136,13 @@ public static class TodayLog
                 long.TryParse(l[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out long ms);
                 var v = new Visit { World = l[2], Location = l[1], Start = start };
                 if (ms > 0) v.End = start.AddMilliseconds(ms);
-                else if (next != null) v.End = next.Value;
-                else if (vrchat) { v.End = now; v.Here = true; }
-                else v.End = LastSeen(rows, l[1], start);
+                else if (next != null)
+                {
+                    var seen = LastSeen(rows, l[1], start, next.Value);
+                    v.End = next.Value - seen > TimeSpan.FromMinutes(10) ? seen : next.Value;
+                }
+                else if (vrchat != null && start >= vrchat.Value) { v.End = now; v.Here = true; }
+                else v.End = LastSeen(rows, l[1], start, DateTime.MaxValue);
                 Clamp(v, next, now);
                 s.Visits.Add(v);
             }
@@ -145,15 +157,16 @@ public static class TodayLog
         finally { Vrcx.Close(db); }
     }
 
-    // the last join or leave in that instance since you came (none: you came, nothing more is known)
-    static DateTime LastSeen(List<string[]> rows, string loc, DateTime start)
+    // the last join or leave in that instance since you came, before 'until' (the next arrival: a rejoin of it later is not this
+    // visit's); none: you came, nothing more is known
+    static DateTime LastSeen(List<string[]> rows, string loc, DateTime start, DateTime until)
     {
         var last = start;
         foreach (var r in rows)
         {
             if (r[2] != loc) continue;
             var at = Utc(r[0]);
-            if (at > last) last = at;
+            if (at > last && at < until) last = at;
         }
         return last;
     }
@@ -178,7 +191,7 @@ public static class TodayLog
 
     // ---- VR Gallery ----
 
-    static bool FromGallery(Snapshot s, string path, DateTime from, DateTime to, DateTime now, bool vrchat, string me, HashSet<string> friends)
+    static bool FromGallery(Snapshot s, string path, DateTime from, DateTime to, DateTime now, DateTime? vrchat, string me, HashSet<string> friends)
     {
         var db = Vrcx.Open(path);
         try
@@ -187,7 +200,7 @@ public static class TodayLog
             string f = LocalIso(from), t = LocalIso(to);
             var ss = Vrcx.Query(db, $"SELECT id, world_name, start_at, end_at, world_id FROM sessions WHERE start_at >= '{f}' AND start_at < '{t}' ORDER BY start_at, id", 5);
             var after = Vrcx.Query(db, $"SELECT MIN(start_at) FROM sessions WHERE start_at >= '{t}'", 1);
-            DateTime? next0 = after.Count > 0 && Local(after[0][0]) is var a0 && a0 != DateTime.MinValue ? a0 : null;
+            DateTime? next0 = after.Count > 0 && FromLocal(after[0][0]) is var a0 && a0 != DateTime.MinValue ? a0 : null;
             if (me == null)
             {
                 // you are in every session of yours: the player in the most of them (4 in 5 at least) - when nothing said who you are
@@ -195,18 +208,19 @@ public static class TodayLog
                                          "GROUP BY user_id ORDER BY 2 DESC LIMIT 1", 3);
                 if (top.Count == 1 && int.TryParse(top[0][1], out int n) && int.TryParse(top[0][2], out int all) && all >= 3 && n * 5 >= all * 4) me = top[0][0];
             }
-            // the sessions: to their end; the last one, VRChat running and its end recent (VR Gallery moves it on as the log grows), to now
+            // the sessions: to their end; the last one, VRChat running since before it and its end recent (VR Gallery moves it on as the
+            // log grows), to now
             var byId = new Dictionary<string, Visit>(StringComparer.Ordinal);
             for (int i = 0; i < ss.Count; i++)
             {
                 var r = ss[i];
-                var start = Local(r[2]);
+                var start = FromLocal(r[2]);
                 if (start == DateTime.MinValue) continue;
-                DateTime? next = i + 1 < ss.Count && Local(ss[i + 1][2]) is var n1 && n1 != DateTime.MinValue ? n1 : i + 1 < ss.Count ? null : next0;
-                var end = Local(r[3]);
+                DateTime? next = i + 1 < ss.Count && FromLocal(ss[i + 1][2]) is var n1 && n1 != DateTime.MinValue ? n1 : i + 1 < ss.Count ? null : next0;
+                var end = FromLocal(r[3]);
                 var v = new Visit { World = r[1], Location = r[4].Length > 0 ? r[4] : r[1], Start = start };     // (no instance: its world)
                 bool last = i == ss.Count - 1 && next == null;
-                if (last && vrchat && (end == DateTime.MinValue || now - end < TimeSpan.FromMinutes(10))) { v.End = now; v.Here = true; }
+                if (last && vrchat != null && start >= vrchat.Value && (end == DateTime.MinValue || now - end < TimeSpan.FromMinutes(10))) { v.End = now; v.Here = true; }
                 else v.End = end != DateTime.MinValue ? end : next ?? start;
                 Clamp(v, next, now);
                 s.Visits.Add(v);
@@ -281,7 +295,8 @@ public static class TodayLog
         foreach (var m in met) if (!m.friend && into.Count < Keep) into.Add(m.name);
     }
 
-    // VRChat's photos of the day (VRChat_<date>_<time>...png: the folder itself and its month folders of the day), and each visit's
+    // VRChat's photos of the day (VRChat_<date>_<time>...png: the folder itself and its month folders of the day), and each visit's (the
+    // names' times are local: the day's bounds are too, a visit's are instants)
     static void CountPhotos(Snapshot s, string folder, DateTime from, DateTime to)
     {
         if (string.IsNullOrEmpty(folder) || !Directory.Exists(folder)) return;
@@ -299,31 +314,33 @@ public static class TodayLog
                 var t = PhotoWatcher.TakenOf(f);
                 if (t < from || t >= to) continue;
                 s.Photos++;
+                var u = t.ToUniversalTime();
                 foreach (var v in s.Visits)
-                    if (t >= v.Start && (t < v.End || v.Here && t <= v.End)) { v.Photos++; break; }
+                    if (u >= v.Start && (u < v.End || v.Here && u <= v.End)) { v.Photos++; break; }
             }
     }
 
     static bool Has(IntPtr db, string table) =>
         Vrcx.Query(db, $"SELECT 1 FROM sqlite_master WHERE type='table' AND name='{table}'", 1).Count > 0;
 
-    // VRCX's times: UTC, "2026-10-24T03:55:44.000Z"; VR Gallery's: local, "2026-10-24T05:55:44"
+    // VRCX's times: UTC, "2026-10-24T03:55:44.000Z"; VR Gallery's: local, "2026-10-24T05:55:44" - both read as UTC instants (a local
+    // time in the hour the clocks go back is the later one of the two: it says no more)
     static string Iso(DateTime local) => local.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture);
     static string LocalIso(DateTime local) => local.ToString("yyyy-MM-dd'T'HH:mm:ss", CultureInfo.InvariantCulture);
 
     static DateTime Utc(string s) =>
         DateTime.TryParse(s, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out var t)
-            ? DateTime.SpecifyKind(t.ToLocalTime(), DateTimeKind.Unspecified) : DateTime.MinValue;
+            ? t : DateTime.MinValue;
 
-    static DateTime Local(string s) =>
-        !string.IsNullOrEmpty(s) && DateTime.TryParse(s, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out var t)
-            ? DateTime.SpecifyKind(t, DateTimeKind.Unspecified) : DateTime.MinValue;
+    static DateTime FromLocal(string s) =>
+        !string.IsNullOrEmpty(s) && DateTime.TryParse(s, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal | DateTimeStyles.AdjustToUniversal, out var t)
+            ? t : DateTime.MinValue;
 }
 
 // The Today side's reader: a thread of its own, awake only while the recap's opened view shows Today (else asleep, nothing read). Read
 // at once when it is switched on, then looked at every 5 s: read again when a database or the photo folder changed (at most every 20
-// s: VRCX writes its log all evening), when the day turned or VRChat came or went, or every minute while you are still in a world (its
-// stay grows). The view gets the snapshot; a frame never reads anything.
+// s: VRCX writes its log all evening), when the day turned or VRChat came, went or started again, or every minute while you are still
+// in a world (its stay grows). The view gets the snapshot; a frame never reads anything.
 public sealed class TodayWatcher : IDisposable
 {
     public string VrcxDb = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "VRCX", "VRCX.sqlite3");
@@ -369,7 +386,8 @@ public sealed class TodayWatcher : IDisposable
     {
         DateTime read = default;
         int stamp = 0;
-        bool fresh = false, vrchat = false;                // fresh: read since it was switched on
+        bool fresh = false;                                // read since it was switched on
+        DateTime? vrchat = null;                           // VRChat's start at that read
         string pics = null;
         while (!_stop)
         {
@@ -378,7 +396,7 @@ public sealed class TodayWatcher : IDisposable
             {
                 var now = DateTime.Now;
                 if (!fresh) pics = Pictures ?? PhotoWatcher.PictureFolder();
-                bool vr = VrchatRunning();
+                var vr = VrchatStarted();
                 int st = HashCode.Combine(Stamp(VrcxDb), Stamp(GalleryDb), Stamp(GalleryDb + "-wal"), Stamp(pics),
                     Stamp(pics == null ? null : Path.Combine(pics, now.ToString("yyyy-MM", CultureInfo.InvariantCulture))));
                 double since = (now - read).TotalSeconds;
@@ -388,10 +406,11 @@ public sealed class TodayWatcher : IDisposable
                     var s = TodayLog.Read(VrcxDb, GalleryDb, pics, now, MeId, vr);
                     if (!fresh || s.State != pub.State || s.Source != pub.Source)
                         Log.Info($"today: {s.State} {s.Source}, {s.Visits.Count} world(s), {s.People} people, {s.Photos} photos{(s.Why != null ? " - " + s.Why : "")}");
-                    // the database being written that very moment: what was shown stays, tried again soon
+                    // the database being written that very moment: what was shown stays, tried again at the next look (the stamp not
+                    // taken: no more writes may come - VRChat closed, VRCX's last one of the evening - and that one would never be read)
                     if (s.State == TodayLog.State.Unreadable && pub.State == TodayLog.State.Ok && pub.Day == s.Day) read = now.AddSeconds(Look - Again);
-                    else { Publish(s); read = now; }
-                    (stamp, vrchat, fresh) = (st, vr, true);
+                    else { Publish(s); (read, stamp) = (now, st); }
+                    (vrchat, fresh) = (vr, true);
                 }
             }
             catch (Exception e)
@@ -411,15 +430,20 @@ public sealed class TodayWatcher : IDisposable
         catch { return 0; }
     }
 
-    static bool VrchatRunning()
+    // VRChat's start (UTC; null: not running) - a visit begun before it is not going on (the friends' VrcxStarted, Friends.cs)
+    static DateTime? VrchatStarted()
     {
-        try
+        Process[] ps;
+        try { ps = Process.GetProcessesByName("VRChat"); }
+        catch { return null; }
+        DateTime? first = null;
+        foreach (var p in ps)
         {
-            var ps = Process.GetProcessesByName("VRChat");
-            foreach (var p in ps) p.Dispose();
-            return ps.Length > 0;
+            try { var t = p.StartTime.ToUniversalTime(); if (first == null || t < first) first = t; }
+            catch { first = DateTime.MinValue; }                  // running, its start not readable: any visit may be going on
+            finally { p.Dispose(); }
         }
-        catch { return false; }
+        return first;
     }
 
     public void Dispose()
