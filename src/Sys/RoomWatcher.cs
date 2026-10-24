@@ -96,7 +96,13 @@ public sealed class RoomWatcher : IDisposable
     readonly byte[] _buf = new byte[1 << 16];
     readonly char[] _chars = new char[Encoding.UTF8.GetMaxCharCount(1 << 16)];
     long _pos;
-    readonly StringBuilder _partial = new();
+    // the line being read, in a buffer of its own: only a line the watcher reads ([Behaviour] ..., VRCApplication: ...) becomes a
+    // string (Erik 10-24: every line of VRChat's log was one - 17 MB a second while it caught up on a 49 MB log, the log growing ~17 MB
+    // an hour in a long session); a line longer than LineMax (VRChat logs huge ones now and then) is skipped, the buffer stays small
+    char[] _line = new char[512];
+    int _lineLen;
+    bool _overlong;
+    const int LineMax = 8192;
     Decoder _dec = Encoding.UTF8.GetDecoder();
     double _nextFileCheck, _nextFriendCheck;
     DateTime _friendStamp;
@@ -148,7 +154,7 @@ public sealed class RoomWatcher : IDisposable
         ResetRoom();
         _inRoom = false;
         _world = "";
-        _partial.Clear();
+        _lineLen = 0; _overlong = false;
         _dec = Encoding.UTF8.GetDecoder();
         if (newest == null) return true;
         Log.Info("room: following " + Path.GetFileName(newest));
@@ -163,7 +169,7 @@ public sealed class RoomWatcher : IDisposable
             ReadLines(fs, false, Clock.Now);
         }
         _pos = fs.Length;
-        _partial.Clear();
+        _lineLen = 0; _overlong = false;
         _dec = Encoding.UTF8.GetDecoder();
         return true;
     }
@@ -174,7 +180,7 @@ public sealed class RoomWatcher : IDisposable
     {
         if (_fs == null) return false;
         var fs = _fs;
-        if (fs.Length < _pos) { _pos = 0; _partial.Clear(); _dec = Encoding.UTF8.GetDecoder(); }   // rewritten: read it again
+        if (fs.Length < _pos) { _pos = 0; _lineLen = 0; _overlong = false; _dec = Encoding.UTF8.GetDecoder(); }   // rewritten: read it again
         if (fs.Length == _pos) return false;
         fs.Position = _pos;
         bool any = ReadLines(fs, true, now);
@@ -192,9 +198,20 @@ public sealed class RoomWatcher : IDisposable
             for (int i = 0; i < c; i++)
             {
                 char ch = _chars[i];
-                if (ch != '\n') { _partial.Append(ch); continue; }
-                any |= Line(_partial.ToString().TrimEnd('\r'), live, now);
-                _partial.Clear();
+                if (ch != '\n')
+                {
+                    if (_overlong) continue;
+                    if (_lineLen == LineMax) { _overlong = true; continue; }
+                    if (_lineLen == _line.Length) Array.Resize(ref _line, Math.Min(LineMax, _line.Length * 2));
+                    _line[_lineLen++] = ch;
+                    continue;
+                }
+                ReadOnlySpan<char> span = _line.AsSpan(0, _lineLen).TrimEnd('\r');
+                bool skip = _overlong;
+                _lineLen = 0;
+                _overlong = false;
+                if (skip || (span.IndexOf("[Behaviour] ", StringComparison.Ordinal) < 0 && span.IndexOf("VRCApplication: ", StringComparison.Ordinal) < 0)) continue;
+                any |= Line(new string(span), live, now);
             }
         }
         return any;
@@ -299,18 +316,20 @@ public sealed class RoomWatcher : IDisposable
     }
 
     // "User Authenticated: Name (usr_...)" near the start of the log
+    // (10-24: looked for in the bytes - only the line found becomes text; the whole 4 MB head was a 12 MB string at every start)
     void FindMe(FileStream fs)
     {
         fs.Position = 0;
         var buf = new byte[Math.Min(fs.Length, 4 << 20)];
         int n = fs.Read(buf, 0, buf.Length);
-        string head = Encoding.UTF8.GetString(buf, 0, n);
+        var head = buf.AsSpan(0, n);
         foreach (var key in new[] { "post login checks for ", "User Authenticated: " })
         {
-            int i = head.IndexOf(key, StringComparison.Ordinal);
+            int i = head.IndexOf(Encoding.UTF8.GetBytes(key));
             if (i < 0) continue;
-            int e = head.IndexOf('\n', i);
-            var (name, id) = Split(head[(i + key.Length)..(e < 0 ? head.Length : e)].TrimEnd('\r'));
+            var rest = head[(i + Encoding.UTF8.GetByteCount(key))..];
+            int e = rest.IndexOf((byte)'\n');
+            var (name, id) = Split(Encoding.UTF8.GetString(e < 0 ? rest : rest[..e]).TrimEnd('\r'));
             _myName = name;
             if (id.Length > 0) _me = id;
             return;

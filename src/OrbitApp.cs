@@ -199,9 +199,9 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
     public void Run()
     {
         Native.timeBeginPeriod(1);
-        // (10-24) the GC without blocking full collections - a background one instead (a little more memory, no 30-40 ms pause in a
-        // frame: Erik's log had a 41 ms frame with nothing else in it, the system's memory 70-87 % used beside VRChat)
-        System.Runtime.GCSettings.LatencyMode = System.Runtime.GCLatencyMode.SustainedLowLatency;
+        // (10-24: GCLatencyMode.SustainedLowLatency was tried and taken out the same night - the default GC already collects gen 2 in
+        // the background, and with 5-10 MB a second of large strings to collect (the room watcher catching up on VRChat's log) it let
+        // the private bytes swell by 500-700 MB before it collected them)
         NoPowerThrottling();
         ApplyGpuPriority();
         // the loop needs ~0.2 ms a frame but should get it on time even when VRChat keeps every core busy
