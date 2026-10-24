@@ -18,9 +18,13 @@ namespace Orbit;
 // out on the shared DirectWrite factory (Painter.WarmFonts). Nothing here touches Direct2D, the immediate context, the Painter or Spikes
 // (the main loop's only); the D3D device only through its own thread-safe methods. BootTick waits for it - half a second at most -
 // before the first capture and the first draws, so what it loads is not fought over. One "warm-up:" line says what it did, how long.
+// The watch's first draw itself is the main thread's, at the end of OrbitApp's constructor now (WarmWatch, 10-24: with the fonts warmed
+// it still took 106 ms in a frame after the connect - the face's code met for the first time): it waits for the fonts here (WaitFonts).
 static class BootWarm
 {
     static volatile bool _capture, _fonts, _stop;
+    static bool _noCapture;                          // --snapshot's bootdraw check: the fonts only (BootDrawTest.cs)
+    static readonly ManualResetEventSlim _done = new(false);     // set with _fonts (WaitFonts)
     public static bool CaptureReady => _capture;     // the capture's part done (or failed, or never started): the first capture may come
     public static bool FontsReady => _fonts;         // the fonts' part too: the first draws may come
     static Thread _t;
@@ -31,9 +35,11 @@ static class BootWarm
     static readonly ManualResetEventSlim _go = new(false);
     static readonly List<IDisposable> _kept = new();  // the warm-up's formats and layouts: the factory keeps their faces cached while held
 
-    // the top of OrbitApp's constructor (only there: the --snapshot tools never warm)
-    public static void Start()
+    // the top of OrbitApp's constructor (only there: the --snapshot tools never warm - but the bootdraw check, its fonts alone:
+    // capture false, BootDrawTest.cs)
+    public static void Start(bool capture = true)
     {
+        _noCapture = !capture;
         try
         {
             // Normal, not BelowNormal: VRChat keeps every core busy, and a starved warm-up would only make the first steps wait for it.
@@ -42,8 +48,12 @@ static class BootWarm
             _t.SetApartmentState(ApartmentState.MTA);
             _t.Start();
         }
-        catch (Exception e) { _t = null; _capture = _fonts = true; Log.Warn("warm-up: " + e.Message); }
+        catch (Exception e) { _t = null; _capture = _fonts = true; _done.Set(); Log.Warn("warm-up: " + e.Message); }
     }
+
+    // the main thread, before the watch's first draw (OrbitApp.WarmWatch): the fonts' part done (true), or 'ms' gone by first (false);
+    // at once when no warm-up runs (none started, or it could not start)
+    public static bool WaitFonts(int ms) => _t == null || _fonts || _done.Wait(ms);
 
     // the GPU made, the language and the style applied (the main thread): what to warm read here - the thread reads no Theme statics
     public static void GpuReady(Gpu g)
@@ -97,8 +107,9 @@ static class BootWarm
         {
             // the capture's class, an item of the primary monitor, its event and size - no device needed (1 = MONITOR_DEFAULTTOPRIMARY)
             GraphicsCaptureItem item = null;
-            try { item = MonitorCapture.WarmItem(Native.MonitorFromPoint(default, 1)); }
-            catch (Exception e) { capErr = e.Message; }
+            if (!_noCapture)
+                try { item = MonitorCapture.WarmItem(Native.MonitorFromPoint(default, 1)); }
+                catch (Exception e) { capErr = e.Message; }
             itemMs = Ms(t0);
 
             long w0 = Stopwatch.GetTimestamp();
@@ -140,7 +151,7 @@ static class BootWarm
             }
         }
         catch (Exception e) { fontErr ??= e.Message; }
-        finally { _capture = _fonts = true; }
+        finally { _capture = _fonts = true; _done.Set(); }
         if (_stop) return;
 
         var names = new StringBuilder();

@@ -139,6 +139,7 @@ static partial class Tools
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "lights") return LightsOnly(wrist, data, cfg, painter, gpu, dir);
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "onthisday") return OnThisDayTempsTools.Only(wrist, data, cfg, gpu, dir);
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "hexfaces") { DockViewTools.LinkFacesChecks(); return 0; }     // (DockViewTest.cs)
+        if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "bootdraw") return BootDrawTools.Run(wrist, data, cfg, gpu);    // the watch's first draws (BootDrawTest.cs)
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "mixtape") return MixtapeOnly(wrist, data, cfg, painter, gpu, dir);
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") is { } kindOnly && kindOnly.StartsWith("kind:")) return KindOnly(wrist, data, cfg, painter, gpu, dir, kindOnly[5..]);
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "avatar") return AvatarOnly(wrist, data, cfg, painter, gpu, dir);
