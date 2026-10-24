@@ -13,6 +13,8 @@ namespace Orbit;
 // head lies ~3 s, MathUtil.IsLyingDown) with SlimeVR connected: the widget puts its Yaw reset first (PanelData.SlimeLying) - and with the
 // alerts on, a card offers it once per lying-down, its button asking first like the widget's. Nothing is ever reset by itself: only the
 // watch's or the card's second tap sends one.
+// The Body side (Erik 10-24; WristSlimeBody.cs): while it shows on a watch that can be seen, the link asks for the skeleton's bones too
+// (20 a second; SlimeVrLink.WantPose) and the watch gets each pose as it comes; else they are not asked for (2 s after it closed).
 public sealed partial class OrbitApp
 {
     readonly SlimeVrLink _slime = new();
@@ -29,6 +31,9 @@ public sealed partial class OrbitApp
         _slime.Active = (want && now - _slimeSeen < 20) || alerts;
         var s = _slime.Get();
         _data.SlimeVr = want ? s : null;
+        bool body = want && _wrist != null && _wrist.SlimeBodyOn && now - _slimeSeen < 1;          // (on a watch in view now)
+        _slime.WantPose = body;
+        _data.SlimePose = body ? _slime.GetPose() : null;
         // lying down a while with SlimeVR's trackers there: the widget's Yaw reset first; with the alerts on, a card once per lying-down
         bool connected = s.State == SlimeVrLink.State.Ok && s.Dialect != SolarXr.Dialect.Unknown && s.Connected > 0;
         bool lying = _slimeAlerts.Lie(now, _vr.Connected && _vr.HmdValid && MathUtil.IsLyingDown(_vr.Hmd, _vr.OnFace), connected, out bool offer);

@@ -31,6 +31,7 @@ public sealed class PanelData
     public FriendsWatcher.Snapshot Friends;  // VRCX's friends online (the friends widget; null = not followed)
     public SlimeVrLink.Snapshot SlimeVr;     // SlimeVR's trackers (the SlimeVR widget, Sys/SlimeVrLink.cs; null = not followed)
     public bool SlimeLying;                  // the head has lain ~3 s with SlimeVR connected: its widget offers Yaw reset first (OrbitApp.SlimeVr.cs)
+    public SlimePose SlimePose;              // SlimeVR's skeleton, while the widget's Body side shows (Sys/SlimePose.cs; null = not asked for)
     public SessionRecap Recap;           // the last session's recap (the recap widget; null = none yet)
     public TodayLog.Snapshot Today;      // the day in VRChat, while the opened recap shows Today (Sys/TodayLog.cs; null = not read)
     public LumosLink Lamp;               // the room light through Lumos (Sys/RoomLights.cs; null = none)
@@ -196,6 +197,7 @@ public sealed partial class WristPanel : IPointerTarget, IDisposable
         if (LightsChanged(d)) _dirty = true;         // the light / the RGB answered or were switched (WristLights.cs)
         if (AvatarChanged(d)) _dirty = true;         // VRChat's values, a tap shown, other buttons picked (WristAvatar.cs)
         if (CameraChanged(d)) _dirty = true;         // VRChat's camera opened / closed, the closed one's hint over (WristCamera.cs)
+        if (SlimeChanged(d)) _dirty = true;          // SlimeVR: a new snapshot while it is open, the Body side's pose (WristSlimeBody.cs)
         // motion is drawn at the headset's rate (it was 45 fps; laid-out text is kept now, a frame is ~1.5 ms)
         if (_dirty || now >= _nextDraw || Animating)
         {

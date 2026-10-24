@@ -153,6 +153,7 @@ static partial class Tools
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "camera") return CameraOnly(wrist, data, cfg, painter, gpu, dir);     // the camera button's shutter in a made-up OSC sink (CameraTest.cs)
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "slimevr") return SlimeVrOnly(wrist, data, cfg, painter, gpu, dir);    // SlimeVR's widget and link (SlimeVrTest.cs)
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "slimealerts") return SlimeAlertsTools.Only(wrist, data, cfg, painter, gpu, dir);     // its alerts, lying down (SlimeAlertsTest.cs)
+        if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "slimebody") return SlimeBodyOnly(wrist, data, cfg, painter, gpu, dir);     // its Body side and guide (SlimeBodyTest.cs)
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "backdrops") return BackdropsOnly(cfg, painter, gpu, dir);    // theater's backdrops (ToolsBackdrops.cs)
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "citylife") return CityLifeOnly(cfg, painter, gpu, dir);     // Cyber's night city alive (CityLifeTest.cs)
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "ambilight") return AmbilightOnly(cfg, painter, gpu, dir);     // theater's glow (AmbilightTest.cs)
@@ -1789,6 +1790,9 @@ static partial class Tools
         return layout > 0 ? 1 : 0;
     }
 
+    // an opened view's other states the layout check draws too, by its widget's kind: each set up, drawn, checked, then undone (unset)
+    internal static readonly Dictionary<string, (List<(string name, Action<WristPanel, PanelData> set)> states, Action<WristPanel, PanelData> unset)> LayoutOpenStates = new();
+
     static int LayoutCheckRun(WristPanel wrist, PanelData data, ConfigStore cfg, Painter painter, Gpu gpu, string dir, string style, bool variantsOnly = false,
         string onlyKind = null)
     {
@@ -1965,6 +1969,27 @@ static partial class Tools
                 Log.Warn($"layout {style}: opened {name}: {(o > 0 ? $"{o} px outside the card, first at {ow}" : "")}{(o > 0 && cl > 0 ? "; " : "")}{(cl > 0 ? $"{cl} px within 14 px of its edge, first at {cw}" : "")}");
             }
             wrist.CloseForTest();
+            // the view's other states (a side, a guide: the SlimeVR widget's, SlimeBodyTest.cs), each drawn and checked the same way
+            if (LayoutOpenStates.TryGetValue(kind.Id, out var more))
+                foreach (var (sname, set) in more.states)
+                {
+                    wrist.Settle();
+                    if (!wrist.OpenForTest(kind.Id)) break;
+                    set(wrist, data);
+                    wrist.Draw(data);
+                    wrist.Draw(data);
+                    wrist.Surf.SavePng(gpu, Path.Combine(dir, "qa", $"{style}_open_{name}_{sname}.png"));
+                    var spx = Read();
+                    var (so, sow) = Outside(spx, t, classic ? 0 : 1.5f, own);
+                    var (scl, scw) = classic ? (0, null) : TooClose(spx, t, 3, sheet ? 8 : 14);
+                    if (so > 0 || scl > 0)
+                    {
+                        problems++;
+                        Log.Warn($"layout {style}: opened {name} ({sname}): {(so > 0 ? $"{so} px outside the card, first at {sow}" : "")}{(so > 0 && scl > 0 ? "; " : "")}{(scl > 0 ? $"{scl} px within 14 px of its edge, first at {scw}" : "")}");
+                    }
+                    more.unset(wrist, data);
+                    wrist.CloseForTest();
+                }
         }
         data.Notes = notes0;
         wrist.LayoutTest = false;
