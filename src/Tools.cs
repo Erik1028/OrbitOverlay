@@ -3008,6 +3008,30 @@ static partial class Tools
             comp = mx;
             tick = () => mx.Pump(Clock.Now, true);
         }
+        else if (what == "mixtape")
+        {
+            // Mixtape's link as the app runs it with Now playing on a page (its state once a second; read only)
+            var mt = new MixtapeLink { Active = true };
+            comp = mt;
+            tick = () => mt.Pump();
+        }
+        else if (what == "lumos")
+        {
+            // the bulb straight, as the light widget reads it (its state once a minute, every 5 s while watched; read only)
+            var ll = new LumosLink();
+            ll.SetKey(TapoAccount.Import(out _));
+            string bulbIp = "";             // (the config only read, as text: no ConfigStore on the real one - it may write)
+            try
+            {
+                using var cj = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(Log.Dir, "config.json")));
+                if (cj.RootElement.TryGetProperty("Lights", out var lj) && lj.TryGetProperty("Bulb", out var bj)) bulbIp = bj.GetString() ?? "";
+            }
+            catch { }
+            ll.SetBulb(bulbIp);
+            ll.Active = true;
+            ll.Watched = true;
+            comp = ll;
+        }
         else if (what is "audioenum" or "audiofollow")
         {
             // the mixer's two once-a-second Core Audio calls alone, 20 times a second: the session list (GetSessionEnumerator) or the
@@ -3031,11 +3055,14 @@ static partial class Tools
         }
         long start = Priv();
         Log.Info($"leaktest {what}: start private {start / 1024} KB");
+        long alloc0 = GC.GetTotalAllocatedBytes();
         for (int t = 10; t <= seconds; t += 10)
         {
             var until = DateTime.UtcNow.AddSeconds(10);
             while (DateTime.UtcNow < until) { tick?.Invoke(); Thread.Sleep(tick == null ? 200 : 11); }
-            Log.Info($"leaktest {what}: {t,3} s  private {Priv() / 1024} KB  (+{(Priv() - start) / 1024} KB)  GCs {GC.CollectionCount(0)}");
+            long alloc = GC.GetTotalAllocatedBytes();
+            Log.Info($"leaktest {what}: {t,3} s  private {Priv() / 1024} KB  (+{(Priv() - start) / 1024} KB)  GCs {GC.CollectionCount(0)}  allocated {(alloc - alloc0) / 10240} KB/s");
+            alloc0 = alloc;
         }
         GC.Collect();
         GC.WaitForPendingFinalizers();

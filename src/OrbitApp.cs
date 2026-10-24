@@ -27,6 +27,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
     Painter _painter;
     readonly PanelData _data = new();
     readonly GpuStats _gpuStats = new();
+    readonly AllocWatch _allocWatch = new();         // what allocates, by type and thread: the perf log's "alloc:" line (Sys/AllocWatch.cs)
     readonly EyeGaze _eyes = new();                  // Virtual Desktop's eye tracking (Sys/EyeGaze.cs)
     readonly MixtapeLink _mixtape = new();           // Mixtape's Remote API: the Mixtape widget (Sys/MixtapeLink.cs)
     readonly MediaInfo _media = new();
@@ -398,7 +399,8 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
                  $"all threads {(GC.GetTotalAllocatedBytes() - _allocAllMark) / secs / 1024:0.0} KB/s, " +
                  $"GC {GC.CollectionCount(0) - _gcMark[0]}/{GC.CollectionCount(1) - _gcMark[1]}/{GC.CollectionCount(2) - _gcMark[2]} " +
                  $"({(GC.GetTotalPauseDuration() - _gcPauseMark).TotalMilliseconds:0.0} ms pause), heap {GC.GetGCMemoryInfo().HeapSizeBytes / 1048576.0:0.0} MB, " +
-                 $"{ProcessCounters()} | bytes/loop:{sa}");      // (Environment.WorkingSet: no - it may read every process too)
+                 $"{ProcessCounters()}, gc committed {GC.GetGCMemoryInfo().TotalCommittedBytes / 1048576.0:0} MB | bytes/loop:{sa}");      // (Environment.WorkingSet: no - it may read every process too)
+        if (_allocWatch.TakeLine(secs) is { } al) Log.Info(al);
         var gi = GC.GetGCMemoryInfo(GCKind.Any);
         if (gi.Index > 0 && gi.Index != _lastGcLogged)
             Log.Info($"gc: last #{gi.Index} gen{gi.Generation}{(gi.Concurrent ? " background" : "")}{(gi.Compacted ? " compacting" : "")}, " +
