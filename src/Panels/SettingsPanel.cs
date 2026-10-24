@@ -69,13 +69,27 @@ public sealed class SettingsPanel : IPointerTarget, IDisposable
             var toPanel = w.Translation - _vr.Hmd.Translation;
             keep = toPanel.Length() < 1.6f &&
                    Vector3.Dot(Vector3.Normalize(toPanel), Vector3.Normalize(MathUtil.Forward(_vr.Hmd))) > 0.6f;
+            // lying, or a panel left rolled (Erik 10-24): kept only while it lies within LieRollDeg of how a fresh one would - an upright
+            // one from sitting is placed again parallel to the eyes once you lie on a side, a rolled one from lying upright again once
+            // you sit up. Upright, a panel with a level top edge (as GazeFrame places it) is kept as ever.
+            var pr = MathUtil.Right(w);
+            if (keep && pr.LengthSquared() > 1e-6f)
+            {
+                pr = Vector3.Normalize(pr);
+                if (MathF.Abs(pr.Y) > 0.17f || MathUtil.IsLying(_vr.Hmd, _vr.OnFace))
+                {
+                    var f = MathUtil.PlacementFrame(_vr.Hmd, _vr.OnFace);         // (no log line: maybe nothing is placed)
+                    keep = MathF.Abs(MathF.Atan2(Vector3.Dot(pr, MathUtil.Up(f)), Vector3.Dot(pr, MathUtil.Right(f)))) * 180 / MathF.PI
+                           <= MathUtil.LieRollDeg;
+                }
+            }
         }
         if (!keep)
         {
             // 0.7 m ahead, a little below the eyes, tilted back slightly
             var local = Matrix4x4.CreateRotationX(-12 * MathF.PI / 180) * Matrix4x4.CreateTranslation(0, -0.12f, -0.7f);
             C.Place.Attach = "world";
-            C.Place.M = MathUtil.ToArray(local * MathUtil.PlacementFrame(_vr.Hmd, _vr.HeadsetWorn, "settings"));
+            C.Place.M = MathUtil.ToArray(local * MathUtil.PlacementFrame(_vr.Hmd, _vr.OnFace, "settings"));
             _cfg.MarkDirty();
         }
     }

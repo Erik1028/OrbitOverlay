@@ -51,12 +51,30 @@ public sealed partial class OrbitApp
         wc.Width = Math.Clamp(px * (dp.Cfg.Width / Math.Max(1, dp.Mon.W)), 0.25f, 1.6f);
         // at the beam, a little nearer than the monitor, upright and facing you
         var pos = o + d * Math.Clamp(dist * 0.8f, 0.45f, 1.5f);
-        Vector3 z = (_vr.HmdValid ? _vr.Hmd.Translation - pos : -d) * new Vector3(1, 0, 1);
-        z = z.LengthSquared() > 1e-6f ? Vector3.Normalize(z) : Vector3.UnitZ;
-        var x = Vector3.Normalize(Vector3.Cross(Vector3.UnitY, z));
-        Placement.SetWorld(wc.Place, _vr, MathUtil.Basis(x, Vector3.Cross(z, x), z, pos));
+        // out of a monitor that lies (Erik 10-24: placed parallel to rolled eyes, or overhead lying back): facing you with the monitor's
+        // own up, parallel to it - upright it came out 90° to the eyes beside it, overhead edge-on. Upright and reclined rows as ever.
+        if (_vr.HmdValid && Placement.TryWorld(dp.Cfg.Place, _vr, out var mw) && MonitorLies(mw) &&
+            MathUtil.FacingWithUp(pos, _vr.Hmd.Translation, MathUtil.Up(mw), out var along))
+            Placement.SetWorld(wc.Place, _vr, along);
+        else
+        {
+            Vector3 z = (_vr.HmdValid ? _vr.Hmd.Translation - pos : -d) * new Vector3(1, 0, 1);
+            z = z.LengthSquared() > 1e-6f ? Vector3.Normalize(z) : Vector3.UnitZ;
+            var x = Vector3.Normalize(Vector3.Cross(Vector3.UnitY, z));
+            Placement.SetWorld(wc.Place, _vr, MathUtil.Basis(x, Vector3.Cross(z, x), z, pos));
+        }
         Log.Info($"pulled out of {dp.Mon.Name}: '{info.Title}' ({info.Process}), {wc.Width:0.00} m");
         return panel;
+    }
+
+    // a monitor that lies: its top edge more than LieRollDeg off level, or its up past GazeFrame's world-up range (under cos 69.5°:
+    // overhead, underfoot). A row GazeFrame placed stays under both: a side monitor of a reclined row tips its top edge by
+    // sin(round) * sin(recline), past 40° only from 48° round at 60° back.
+    static bool MonitorLies(in Matrix4x4 m)
+    {
+        Vector3 r = MathUtil.Right(m), u = MathUtil.Up(m);
+        if (r.LengthSquared() < 1e-6f || u.LengthSquared() < 1e-6f) return false;
+        return MathF.Abs(Vector3.Normalize(r).Y) > MathF.Sin(MathUtil.LieRollDeg * MathF.PI / 180) || Vector3.Normalize(u).Y < 0.35f;
     }
 
     // the pulled-out window back at its place on the desk (asked of Windows, never waited for: a busy app cannot hold the loop)

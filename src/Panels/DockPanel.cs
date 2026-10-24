@@ -146,7 +146,7 @@ public sealed partial class DockPanel : IPointerTarget, IDisposable
         if (_vr == null || !_vr.HmdValid) return;
         var local = Matrix4x4.CreateRotationX(-35 * MathF.PI / 180) * Matrix4x4.CreateTranslation(0, -0.30f, -0.45f);
         C.Place.Attach = "world";
-        C.Place.M = MathUtil.ToArray(local * MathUtil.PlacementFrame(_vr.Hmd, _vr.HeadsetWorn, "dock"));
+        C.Place.M = MathUtil.ToArray(local * MathUtil.PlacementFrame(_vr.Hmd, _vr.OnFace, "dock"));
         _cfg.MarkDirty();
     }
 

@@ -60,6 +60,21 @@ static class MathUtil
         return Basis(x, y, z, pos);
     }
 
+    // The same facing 'towards', its top towards 'up' instead of the sky (next to a monitor that lies parallel to rolled eyes, Erik
+    // 10-24); false where that is undefined (towards at pos, up along the look).
+    public static bool FacingWithUp(Vector3 pos, Vector3 towards, Vector3 up, out Matrix4x4 m)
+    {
+        m = Matrix4x4.Identity;
+        Vector3 z = towards - pos;
+        if (z.LengthSquared() < 1e-6f) return false;
+        z = Vector3.Normalize(z);
+        Vector3 y = up - Vector3.Dot(up, z) * z;
+        if (y.LengthSquared() < 1e-6f) return false;
+        y = Vector3.Normalize(y);
+        m = Basis(Vector3.Cross(y, z), y, z, pos);
+        return true;
+    }
+
     // Yaw-only frame of the head: origin at the head, -Z = horizontal look direction.
     public static Matrix4x4 YawFrame(in Matrix4x4 head)
     {
@@ -101,19 +116,33 @@ static class MathUtil
     public const float LieRollDeg = 40;
     static long _lieLogMs;
 
+    // The head lies: rolled past LieRollDeg, and looking down the eye line itself clearly off level too (past 35°). The roll
+    // (atan2(right.y, up.y)) reads a bowed head turned on its neck as rolled, tan(roll) = sin(turn) * tan(bow): sitting, a look at the
+    // watch low at the lap (bowed 60-70°, turned 20-30°) read 41-54° with the eyes only 19-28° off level (review 10-24) - upright stays
+    // upright. Lying on a side the eye line is near vertical (past 35° still with the head turned 50° towards the floor; towards the
+    // ceiling it looks up); lying back the look goes up, and a turned head counts by its roll alone. worn = false (VrSession.OnFace: the
+    // headset off, maybe on its side on the desk): never.
+    public static bool IsLying(in Matrix4x4 head, bool worn)
+    {
+        if (!worn) return false;
+        Vector3 r = Right(head), u = Up(head);
+        if (r.LengthSquared() < 1e-6f || u.LengthSquared() < 1e-6f) return false;
+        r = Vector3.Normalize(r);
+        u = Vector3.Normalize(u);
+        return MathF.Abs(MathF.Atan2(r.Y, u.Y)) * 180 / MathF.PI > LieRollDeg && (MathF.Abs(r.Y) > 0.57f || Forward(head).Y > 0);
+    }
+
     // Where Recenter, Reset position, Join and "bring here" put things: GazeFrame as ever (upright a nod or a slight tilt ignored,
-    // reclined it follows the look), unless the head is rolled past LieRollDeg - then its full rotation, so the monitors lie parallel
-    // to the eyes and what goes under them goes towards the chin. Roll = atan2(right.y, up.y): both scale with cos(pitch), so it reads
-    // the same at any pitch; near straight up / down they vanish, but GazeFrame takes the headset's own up there anyway (the same
-    // frame). Decided once, at the moment of placement (nothing follows the head after). worn = false (the headset off, maybe on its
-    // side on the desk): never rolled. what: names the placement in the log line when the head lay (a line a second at most:
-    // Recenter's helpers ask again).
+    // reclined it follows the look), unless the head lies (IsLying) - then its full rotation, so the monitors lie parallel to the eyes
+    // and what goes under them goes towards the chin. Roll = atan2(right.y, up.y): both scale with cos(pitch), so it reads the same at
+    // any pitch; near straight up / down they vanish, but GazeFrame takes the headset's own up there anyway (the same frame). Decided
+    // once, at the moment of placement (nothing follows the head after). what: names the placement in the log line when the head lay
+    // (a line a second at most: Recenter's helpers ask again).
     public static Matrix4x4 PlacementFrame(in Matrix4x4 head, bool worn, string what = null)
     {
-        if (!worn) return GazeFrame(head);
-        Vector3 r = Right(head), u = Up(head), z = Back(head);
-        float roll = MathF.Atan2(r.Y, u.Y) * 180 / MathF.PI;
-        if (MathF.Abs(roll) <= LieRollDeg || z.LengthSquared() < 1e-6f) return GazeFrame(head);
+        if (!IsLying(head, worn)) return GazeFrame(head);
+        Vector3 u = Up(head), z = Back(head);
+        if (z.LengthSquared() < 1e-6f) return GazeFrame(head);
         z = Vector3.Normalize(z);
         Vector3 x = Vector3.Cross(u, z);
         if (x.LengthSquared() < 1e-6f) return GazeFrame(head);
@@ -121,7 +150,7 @@ static class MathUtil
         if (what != null && Environment.TickCount64 - _lieLogMs > 1000)
         {
             _lieLogMs = Environment.TickCount64;
-            Log.Info($"{what}: lying (roll {roll:0} deg) - placed parallel to the eyes");
+            Log.Info($"{what}: lying (roll {MathF.Atan2(Right(head).Y, u.Y) * 180 / MathF.PI:0} deg) - placed parallel to the eyes");
         }
         return Basis(x, Vector3.Cross(z, x), z, head.Translation);
     }
