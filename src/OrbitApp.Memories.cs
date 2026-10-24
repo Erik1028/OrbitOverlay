@@ -11,7 +11,7 @@ public sealed partial class OrbitApp
 
     void UpdateMemories(double now)
     {
-        bool want = C.Wrist.Face == "custom" && WatchPages.Any(C.Wrist, "memory") && (_vr.Connected || now - _photoPreview < 3);
+        bool want = C.Wrist.Face == "custom" && WatchPages.Any(C.Wrist, "memory") && (VrAfter(5) || now - _photoPreview < 3);
         _memories.Active = want;
         _data.Memories = want ? _memories.Get() : null;
     }

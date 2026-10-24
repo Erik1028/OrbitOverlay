@@ -77,6 +77,7 @@ public sealed partial class Theater : IDisposable
     float _t, _leaveT;                    // _t: 0 = the screen at its home / faded out, 1 = the theater screen
     bool _glide, _checked;
     public bool On { get; private set; }
+    public bool MayWarm = true;              // OrbitApp: false while the connect's steps run - their frames are full (OrbitApp.BootTick)
 
     public Theater(Gpu g, Painter p) { _g = g; _p = p; }
 
@@ -352,7 +353,7 @@ public sealed partial class Theater : IDisposable
             Log.Info($"theater: playing {_screen.TheaterLabel} - {_screen.TheaterState}, " +
                      $"{Vector3.Distance(_view.World.Translation, _view.Head):0.00} m away, {_view.Width:0.00} m wide");
         }
-        if (!On && _screen == null) WarmTheater();       // off: the style's textures made ready a piece a frame, so its first frame draws nothing (TheaterWarm.cs)
+        if (!On && _screen == null && MayWarm) WarmTheater();       // off: the style's textures made ready a piece a frame, so its first frame draws nothing (TheaterWarm.cs)
     }
 
     static bool Contains(List<ITheaterScreen> live, ITheaterScreen s)

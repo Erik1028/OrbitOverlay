@@ -164,18 +164,16 @@ public sealed class SettingsPanel : IPointerTarget, IDisposable
         }
     }
 
-    // Draws every tab once off-screen (fonts, layers, previews), so the first time the panel opens
-    // in VR there is no hitch (it was 25-30 ms).
-    public void Warm()
+    // Draws a tab once off-screen (fonts, layers, previews), so the first time the panel opens in VR there is no hitch (it was
+    // 25-30 ms). One tab a frame after connecting (OrbitApp.BootTick): all 8 at once, each with its D2D flush, were one long frame.
+    readonly PointerState _warmPtr = new();
+
+    public void WarmTab(int t)
     {
         int keep = _view.Tab;
-        var idle = new PointerState();
-        for (int t = 0; t < SettingsView.TabCount; t++)
-        {
-            _view.Tab = t;
-            _beforeDraw?.Invoke(_view);
-            DrawFrame(idle);
-        }
+        _view.Tab = t;
+        _beforeDraw?.Invoke(_view);
+        DrawFrame(_warmPtr);
         _view.Tab = keep;
         _ui.ResetAnimations();
         _dirty = true;

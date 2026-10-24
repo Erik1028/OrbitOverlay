@@ -12,8 +12,8 @@ public sealed partial class OrbitApp
     void UpdateTemps(double now)
     {
         var a = C.General.Alerts ?? AlertDefaults;
-        bool widget = C.Wrist.Face == "custom" && WatchPages.Any(C.Wrist, "temps") && (_vr.Connected || now - _photoPreview < 3);
-        _temps.Active = widget || (a.Hot && _vr.Connected);
+        bool widget = C.Wrist.Face == "custom" && WatchPages.Any(C.Wrist, "temps") && (VrAfter(6) || now - _photoPreview < 3);
+        _temps.Active = widget || (a.Hot && VrAfter(6));
         _data.Temps = _temps.Active ? _temps.Report : null;
     }
 
