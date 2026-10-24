@@ -13,11 +13,17 @@ version you came from. Format: "## <version> | <title>", then "- " points (an in
   theirs.
 - The opened photo: a tap zooms in where you tap (drag to look round, tap again for the whole photo); a slideshow;
   and Send - VR Gallery sends your newest photo to its Discord webhook (asks first).
-- New widget: SlimeVR - your trackers' batteries and signal, and Yaw / Full / Mounting reset on the watch (each asks
-  first). Needs the SlimeVR server running.
-- New widget: Camera - takes a VRChat photo (VRChat's camera has to be open: VRChat lets no app open it).
+- New widget: SlimeVR - your trackers' batteries, signal and time left, and Yaw / Full / Mounting reset on the watch
+  (each asks first). Opened, its Body side shows SlimeVR's body model live (each leg's twist against the pelvis in
+  degrees) and resets just the part you pick (a leg, the legs, the upper body); Mounting reset guides you through
+  your SlimeVR's own method. Needs the SlimeVR server running.
+- SlimeVR alerts (VRChat > SlimeVR alerts): a card when a tracker runs low or drops out, and lying down, a Yaw
+  reset offered on the watch (it never resets by itself).
+- New widget: Camera - takes a VRChat photo; greyed while VRChat's camera is closed (VRChat lets no app open it).
 - The recap's Today: every world you were in today (from 5 AM), how long, who was there and your photos, across
-  restarts (VRCX's log, else VR Gallery's).
+  restarts (VRCX's log, else VR Gallery's). Tap a world to see the photos you took there.
+- The retro styles' photo viewers do it their era's way too: 95 Imaging's Zoom, XP's Start Slide Show and zoom
+  buttons, Windows 7's Play slide show, the Mac's Double Size.
 - Eye calibration (VRChat > Eye cursor > Calibrate...): look at five dots; the eye cursor then sits where you look.
 - Delete a photo from the watch: the bin button asks first ("Delete?"), a second tap moves the photo into the Recycle
   Bin - never deleted for good, you can restore it from there.

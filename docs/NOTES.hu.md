@@ -204,7 +204,13 @@ dotnet publish -c Release -o dist
 - **SlimeVR widget** (`Sys/SlimeVrLink.cs`, SolarXR ws 21110, saját FlatBuffers olvasó; v21 és v22 dialektus – Eriké v22.0.0-rc.2):
   akku, jel, ping, Yaw / Full / Mounting reset két koppintással. `ORBIT_SNAP_ONLY=slimevr` (kitalált szerver, sosem 21110).
 - **Kamera widget** (`Sys/VrcCamera.cs`): OSC `/usercamera/Capture` (igaz, 0,2 s múlva hamis); a kamerát a VRChat nem engedi
-  OSC-n kinyitni.
+  OSC-n kinyitni. Az állapotot (`/usercamera/Mode`) az OSCQuery-ből olvassa (`AvatarLink`), zárva szürke.
+- **SlimeVR 2. kör** (`Panels/WristSlimeBody.cs`): Test oldal – élő csontváz (v21 `bone_mask` / v22 `BoneMask`, csak amíg látszik,
+  20/s; v21 lógó slot-tűrés), lábak csavarodása a medencéhez, reset testrészenként (`body_parts`), vezetett mounting (Eriknél STEP
+  módszer – `settings/default.json`; a v22 a guardok nélkül csendben eldobja: „Full reset first”), utolsó reset, akku-előrejelzés
+  (20 perc lemerülésből). Figyelmeztetések + fekvés-ajánlat (`Sys/SlimeAlerts.cs`, `MathUtil.IsLyingDown` alacsony fejjel).
+- **Retró fotónézők**: 95 Zoom menü, XP diavetítés + nagyító, 7 lejátszás-orb + Send, Mac Double Size. **Ma → galéria** (időszak-szűrő).
+- **Bemelegítés**: a billentyűzet és a 8 beállításfül első rajzolása is a konstruktorban (`WarmPanels`).
 - **Ma** (`Sys/TodayLog.cs`, `Panels/WristToday.cs`): a recap Munkamenet | Ma lapja; VRCX gamelog, különben VR Gallery.
 - **Szemkalibráció** (`Sys/EyeCalib.cs`, `Panels/EyeCalibPanel.cs`, `General.EyeCalib`): 5 pont, eltolás (+ lineáris, ha stabil).
 - **Az óra első rajzolása** a konstruktorban (`WarmWatch`); a Hexpad nem látott képei bájtként, 0 B.
