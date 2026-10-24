@@ -856,13 +856,19 @@ static partial class Tools
         System.Globalization.CultureInfo.CurrentCulture = SnapCulture;
         SlimeVrViewTools.DataChecks(wrist, data, cfg, gpu, dir);
         SlimeBodyChecks(wrist, data, cfg, gpu, dir, true);           // the Body side, the guide, the forecast, the last reset (SlimeBodyTest.cs)
-        LayoutOpenStates["slimevr"] = (SlimeBodyTools.LayoutStates(), (w, d) => { w.SlimeSetBody(false); d.SlimeVr = SlimeVrViewTools.Fake(); d.SlimePose = null; });
+        LayoutOpenStates["slimevr"] = (SlimeBodyTools.LayoutStates(), (w, d) =>
+        {
+            w.SlimeSetBody(false);
+            w.SlimeSetGroup(SlimeGroups.All);
+            d.SlimeVr = SlimeVrViewTools.Fake();
+            d.SlimePose = null;
+        });
         foreach (var (style, tag) in new[] { ("modern", ""), ("classic", "_95"), ("xp", "_xp"), ("aero", "_aero"), ("mac", "_mac"), ("terminal", "_term"), (CyberHud.Id, "_cyber") })
         {
             cfg.Data.Appearance = new AppearanceConfig { Style = style, Clock24h = true };
             Theme.Apply(cfg.Data.Appearance);
             SlimeVrViewTools.Run(wrist, data, cfg, gpu, dir, tag);
-            SlimeBodyTools.Run(wrist, data, cfg, gpu, dir, tag);
+            SlimeBodyTools.Run(wrist, data, cfg, painter, gpu, dir, tag);
             data.SlimeVr = SlimeVrViewTools.Fake();
             string f0 = cfg.Data.Wrist.Face;
             layout += LayoutCheckRun(wrist, data, cfg, painter, gpu, dir, tag.Length > 0 ? tag[1..] : "modern", onlyKind: "slimevr");
@@ -900,12 +906,18 @@ static partial class Tools
         var culture = System.Globalization.CultureInfo.CurrentCulture;
         System.Globalization.CultureInfo.CurrentCulture = SnapCulture;
         SlimeBodyChecks(wrist, data, cfg, gpu, dir, Environment.GetEnvironmentVariable("ORBIT_SNAP_LINK") == "1");
-        LayoutOpenStates["slimevr"] = (SlimeBodyTools.LayoutStates(), (w, d) => { w.SlimeSetBody(false); d.SlimeVr = SlimeVrViewTools.Fake(); d.SlimePose = null; });
+        LayoutOpenStates["slimevr"] = (SlimeBodyTools.LayoutStates(), (w, d) =>
+        {
+            w.SlimeSetBody(false);
+            w.SlimeSetGroup(SlimeGroups.All);
+            d.SlimeVr = SlimeVrViewTools.Fake();
+            d.SlimePose = null;
+        });
         foreach (var (style, tag) in new[] { ("modern", ""), ("classic", "_95"), ("xp", "_xp"), ("aero", "_aero"), ("mac", "_mac"), ("terminal", "_term"), (CyberHud.Id, "_cyber") })
         {
             cfg.Data.Appearance = new AppearanceConfig { Style = style, Clock24h = true };
             Theme.Apply(cfg.Data.Appearance);
-            SlimeBodyTools.Run(wrist, data, cfg, gpu, dir, tag);
+            SlimeBodyTools.Run(wrist, data, cfg, painter, gpu, dir, tag);
             data.SlimeVr = SlimeVrViewTools.Fake();
             string f0 = cfg.Data.Wrist.Face;
             layout += LayoutCheckRun(wrist, data, cfg, painter, gpu, dir, tag.Length > 0 ? tag[1..] : "modern", onlyKind: "slimevr");

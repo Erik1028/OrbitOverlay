@@ -142,6 +142,7 @@ public sealed partial class WristPanel
     void TSlimeDetail(RectangleF win, PanelData d)
     {
         SvNow(d);
+        _svBodyDrawn = false;                  // (TSlimeBody sets it again)
         _p.Fill(win, T.BG);
         _p.Bevel(win, Painter.Edge.Window);
         _ui.Caption95(new RectangleF(win.X + 3, win.Y + 3, win.Width - 6, 18), "SlimeVR");
@@ -273,6 +274,7 @@ public sealed partial class WristPanel
 
     void TSlimeBody(RectangleF c, PanelData d)
     {
+        _svBodyDrawn = true;
         var p = SvPose(d);
         float y0 = c.Y + 13, keyY = c.Bottom - 22, groupY = keyY - 16, promptY = groupY - 13;
         var box = new RectangleF(c.X, y0, 118, promptY - 3 - y0);
@@ -306,7 +308,7 @@ public sealed partial class WristPanel
         }
         string note = p == null ? null : p.Rolled ? T.Up(Lang.T(SvRollHints[0])) : p.Lying ? T.Up(Lang.T("Lying")) : !float.IsNaN(p.HipHead) ? SvDeg("Hip {0}° from head", p.HipHead, true) : null;
         if (note != null) TPut(SvTFit(note, c.Right - x), x, y0 + 15 + 4 * 11 + 6, p.Rolled ? T.HOT : T.DIM);
-        bool lie = SvLying(d);
+        bool lie = SvLying(d) && p is not { Rolled: true };        // (on a side: the note says to lie on the back - no LYING? [Y] YAW over it)
         TPut(SvTFit(SvTPromptNow(d, lie), c.Width), c.X, promptY, SvArmed95() || lie ? T.HOT : T.INK);
         // the groups (lit when picked), the two resets
         float words = 0;

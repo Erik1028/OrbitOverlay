@@ -269,16 +269,7 @@ static class SlimeBodyTools
         int noisy = Run(s => ((int)Math.Round(80 - 12.0 * s / 1200) + (s / 30 % 2 == 0 ? 4 : -4), false), 1200);
         int brief = Run(s => ((int)Math.Round(80 - 12.0 * s / 1200), false), 540);
         // the words on a row ("~2 h left" after its signal; the retro list's "~2h")
-        var s0 = SlimeVrViewTools.Fake();
-        var s1 = Copy(s0, c =>
-        {
-            c.Trackers.Clear();
-            foreach (var t in s0.Trackers) c.Trackers.Add(new SlimeVrLink.Tracker
-            {
-                Device = t.Device, Num = t.Num, Part = t.Part, Battery = t.Battery, Rssi = t.Rssi, Ping = t.Ping, Status = t.Status, Voltage = t.Voltage, Imu = true,
-                DisplayName = t.DisplayName, LeftMin = t.Part == SlimeVrLink.Part.LeftThigh ? 120 : t.Part == SlimeVrLink.Part.RightThigh ? 90 : t.Part == SlimeVrLink.Part.LeftAnkle ? 40 : -1,
-            });
-        });
+        var s1 = WithLeft(SlimeVrViewTools.Fake(), p => p == SlimeVrLink.Part.LeftThigh ? 120 : p == SlimeVrLink.Part.RightThigh ? 90 : p == SlimeVrLink.Part.LeftAnkle ? 40 : -1);
         var keep = data.SlimeVr;
         data.SlimeVr = s1;
         string lt = wrist.SlimeLeftText(data, 2), rt = wrist.SlimeLeftText(data, 3), la = wrist.SlimeLeftText(data, 4), ch = wrist.SlimeLeftText(data, 0);
@@ -287,6 +278,28 @@ static class SlimeBodyTools
              $"under 10 min {brief} (want -1 each: nothing said); the rows say '{lt}', '{rt}', '{la}', '{ch}' (want '~2 h left', '~1.5 h left', '~40 min left', '') -",
              steady == 120 && flat == -1 && charging == -1 && noisy == -1 && brief == -1 && lt == "~2 h left" && rt == "~1.5 h left" && la == "~40 min left" && ch == "");
     }
+
+    // a snapshot like s0 with each tracker's time left (minutes, as SlimeBattery rounds them; -1: nothing to say)
+    static SlimeVrLink.Snapshot WithLeft(SlimeVrLink.Snapshot s0, Func<SlimeVrLink.Part, int> left) => Copy(s0, c =>
+    {
+        c.Trackers.Clear();
+        foreach (var t in s0.Trackers) c.Trackers.Add(new SlimeVrLink.Tracker
+        {
+            Device = t.Device, Num = t.Num, Part = t.Part, Battery = t.Battery, Rssi = t.Rssi, Ping = t.Ping, Status = t.Status, Voltage = t.Voltage, Imu = true,
+            DisplayName = t.DisplayName, LeftMin = left(t.Part),
+        });
+    });
+
+    // every tracker's time left but the hip's (it charges) - the longest lines the ankles' ("-72 dBm · 25 ms · ~40 min left")
+    static SlimeVrLink.Snapshot Forecasts() => WithLeft(SlimeVrViewTools.Fake(), p => p switch
+    {
+        SlimeVrLink.Part.Chest => 180, SlimeVrLink.Part.LeftThigh => 120, SlimeVrLink.Part.RightThigh => 50, SlimeVrLink.Part.LeftAnkle => 40,
+        SlimeVrLink.Part.RightAnkle => 90, _ => -1,
+    });
+
+    // the left leg's yaw reset half a minute ago (the Body side's last line)
+    static SlimeVrLink.Snapshot LastLeft() => Copy(SlimeVrViewTools.Fake(), c =>
+        (c.LastKind, c.LastAt, c.LastParts) = (0, Clock.Now - 30, SlimeGroups.Mask(SlimeGroups.LeftLeg)));
 
     // ---- the link on the made-up server: the bones asked only while wanted, a reset of the left leg, the guide, a reset from elsewhere ----
 
@@ -522,9 +535,9 @@ static class SlimeBodyTools
         (c.Dialect, c.MountMethod, c.ResetKind, c.ResetState, c.ResetPhase, c.ResetAt) = (SolarXr.Dialect.V22, 3, 2, 1, 4, Clock.Now + 1.5));
 
     public static readonly List<(string tag, string[] files)> Preview = new();
-    static readonly string[] Shots = { "body", "body_lying", "body_ask", "mount_needfull", "mount_step", "mount_pose", "mount_done" };
+    static readonly string[] Shots = { "body", "body_lying", "body_ask", "body_last", "mount_needfull", "mount_step", "mount_pose", "mount_done" };
 
-    public static void Run(WristPanel wrist, PanelData data, ConfigStore cfg, Gpu gpu, string dir, string tag)
+    public static void Run(WristPanel wrist, PanelData data, ConfigStore cfg, Painter painter, Gpu gpu, string dir, string tag)
     {
         var wcfg = cfg.Data.Wrist;
         var keep = (wcfg.Face, wcfg.Widgets, wcfg.Grid, wcfg.Pages, wcfg.Page, wcfg.Background);
@@ -562,6 +575,12 @@ static class SlimeBodyTools
                 SlimeVrViewTools.Tap(wrist, data, yp);
                 (sentKind, sentGroup) = (wrist.LastSlimeReset, wrist.LastSlimeGroup);
             }
+            // the last reset (the left leg's yaw half a minute ago) under the legs, every group again
+            wrist.CloseForTest();
+            wrist.OpenForTest("slimevr");
+            wrist.SlimeSetGroup(SlimeGroups.All);
+            data.SlimeVr = LastLeft();
+            Shot(3);
             // the guide (the Trackers side): mounting before a full reset; the step recording; the pose's countdown; done
             wrist.SlimeSetBody(false);
             wrist.SlimeSetGroup(SlimeGroups.All);
@@ -574,17 +593,17 @@ static class SlimeBodyTools
             if (mp is { } m) SlimeVrViewTools.Tap(wrist, data, m);
             string needFull = wrist.SlimeGuide(data);
             int needArmed = wrist.SlimeArmed;
-            Shot(3);
+            Shot(4);
             wrist.CloseForTest();
             wrist.OpenForTest("slimevr");
             data.SlimeVr = Stepping();
-            Shot(4);
+            Shot(5);
             string step = wrist.SlimeGuide(data);
             data.SlimeVr = Posing();
-            Shot(5);
+            Shot(6);
             string pose = wrist.SlimeGuide(data);
             data.SlimeVr = Mounted();
-            Shot(6);
+            Shot(7);
             string done = wrist.SlimeGuide(data);
             wrist.CloseForTest();
             Want($"slimevr body view{tag}: the left leg tapped {limb != null} - group {group} (want 2), Yaw reset asks ({armed}, want 0), the second tap is the left leg's " +
@@ -624,6 +643,7 @@ static class SlimeBodyTools
             wrist.CloseForTest();
             Want($"slimevr body view{tag}: a frame of the Body side at rest {rest} B, with a new pose every frame {moving} B, the guide counting down {guide} B (want 0 each)",
                 rest == 0 && moving == 0 && guide == 0);
+            SideChecks(wrist, data, painter, tag);
             Preview.RemoveAll(p => p.tag == tag);
             Preview.Add((tag, files));
         }
@@ -639,10 +659,131 @@ static class SlimeBodyTools
         }
     }
 
-    // the layout check's extra states of the opened view (Tools.LayoutCheckRun): the Body side standing, lying, a group asking; the guide
+    // Review 10-24, each style: the bones asked for only while the Body side is drawn (not under the guide, nor with no trackers); a
+    // reset asked for the left leg is not sent by the guide's row (every tracker) - that asks again, and so does the Body side's after
+    // it; modern and Cyber: the last reset's line clear of the chips (8 px), the left leg's twist big (24 px or more), the time left whole
+    static void SideChecks(WristPanel wrist, PanelData data, Painter painter, string tag)
+    {
+        // the bones: the figure, no pose yet - asked; the guide, no trackers in the Body side's place - not
+        data.SlimeVr = SlimeVrViewTools.Fake();
+        data.SlimePose = Pose(false);
+        wrist.CloseForTest();
+        wrist.OpenForTest("slimevr");
+        wrist.SlimeSetBody(true);
+        wrist.SlimeSetGroup(SlimeGroups.All);
+        wrist.Draw(data);
+        bool figure = wrist.SlimeBodyOn;
+        data.SlimePose = null;
+        wrist.Draw(data);
+        bool noPose = wrist.SlimeBodyOn;
+        data.SlimeVr = Stepping();
+        wrist.Draw(data);
+        bool underGuide = wrist.SlimeBodyOn;
+        data.SlimeVr = Copy(SlimeVrViewTools.Fake(), c => { c.Trackers.Clear(); c.Connected = 0; });
+        wrist.Draw(data);
+        bool empty = wrist.SlimeBodyOn;
+        Want($"slimevr bones asked{tag}: the Body side drawn - the figure {figure}, no pose yet {noPose} (want True True); the guide in its place {underGuide}, no " +
+             $"trackers {empty} (want False False) -", figure && noPose && !underGuide && !empty);
+        // the left leg's Yaw reset asked; a guide comes - its Yaw reset (every tracker) asks again, sends nothing; the guide gone - the Body
+        // side's asks again for the left leg; its second tap sends the left leg's yaw, once
+        int sends = 0, sentGroup = -1;
+        var (r0, rp0) = (wrist.OnSlimeReset, wrist.OnSlimeResetParts);
+        wrist.OnSlimeReset = k => { sends++; sentGroup = SlimeGroups.All; return true; };
+        wrist.OnSlimeResetParts = (k, g) => { sends++; sentGroup = g; return true; };
+        try
+        {
+            data.SlimeVr = SlimeVrViewTools.Fake();
+            data.SlimePose = Pose(false);
+            wrist.CloseForTest();
+            wrist.OpenForTest("slimevr");
+            wrist.SlimeSetBody(true);
+            wrist.SlimeSetGroup(SlimeGroups.LeftLeg);
+            wrist.Draw(data);
+            string asked = null, again = null, back = null;
+            int armed1 = -1, armed2 = -1, sent1 = -1, sent2 = -1;
+            if (wrist.ControlPoint(data, "wsvbr0") is { } yb)
+            {
+                SlimeVrViewTools.Tap(wrist, data, yb);
+                asked = wrist.SlimeButton(data, 0);
+                data.SlimeVr = Stepping();
+                wrist.Draw(data);
+                if (wrist.ControlPoint(data, "wsvr0") is { } yg)
+                {
+                    SlimeVrViewTools.Tap(wrist, data, yg);
+                    (again, armed1, sent1) = (wrist.SlimeButton(data, 0), wrist.SlimeArmed, sends);
+                }
+                data.SlimeVr = SlimeVrViewTools.Fake();
+                wrist.Draw(data);
+                if (wrist.ControlPoint(data, "wsvbr0") is { } yb2)
+                {
+                    SlimeVrViewTools.Tap(wrist, data, yb2);
+                    (back, armed2, sent2) = (wrist.SlimeButton(data, 0), wrist.SlimeArmed, sends);
+                    SlimeVrViewTools.Tap(wrist, data, yb2);
+                }
+            }
+            string left = Lang.T("Reset left leg?"), all = Lang.T("Reset?");
+            Want($"slimevr second tap{tag}: the left leg asked '{asked}' (want '{left}'); the guide's Yaw reset tapped - '{again}', armed {armed1}, sent {sent1} " +
+                 $"(want '{all}', 0, 0: asks for every tracker); the guide gone, the Body side's - '{back}', armed {armed2}, sent {sent2} (want '{left}', 0, 0); " +
+                 $"its second tap: {sends} sent, group {sentGroup} (want 1, 2) -",
+                 asked == left && again == all && armed1 == 0 && sent1 == 0 && back == left && armed2 == 0 && sent2 == 0 && sends == 1 && sentGroup == SlimeGroups.LeftLeg);
+        }
+        finally { (wrist.OnSlimeReset, wrist.OnSlimeResetParts) = (r0, rp0); }
+        if (tag is "" or "_cyber")
+        {
+            var texts = new List<(string s, RectangleF r, float size)>();
+            void Spy()
+            {
+                texts.Clear();
+                painter.TextSpy = (s, r, _, size, _, _) => texts.Add((s, r, size));
+                try { wrist.Draw(data); }
+                finally { painter.TextSpy = null; }
+            }
+            // the Body side with the last reset: its line (whole: the header's has the count first) over the chips; the twist's biggest text
+            data.SlimeVr = LastLeft();
+            data.SlimePose = Pose(false);
+            wrist.CloseForTest();
+            wrist.OpenForTest("slimevr");
+            wrist.SlimeSetBody(true);
+            wrist.SlimeSetGroup(SlimeGroups.All);
+            wrist.Draw(data);
+            string last = wrist.SlimeLastText(data) ?? "?";
+            Spy();
+            float chipTop = wrist.ControlPoint(data, "wsvg0") is { } cp ? cp.Y - 20 : float.NaN;
+            var lines = texts.Where(t => t.s.Equals(last, StringComparison.CurrentCultureIgnoreCase)).ToList();
+            float bottom = lines.Count > 0 ? lines.Max(t => t.r.Bottom) : float.NaN;
+            float big = texts.Where(t => t.s.StartsWith("32", StringComparison.Ordinal)).Select(t => t.size).DefaultIfEmpty(0).Max();
+            Want($"slimevr body side{tag}: the last reset '{last}' drawn {lines.Count} time(s) (want 1), its line's bottom at {bottom:0.0} px, the chips' top at " +
+                 $"{chipTop:0.0} px (want 8 px or more between); the left leg's twist {big:0} px (want 24 or more) -",
+                 lines.Count == 1 && bottom + 8 <= chipTop && big >= 24);
+            // the Trackers side with every time left: the ankles' (the longest lines) drawn whole; a frame of it (each line measured) 0 B
+            data.SlimeVr = Forecasts();
+            data.SlimePose = null;
+            wrist.SlimeSetBody(false);
+            wrist.Settle();
+            for (int i = 0; i < 6; i++) wrist.Draw(data);
+            long a0 = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 20; i++) wrist.Draw(data);
+            long bytes = (GC.GetAllocatedBytesForCurrentThread() - a0) / 20;
+            if (Environment.GetEnvironmentVariable("ORBIT_PERF_TYPES") == "1") Tools.SlimeAllocTypes("slimevr time left" + tag, () => wrist.Draw(data));
+            string l4 = wrist.SlimeLeftText(data, 4) ?? "?", l5 = wrist.SlimeLeftText(data, 5) ?? "?";
+            Spy();
+            var r4 = texts.FirstOrDefault(t => t.s.Contains(l4, StringComparison.CurrentCultureIgnoreCase));
+            var r5 = texts.FirstOrDefault(t => t.s.Contains(l5, StringComparison.CurrentCultureIgnoreCase));
+            Want($"slimevr time left{tag}: the ankles' '{l4}' in '{r4.s}', '{l5}' in '{r5.s}' (want each there, nothing cut); a frame {bytes} B (want 0) -",
+                 r4.s != null && !r4.s.Contains('…') && r5.s != null && !r5.s.Contains('…') && bytes == 0);
+        }
+        wrist.SlimeSetBody(false);
+        wrist.SlimeSetGroup(SlimeGroups.All);
+        wrist.CloseForTest();
+    }
+
+    // the layout check's extra states of the opened view (Tools.LayoutCheckRun): the Body side standing, lying, a group asking, the last
+    // reset under the legs (the upper body picked: the pelvis lit with it); the trackers' time left; the guide
     public static List<(string name, Action<WristPanel, PanelData> set)> LayoutStates() => new()
     {
         ("body", (w, d) => { d.SlimeVr = SlimeVrViewTools.Fake(); d.SlimePose = Pose(false); w.SlimeSetBody(true); }),
+        ("body_last", (w, d) => { d.SlimeVr = LastLeft(); d.SlimePose = Pose(false); w.SlimeSetBody(true); w.SlimeSetGroup(SlimeGroups.Upper); }),
+        ("trackers_left", (w, d) => { d.SlimeVr = Forecasts(); d.SlimePose = null; }),
         ("body_lying", (w, d) => { d.SlimeVr = SlimeVrViewTools.Fake(trouble: true); d.SlimePose = Pose(true, rolled: true); w.SlimeSetBody(true); }),
         ("body_nopose", (w, d) => { d.SlimeVr = SlimeVrViewTools.Fake(); d.SlimePose = null; w.SlimeSetBody(true); }),
         ("mount_needfull", (w, d) =>
@@ -671,8 +812,8 @@ static class SlimeBodyTools
             {
                 var (t, files) = Preview[i];
                 float y = Gap + i * (H + Label + Gap);
-                g.DrawString($"{(t.Length == 0 ? "modern" : t[1..])}: Body (standing, the left leg twisted), lying (on the back), the left leg's yaw asking; the guide - a full " +
-                             "reset first, the step recording, the pose counting, done (made-up)", font, Brushes.White, Gap, y + 3);
+                g.DrawString($"{(t.Length == 0 ? "modern" : t[1..])}: Body (standing, the left leg twisted), lying (on the back), the left leg's yaw asking, its last reset; the " +
+                             "guide - a full reset first, the step recording, the pose counting, done (made-up)", font, Brushes.White, Gap, y + 3);
                 for (int k = 0; k < files.Length; k++)
                     if (File.Exists(files[k])) using (var b = new Bitmap(files[k])) g.DrawImage(b, Gap + k * (W + Gap), y + Label, W, H);
             }

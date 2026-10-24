@@ -39,6 +39,7 @@ public sealed partial class WristPanel
     {
         public string Name = "", NameUp = "", Short = "", Pct = "", Value = "", Signal = "", Rssi = "", Ping = "", SigLine = "", Status = "";
         public string Left = "", LeftShort = "";  // its battery's time left ("~2 h left", "~2h"; "": nothing to say)
+        public string SigLeft = "";              // the signal and the time left, no ping: where the whole line does not fit
         public int Battery;                      // % (-1: not told)
         public float Frac, SigFrac;              // 0..1 (-1: not told)
         public StatLevel Lv, SigLv, StLv;        // the battery's, the signal's, the status' level
@@ -48,7 +49,7 @@ public sealed partial class WristPanel
     readonly List<SvRow> _svRows = new(), _svPool = new();
     SlimeVrLink.Snapshot _svOf;
     bool _svMade;
-    int _svLang = -1, _svLow = -1;               // _svLow: the emptiest connected tracker with a battery (-1: none)
+    int _svLang = -1, _svLook = -1, _svLow = -1; // _svLow: the emptiest connected tracker with a battery (-1: none)
     CultureInfo _svCulture;
     // "5/6"; "5 of 6 connected"; what to say instead of a list (null: the list) and its hint; Cyber's note and head
     string _svCount = "–", _svOfN = "", _svMsg, _svHint, _svHintShort, _svCy = "", _svCyHead = "";
@@ -114,13 +115,14 @@ public sealed partial class WristPanel
         return _svFits[key] = Fit(s, w, size, bold);
     }
 
-    // the rows and their words, made again only when the snapshot, the language or the culture changed
+    // the rows and their words, made again only when the snapshot, the language, the culture or the look (the cut texts are cut in its
+    // font) changed
     void SvNow(PanelData d)
     {
         var s = d.SlimeVr;
         var culture = CultureInfo.CurrentCulture;
-        if (_svMade && ReferenceEquals(s, _svOf) && _svLang == Lang.Version && ReferenceEquals(culture, _svCulture)) return;
-        (_svMade, _svOf, _svLang, _svCulture) = (true, s, Lang.Version, culture);
+        if (_svMade && ReferenceEquals(s, _svOf) && _svLang == Lang.Version && ReferenceEquals(culture, _svCulture) && _svLook == Theme.Version) return;
+        (_svMade, _svOf, _svLang, _svCulture, _svLook) = (true, s, Lang.Version, culture, Theme.Version);
         _svFits.Clear();
         foreach (var r in _svRows) _svPool.Add(r);
         _svRows.Clear();
@@ -147,6 +149,7 @@ public sealed partial class WristPanel
                 r.Ping = t.Ping >= 0 ? Lang.F("{0} ms", t.Ping) : "";
                 r.SigLine = r.Ping.Length > 0 ? r.Signal + " · " + r.Ping : r.Signal;
                 (r.Left, r.LeftShort) = t.Connected && t.LeftMin > 0 ? SvLeftText(t.LeftMin) : ("", "");
+                r.SigLeft = r.Left.Length > 0 ? r.Signal + " · " + r.Left : r.SigLine;
                 if (r.Left.Length > 0) r.SigLine += " · " + r.Left;
                 r.Status = Lang.C("slimevr", StatusName(t.Status));
                 r.StLv = t.Status is SlimeVrLink.Ok or SlimeVrLink.Sleeping ? StatLevel.Ok : t.Status is SlimeVrLink.Busy or SlimeVrLink.Occluded ? StatLevel.Warn : StatLevel.Bad;
@@ -225,7 +228,9 @@ public sealed partial class WristPanel
     {
         _dirty = true;
         if (view && SvGuideTap(k, d)) { _svArmed = -1; return; }
-        if (!SvArmed(k)) { _svArmed = k; _svArmGroup = g; _svArmAt = Clock.Now; return; }
+        // (the second tap only for the trackers asked about: a guide come or gone under the first puts another row of buttons there - for
+        // every tracker or for the Body side's group - and a tap on that asks again, in its own words; review 10-24)
+        if (!SvArmed(k) || _svArmGroup != g) { _svArmed = k; _svArmGroup = g; _svArmAt = Clock.Now; return; }
         _svArmed = -1;
         (LastSlimeReset, LastSlimeGroup) = (k, g);
         bool went = g == SlimeGroups.All ? OnSlimeReset?.Invoke(k) ?? true : OnSlimeResetParts?.Invoke(k, g) ?? true;
@@ -233,7 +238,7 @@ public sealed partial class WristPanel
         if (k == _svNext) _svNext = -1;
     }
 
-    void SvDisarm() { _svArmed = _svSent = -1; SvGuideReset(); }
+    void SvDisarm() { _svArmed = _svSent = -1; _svBodyDrawn = false; SvGuideReset(); }          // (opened afresh: nothing drawn yet)
 
     // a reset button now: asking ("Reset?"), the server counting its delay down ("3 s"), done a moment ("Done"), sent and not answered yet
     // ("Sent"), else its name
@@ -440,17 +445,20 @@ public sealed partial class WristPanel
     // signal and the ping, the status, the battery's line; the three resets along the bottom
     void SlimeDetail(RectangleF E, PanelData d)
     {
+        _svBodyDrawn = false;                      // (the Body side sets it again: WristSlimeBody.cs)
         if (Theme.Cyber) { CyberSlimeDetail(E, d); return; }
         SvNow(d);
         int n = _svRows.Count;
         bool lie = SvLying(d);
-        // Trackers | Body left of the X (WristSlimeBody.cs); how many are connected and the last reset after the name
-        float nx = E.X + 24 + _p.MeasureWidth(Lang.T(WatchWidgets.Find("slimevr").Name), 24, FontWeight.SemiBold) + 14, nr = SvTabs(E.Right - 22 - 46 - 14, E.Y + 17) - 14;
-        if (n > 0 && nr - nx > 40) TextAt(SvCut(SvHead(d, nr - nx), nr - nx, 19, FontWeight.Normal), nx, E.Y + 45, nr - nx + 2, Sub, 19, FontWeight.Normal);
-        var B = new RectangleF(E.X + 24, E.Bottom - 22 - 56, E.Width - 48, 56);
         var guide = SvGuideNow(d, out int gk);
+        bool body = _svBody && n > 0 && guide == Guide.None;
+        // Trackers | Body left of the X (WristSlimeBody.cs); how many are connected and the last reset after the name (the Body side: without
+        // the part of the body - its column says it whole)
+        float nx = E.X + 24 + _p.MeasureWidth(Lang.T(WatchWidgets.Find("slimevr").Name), 24, FontWeight.SemiBold) + 14, nr = SvTabs(E.Right - 22 - 46 - 14, E.Y + 17) - 14;
+        if (n > 0 && nr - nx > 40) TextAt(SvCut(SvHead(d, nr - nx, !body), nr - nx, 19, FontWeight.Normal), nx, E.Y + 45, nr - nx + 2, Sub, 19, FontWeight.Normal);
+        var B = new RectangleF(E.X + 24, E.Bottom - 22 - 56, E.Width - 48, 56);
         if (guide != Guide.None) { SvGuideCard(new RectangleF(E.X + 24, E.Y + 78, E.Width - 48, B.Y - 16 - (E.Y + 78)), d, guide, gk); SvButtons(B, d); return; }
-        if (_svBody && n > 0) { SvBody(E, B, d); return; }
+        if (body) { SvBody(E, B, d); return; }
         var L = new RectangleF(E.X + 24, E.Y + 78, E.Width - 48, B.Y - 16 - (lie ? 36 : 0) - (E.Y + 78));      // (lying: the hint's line over the buttons)
         if (n == 0) SvEmpty(L, 22);
         else
@@ -489,7 +497,9 @@ public sealed partial class WristPanel
         TextAt(e.Status, c.Right - stw - 2, sy, stw + 4, stc, SmallText, FontWeight.SemiBold);
         SvSignal(c.X, sy, e);
         float tx = c.X + 26, tw = c.Right - stw - 12 - tx;
-        if (tw > 24) TextAt(SvCut(e.SigLine, tw, SmallText, FontWeight.Normal), tx, sy, tw + 2, Sub, SmallText, FontWeight.Normal);
+        // (the time left whole where the line does not fit: without the ping - review 10-24, Magyar's "~2 óra va…")
+        string sl = e.Left.Length > 0 && _p.MeasureWidth(e.SigLine, SmallText, FontWeight.Normal) > tw ? e.SigLeft : e.SigLine;
+        if (tw > 24) TextAt(SvCut(sl, tw, SmallText, FontWeight.Normal), tx, sy, tw + 2, Sub, SmallText, FontWeight.Normal);
         Meter(new RectangleF(c.X, c.Y + 64, c.Width, 5), e.On ? e.Frac : -1, Bento.Level(e.Lv, Bento.Ok), key);
     }
 
@@ -526,9 +536,9 @@ public sealed partial class WristPanel
     }
 
     // the header's words: how many are connected and the last reset ("6 of 6 connected · Yaw reset 12 min ago"; shorter: "6/6 · ...")
-    string SvHead(PanelData d, float w)
+    string SvHead(PanelData d, float w, bool part = true)
     {
-        string last = SvLast(d);
+        string last = SvLast(d, false, part);
         if (last == null) return _svOfN;
         string full = SvJoin(_svOfN, last);
         return _p.MeasureWidth(full, 19, FontWeight.Normal) <= w ? full : SvJoin(_svCount, last);
@@ -635,15 +645,16 @@ public sealed partial class WristPanel
         SvNow(d);
         CyFrame();
         int n = _svRows.Count;
+        var guide = SvGuideNow(d, out int gk);
+        bool body = _svBody && n > 0 && guide == Guide.None;
         float nx = E.X + 24 + CyberHud.TagWidth(_p, Upper(WatchWidgets.Find("slimevr").Name), 18) + 14, nr = SvTabs(E.Right - 22 - 46 - 14, E.Y + 17) - 14;
-        string head = n > 0 && SvLast(d, true) is { } last ? SvJoin(_svCy, last, "  //  ") : _svCyHead;
+        string head = n > 0 && SvLast(d, true, !body) is { } last ? SvJoin(_svCy, last, "  //  ") : _svCyHead;
         if (nr - nx > 40) CyMono(SvCut(head, nr - nx, CyNote, FontWeight.SemiBold, CyberHud.Mono), nx, E.Y + 23 + (26 + CyberHud.CapH(_p, CyNote)) / 2,
             nr - nx, n > 0 ? CyC : CyG);
         bool lie = SvLying(d);
         var B = new RectangleF(E.X + 24, E.Bottom - 22 - 56, E.Width - 48, 56);
-        var guide = SvGuideNow(d, out int gk);
         if (guide != Guide.None) { SvGuideCard(new RectangleF(E.X + 24, E.Y + 74, E.Width - 48, B.Y - 14 - (E.Y + 74)), d, guide, gk); SvButtons(B, d); return; }
-        if (_svBody && n > 0) { SvBody(E, B, d); return; }
+        if (body) { SvBody(E, B, d); return; }
         var L = new RectangleF(E.X + 24, E.Y + 74, E.Width - 48, B.Y - 14 - (lie ? 30 : 0) - (E.Y + 74));
         if (n == 0)
         {
@@ -676,7 +687,8 @@ public sealed partial class WristPanel
                 _p.Stroke(RectangleF.Inflate(new RectangleF(x, cy, chw, 19), -0.6f, -0.6f), cc, 1.25f);
                 CyMono(chip, x + 5, cy + 14, chw, cc);
                 float sx = x + chw + 10;
-                if (right - sx > 30) CyMono(SvCut(Upper(e.SigLine), right - sx, CyNote, FontWeight.SemiBold, CyberHud.Mono), sx, cy + 14, right - sx, e.SigLv == StatLevel.Ok ? CyG : CyWarn());
+                string sl = Upper(e.Left.Length > 0 && CyMonoW(Upper(e.SigLine)) > right - sx ? e.SigLeft : e.SigLine);     // (the time left whole: SvTile)
+                if (right - sx > 30) CyMono(SvCut(sl, right - sx, CyNote, FontWeight.SemiBold, CyberHud.Mono), sx, cy + 14, right - sx, e.SigLv == StatLevel.Ok ? CyG : CyWarn());
                 if (ph >= 68) CyberMeter(new RectangleF(x, p.Bottom - 10, right - x, 4), e.On ? e.Frac : -1, CyBattery(e.Frac, e.Lv), Ui.Id("wdsvm", i), 10);
             }
             if (shown < n) CyMono(SvCut(Upper(MoreText(n - shown)), L.Width, CyNote, FontWeight.SemiBold, CyberHud.Mono), L.X, L.Bottom + 10, L.Width, CyG);
@@ -801,18 +813,23 @@ public sealed partial class WristPanel
     void Slime95Detail(RectangleF c, PanelData d)
     {
         SvNow(d);
+        _svBodyDrawn = false;                  // (SvBody95 sets it again)
         int n = _svRows.Count;
         // the Body button left of OK, pushed in while the window shows the body (the recap's Today; WristSlimeBody.cs); the status line
         // between them
         if (_ui.Button95("wsv95body", new RectangleF(c.X, c.Bottom + 5, 75, 23), "Body", n > 0, false, _svBody && n > 0)) SvSetBody(!_svBody);
         float sx = c.X + 75 + 8, sw = c.Right - 75 - 8 - sx;
-        bool lie = SvLying(d);                 // lying: the hint on the status line (bold), Yaw Reset the default button
+        var guide = SvGuideNow(d, out int gk);
+        bool body = _svBody && n > 0 && guide == Guide.None;
+        // lying: the hint on the status line (bold), Yaw Reset the default button; the Body side's pose on a side: to lie on the back first
+        // (dark red, bold), Yaw Reset not the default - review 10-24: it lit Yaw for a reset on a side, the pose the hint is there for
+        bool roll = body && SvPose(d) is { Rolled: true }, lie = SvLying(d) && !roll;
         if (lie) _svHints++;
         bool armed = SvArmed95();
-        _ui.Text95(SvFit95(SvFirstFit95(SvStatus95(d), sw, lie && !armed), sw, lie && !armed), new RectangleF(sx, c.Bottom + 10, sw, 13), armed ? 0xFF800000 : Blk95,
-            lie && !armed);
-        var guide = SvGuideNow(d, out int gk);
-        if (_svBody && n > 0 && guide == Guide.None) { SvBody95(c, d); return; }
+        var st = SvStatus95(d, roll);
+        bool rolled = ReferenceEquals(st, _svRoll95), bold = (lie || rolled) && !armed;
+        _ui.Text95(SvFit95(SvFirstFit95(st, sw, bold), sw, bold), new RectangleF(sx, c.Bottom + 10, sw, 13), armed || rolled ? 0xFF800000 : Blk95, bold);
+        if (body) { SvBody95(c, d); return; }
         // the resets along the bottom of the inside
         bool can = SvCan(d);
         float bw = MathF.Floor((c.Width - 12) / 3), by = c.Bottom - 23;
@@ -873,11 +890,11 @@ public sealed partial class WristPanel
     bool SvArmed95() => _svArmed >= 0 && Clock.Now - _svArmAt <= SvArmLen;
 
     // the status line: what is asked ("Click Full Reset again to reset" - "... the left leg"), counted ("Full reset in 3 s"), the step
-    // mounting's phase, else (lying) the hint, the last reset ("Yaw reset 12 min ago"), how many are connected - the forms longest first:
-    // the first that fits is shown (SvFirstFit95)
-    string[] SvStatus95(PanelData d)
+    // mounting's phase, else (roll: the Body side's pose on a side) to lie on the back, (lying) the hint, the last reset ("Yaw reset 12 min
+    // ago"), how many are connected - the forms longest first: the first that fits is shown (SvFirstFit95)
+    string[] SvStatus95(PanelData d, bool roll = false)
     {
-        if (_svAskLang != Lang.Version) { _svIn95.Clear(); Array.Clear(_svAsk95); _svAskLang = Lang.Version; }
+        if (_svAskLang != Lang.Version) { _svIn95.Clear(); Array.Clear(_svAsk95); _svRoll95 = null; _svAskLang = Lang.Version; }
         if (SvArmed95())
         {
             int g = Math.Clamp(_svArmGroup, 0, SlimeGroups.Count - 1), i = _svArmed * SlimeGroups.Count + g;
@@ -898,6 +915,7 @@ public sealed partial class WristPanel
                 return _svIn95[(s.ResetKind, left)];
             }
         }
+        if (roll) return _svRoll95 ??= Array.ConvertAll(SvRollHints, Lang.T);
         if (SvLying(d)) return SvOne(Lang.T(LieHint));
         if (_svRows.Count > 0 && SvLast(d) is { } last) return SvOne(last);
         return SvOne(_svRows.Count > 0 ? _svOfN : Lang.T(_svMsg ?? "No trackers"));
@@ -913,6 +931,7 @@ public sealed partial class WristPanel
     }
 
     readonly string[][] _svAsk95 = new string[3 * SlimeGroups.Count][];
+    string[] _svRoll95;                        // SvRollHints in the language picked
     readonly Dictionary<(int, int), string[]> _svIn95 = new();
     int _svAskLang = -1;
 

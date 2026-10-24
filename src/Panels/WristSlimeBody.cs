@@ -35,9 +35,12 @@ public sealed partial class WristPanel
     bool _svBody;                                // the opened view shows the Body side
     int _svGroup;                                // the trackers the Body side's resets are for (SlimeGroups)
     int _svArmGroup;                             // the group of the reset asking
+    bool _svBodyDrawn;                           // the opened view's last draw showed the Body side (not the guide, not "No trackers")
 
-    // the app asks for the bones only while this is true (OrbitApp.SlimeVr.cs)
-    public bool SlimeBodyOn => _svBody && _open != null && !_closing && DetailIs("slimevr");
+    // the app asks for the bones only while this is true (OrbitApp.SlimeVr.cs): the Body side picked and drawn - the guide or no trackers
+    // in its place (the side stays picked under them) asks for none, nor draws the watch again for each pose (review 10-24: 20 bones a
+    // second and 20 redraws a second of a card that did not change)
+    public bool SlimeBodyOn => _svBodyDrawn && _svBody && _open != null && !_closing && DetailIs("slimevr");
 
     void SvSetBody(bool on)
     {
@@ -241,16 +244,17 @@ public sealed partial class WristPanel
         "Click {0} again to reset the right leg", "Click {0} again to reset the upper body",
     };
 
-    // "Yaw reset 12 min ago" (and " (left leg)" for a part of the body), made once per minute; null: none seen
+    // "Yaw reset 12 min ago" (and " (left leg)" for a part of the body - part: false leaves it out, the Body side's header: its column
+    // says it whole), made once per minute; null: none seen
     readonly Dictionary<long, string> _svAgo = new();
     int _svAgoLang = -1;
-    string SvLast(PanelData d, bool upper = false)
+    string SvLast(PanelData d, bool upper = false, bool part = true)
     {
         var s = d.SlimeVr;
         if (s == null || s.LastKind is < 0 or > 2 || s.State == SlimeVrLink.State.NotRunning) return null;
         double m = Math.Max(0, (Clock.Now - s.LastAt) / 60);
         int bucket = m < 1 ? 0 : m < 60 ? (int)m : 1000 + (int)(m / 60);
-        int g = SlimeGroups.Of(s.LastParts);
+        int g = part ? SlimeGroups.Of(s.LastParts) : SlimeGroups.All;
         long key = (((long)s.LastKind * 10 + g) * 100000 + bucket) * 2 + (upper ? 1 : 0);
         if (_svAgoLang != Lang.Version) { _svAgo.Clear(); _svAgoLang = Lang.Version; }
         if (_svAgo.TryGetValue(key, out var t)) return t;
@@ -376,7 +380,7 @@ public sealed partial class WristPanel
                 var part = drawn[j];
                 int i = (int)part;
                 if (!p.B[i].Has) continue;
-                bool sel = any && SlimeGroups.Has(_svGroup, part) && part != SlimeVrLink.Part.Hip;
+                bool sel = any && SlimeGroups.Has(_svGroup, part);         // (the pelvis lit with the upper body: its reset turns the hip tracker too)
                 if (sel != (pass == 1)) continue;
                 if (part == SlimeVrLink.Part.Head) { SvHead(p, i, sel, k); continue; }
                 uint c = SvBoneInk(part, k, out bool inferred);
@@ -570,6 +574,7 @@ public sealed partial class WristPanel
     // and Full resets for them along the bottom
     void SvBody(RectangleF E, RectangleF B, PanelData d)
     {
+        _svBodyDrawn = true;
         bool cy = Theme.Cyber;
         var p = SvPose(d);
         float top = E.Y + 78, chipsY = B.Y - 12 - 40, bottom = chipsY - 12;
@@ -592,11 +597,12 @@ public sealed partial class WristPanel
             SvFigure(fa, p, false, ink, true);
             SvFigure(sa, p, true, ink, false);
         }
-        // the legs' readings
+        // the legs' readings, 82 px each; the note and the last reset under them, clear of the chips (review 10-24: the last reset ran
+        // under the Upper body chip - its line ends 8 px over them now)
         float x = side.Right + 24, w = E.Right - 24 - x;
         SvLegReading(x, top, w, p, true, cy);
-        SvLegReading(x, top + 88, w, p, false, cy);
-        SvBodyNote(x, top + 192, w, p, d, cy);
+        SvLegReading(x, top + 82, w, p, false, cy);
+        SvBodyNote(x, top + 176, w, p, d, cy);
         // the groups, the resets
         float cx = E.X + 24;
         for (int g = 0; g < SlimeGroups.Count; g++)
@@ -624,7 +630,10 @@ public sealed partial class WristPanel
         CapText(Upper(cap), r.X + 12, r.Y + 22, r.Width - 24, Sub);
     }
 
-    // a leg: its name, its twist big ("32° out", amber from 15°, red from 30°), the shin and the sideways lean under it
+    // a leg: its name, its twist big ("32° out", amber from 15°, red from 30°), the shin and the sideways lean under it. Cyber: the twist
+    // in the condensed bold as its Trackers side's batteries (OUT / IN its monospace unit - review 10-24: a 14 px chip, a third of
+    // modern's height, the number the view is for), the worst turn as segments drawn as each pose comes (a spring easing them kept the
+    // watch drawing at the headset's rate while a leg moved)
     void SvLegReading(float x, float y, float w, SlimePose p, bool left, bool cy)
     {
         int t = left ? SlimePose.LT : SlimePose.RT, sh = left ? SlimePose.LS : SlimePose.RS;
@@ -634,22 +643,21 @@ public sealed partial class WristPanel
         if (cy)
         {
             uint c = lv == 2 ? CyR : lv == 1 ? CyY : CyC;
-            CyMono(Upper(name), x, y + 16, w, CyG);
-            string chip = has ? SvTwist(left, p.Twist[t], true) : "–";
-            float cw = CyMonoW(chip) + 14;
-            _p.Stroke(RectangleF.Inflate(new RectangleF(x, y + 26, cw, 24), -0.6f, -0.6f), c, 1.25f);
-            CyMono(chip, x + 7, y + 43, cw, c);
-            if (!has) return;
-            float sx = x + cw + 10;
-            SvPieces(sx, y + 43, x + w, cy, Upper("shin"), SvDeg("{0}°", p.Twist[sh], true), SvDeg("{0}° sideways", p.Side[t], true));
-            CyberMeter(new RectangleF(x, y + 58, w, 5), Math.Clamp(p.Worst(left) / 45, 0, 1), c, left ? "wsvml" : "wsvmr", 15);
+            CyMono(Upper(name), x, y + 14, w, CyG);
+            if (!has) { CyValue(x, y + 48, "–", 30, CyberHud.Faint); return; }
+            float tv = p.Twist[t], worst = p.Worst(left);
+            float vw = CyValue(x, y + 48, SvDeg("{0}°", tv), 30, c);
+            if (MathF.Abs(tv) >= 0.5f) CyMono((left ? tv > 0 : tv < 0) ? "OUT" : "IN", x + vw + 6, y + 48, w - vw - 6, c);
+            SvPieces(x, y + 66, x + w, cy, Upper("shin"), SvDeg("{0}°", p.Twist[sh], true), SvDeg("{0}° sideways", p.Side[t], true));
+            float frac = float.IsNaN(worst) ? 0 : Math.Clamp(worst / 45, 0, 1);
+            CyberHud.Segments(_p, new RectangleF(x, y + 73, w, 5), frac * CyIn(0.28f, 0.3f), c, CyberHud.Track, 15);
             return;
         }
-        CapText(Upper(name), x, y + 16, w, Sub);
-        if (!has) { TextAt("–", x, y + 52, w, Bento.Faint, 30, FontWeight.Bold, TextAlignment.Leading, Theme.Display); return; }
+        CapText(Upper(name), x, y + 14, w, Sub);
+        if (!has) { TextAt("–", x, y + 48, w, Bento.Faint, 30, FontWeight.Bold, TextAlignment.Leading, Theme.Display); return; }
         uint vc = lv == 2 ? Bento.Bad : lv == 1 ? Bento.Warn : Bento.Text;
-        TextAt(SvTwist(left, p.Twist[t]), x, y + 52, w + 2, vc, 30, FontWeight.Bold, TextAlignment.Leading, Theme.Display);
-        SvPieces(x, y + 78, x + w, cy, "shin", SvDeg("{0}°", p.Twist[sh]), SvDeg("{0}° sideways", p.Side[t]));
+        TextAt(SvTwist(left, p.Twist[t]), x, y + 48, w + 2, vc, 30, FontWeight.Bold, TextAlignment.Leading, Theme.Display);
+        SvPieces(x, y + 72, x + w, cy, "shin", SvDeg("{0}°", p.Twist[sh]), SvDeg("{0}° sideways", p.Side[t]));
     }
 
     // "shin 28° · 6° sideways" drawn in pieces (each from a table: no text made for the line)
@@ -682,11 +690,12 @@ public sealed partial class WristPanel
         }
         string last = SvLast(d);
         if (last == null) return;
-        if (cy) CyMono(SvCut(Upper(last), w, CyNote, FontWeight.SemiBold, CyberHud.Mono), x, by + 24, w, CyG);
-        else TextAt(SvCut(last, w, SmallText, FontWeight.Normal), x, by + 26, w + 2, Sub, SmallText, FontWeight.Normal);
+        if (cy) CyMono(SvCut(Upper(last), w, CyNote, FontWeight.SemiBold, CyberHud.Mono), x, by + 22, w, CyG);
+        else TextAt(SvCut(last, w, SmallText, FontWeight.Normal), x, by + 22, w + 2, Sub, SmallText, FontWeight.Normal);
     }
 
-    static readonly string[] SvRollHints = { "On your back, head straight, for a yaw reset", "On your back, head straight" };
+    // (the shortest for a retro status line: Slime95Detail)
+    static readonly string[] SvRollHints = { "On your back, head straight, for a yaw reset", "On your back, head straight", "Lie on your back" };
 
     // the Body side's two resets, for the group picked: a first tap asks ("Reset left leg?"), the second sends
     void SvBodyButtons(RectangleF B, PanelData d)
@@ -764,6 +773,7 @@ public sealed partial class WristPanel
     // Reset group - the five groups as option buttons, Yaw Reset and Full Reset as push buttons (held in while they ask)
     void SvBody95(RectangleF c, PanelData d)
     {
+        _svBodyDrawn = true;
         var p = SvPose(d);
         var well = new RectangleF(c.X, c.Y, 124, c.Height);
         _p.Fill(well, Theme.RetroSkin.Window);
@@ -811,7 +821,8 @@ public sealed partial class WristPanel
             float rx = rg.X + 8 + (g < 3 ? 0 : col2), ry = rg.Y + 15 + (g % 3) * 14;
             if (_ui.Radio95(SvGroupIds[g], rx, ry, SvGroupNames[g], _svGroup == g)) SvSetGroup(g);
         }
-        bool can = SvCan(d), lie = SvLying(d);
+        // (lying on a side: Yaw Reset is not the default - the status line says to lie on the back first, Slime95Detail; review 10-24)
+        bool can = SvCan(d), lie = SvLying(d) && p is not { Rolled: true };
         float bw = MathF.Floor((rg.Width - 16 - 4) / 2), by = rg.Bottom - 6 - 23;
         for (int k = 0; k < 2; k++)
         {
@@ -864,12 +875,13 @@ public sealed partial class WristPanel
             _ui.Progress95(new RectangleF(x, G.Bottom - (cancel ? 18 : 14), w - (cancel ? 81 : 0), 12), frac, lv == 1 ? 0xFF008000 : Theme.W95Navy);
     }
 
-    // a text in the 95 font in lines of w (two at most, the last one cut to fit), made once per text, width and language
+    // a text in the 95 font in lines of w (two at most, the last one cut to fit), made once per text, width, language and look (each
+    // retro style its own font: XP's lines in the Mac's wider Geneva ran off the window, review 10-24)
     readonly Dictionary<(string, float, bool), string[]> _svLines = new();
-    int _svLinesLang = -1;
+    int _svLinesLang = -1, _svLinesLook = -1;
     string[] SvLines95(string s, float w, bool bold = false)
     {
-        if (_svLinesLang != Lang.Version) { _svLines.Clear(); _svLinesLang = Lang.Version; }
+        if (_svLinesLang != Lang.Version || _svLinesLook != Theme.Version) { _svLines.Clear(); (_svLinesLang, _svLinesLook) = (Lang.Version, Theme.Version); }
         var key = (s, w, bold);
         if (_svLines.TryGetValue(key, out var done)) return done;
         if (_svLines.Count > 64) _svLines.Clear();
