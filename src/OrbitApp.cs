@@ -112,6 +112,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
     public OrbitApp(bool startHidden)
     {
         _startHidden = startHidden;
+        BootWarm.Start();                    // the first capture's and the fonts' one-time work on a thread of its own, from here (Sys/BootWarm.cs)
         _cfg.Background = true;              // the config written on a worker (Config.cs)
         InputQueue.On = true;                // what goes to Windows, on its own thread (Sys/InputQueue.cs)
         PerfLogStart();                      // the perf log's lines made on a thread of their own (OrbitApp.PerfLog.cs)
@@ -125,6 +126,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         CyberScreenFx.Painter = _painter;   // the Cyber screens' HUD frames draw with it
         Theme.Apply(C.Appearance);
         CyberFx.Live = true;                // the Cyber style's effects may start by themselves here (not in the --snapshot tools)
+        BootWarm.GpuReady(_gpu);            // the warm-up's pool + session on the device, its fonts (the style's) on the shared factory
         // 1.12, the watch pages: a new install starts on the VRChat and Performance pages; an older config gets them once, after its
         // own face (a copy of config.json first). Only the config here - no window exists yet (1.10.0 crashed touching one).
         WatchPages.Migrate(_cfg);
@@ -910,6 +912,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         // auto-start; the window scan in the second frame
         _deskNext = _winNext = 0;
         _bootStep = 0;
+        _warmWaited = 0;
         _vrFrames = -1;
         _nextWindowScan = 0;
         _connectAt = Clock.Now;
@@ -935,12 +938,21 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
     double _connectAt;
     // the first monitor / window panel whose overlay may still be missing (past the list's end: none; made only while SteamVR runs)
     int _deskNext = int.MaxValue, _winNext = int.MaxValue;
+    // The warm-up's thread still at it (Erik 10-24, Sys/BootWarm.cs): the first capture waits for its capture part, the first draws for
+    // its fonts - half a second at most (90 Hz; 2.25 s at the headset-off 20 Hz), then on regardless. Meanwhile the main loop would only
+    // wait on a lock the other thread holds, or load the same thing again in the frame.
+    const int WarmWaitFrames = 45;
+    int _warmWaited;                        // frames the steps waited for it (the connect line)
 
     void BootTick()
     {
         if (_vrFrames < 2) return;
+        // (two volatile reads a frame, only in the first frames after a connect; later rebuilds and later connects never wait)
+        bool warming = _vrFrames < 2 + WarmWaitFrames;
+        if (warming && !BootWarm.CaptureReady) { _warmWaited++; return; }
         if (CreatePendingOverlay()) return;          // the monitors and windows first (a rebuild later too)
         if (_bootStep < 0) return;
+        if (warming && _bootStep >= 1 && !BootWarm.FontsReady) { _warmWaited++; return; }     // (the dashboard tab, step 0: only the logo)
         int s = _bootStep++, tabs = SettingsView.TabCount;
         long b0 = System.Diagnostics.Stopwatch.GetTimestamp();
         try
@@ -962,7 +974,8 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         if (s < 3 + tabs) return;
         _bootStep = -1;
         _bootEnd = _vrFrames;
-        Log.Info($"connect: everything made by frame {_vrFrames}, {Clock.Now - _connectAt:0.00} s after connecting");
+        Log.Info($"connect: everything made by frame {_vrFrames}, {Clock.Now - _connectAt:0.00} s after connecting" +
+                 (_warmWaited > 0 ? $", {_warmWaited} frame(s) waited for the warm-up" : ""));
     }
 
     // one enabled monitor's or window's missing overlay and capture made: true when one was (that is the frame's step). Nothing to make:
@@ -2481,6 +2494,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         _osc.Dispose();
         _win?.Dispose();
         _tray?.Dispose();
+        BootWarm.Stop();                     // (its thread done with the factory and the device before they go)
         _painter?.Dispose();
         _gpu?.Dispose();
         Log.Info("bye");
