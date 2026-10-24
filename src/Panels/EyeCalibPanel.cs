@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Numerics;
 using Valve.VR;
@@ -9,8 +10,9 @@ namespace Orbit;
 // The eye calibration's board (Sys/EyeCalib.cs; Settings > VRChat > Calibrate..., Erik 10-24: "az eye tracking kurzor pontosságán még
 // lehetne javítani"): 0.7 m wide, 1 m ahead of the eyes, the five points' places on it, what to do, how far it got. The dot is an overlay
 // of its own over it, moved and sized every frame (the board is drawn again only when what it says changes - Run.Version). The trigger
-// (either hand, wherever it points) takes the point the dot is on, B / Y cancels; the lasers stop on the board, so no click reaches a
-// monitor behind it, and are not drawn on it (HidesLaser). The end: what came of it, until the trigger or ShowEnd. Its textures and
+// (either hand, wherever it points) takes the point the dot is on, B / Y cancels; while it shows the lasers and the eye cursor see the
+// board alone (Aim), so no click reaches a panel nearer than it, a monitor behind or beside it, and neither hand reaches the game
+// (OrbitApp.BlockGameInput); no beam is drawn on it (HidesLaser). The end: what came of it, until the trigger or ShowEnd. Its textures and
 // overlays exist only while it shows. Every style: the modern card, Cyber's console, and in the retro ones a window of the era (the
 // Mac's Platinum one) with the targets in a white well - the way XP's "Calibrate the pen" screen had them.
 public sealed class EyeCalibPanel : IPointerTarget, IDisposable
@@ -33,6 +35,7 @@ public sealed class EyeCalibPanel : IPointerTarget, IDisposable
     int _drawn = -1, _look = -1, _dotLook = -1;
     double _startAt, _endAt = -1, _wake = double.PositiveInfinity;
     static readonly Vector2[] _diamond = new Vector2[4];
+    readonly IPointerTarget[] _alone;               // what the lasers aim at while it shows (Aim): the board alone
 
     public Action<EyeCalibConfig> OnDone;           // a calibration that came out right: OrbitApp keeps it in the config
     public bool Showing => _on;
@@ -43,12 +46,15 @@ public sealed class EyeCalibPanel : IPointerTarget, IDisposable
         _g = g;
         _p = p;
         _ui = new Ui(p);
+        _alone = new IPointerTarget[] { this };
     }
 
-    // the settings' Calibrate...: the board in front of the head now; false without VR
+    // the settings' Calibrate...: the board in front of the head now; false without VR. Already showing: the run goes on as it is (10-24
+    // review: a second Calibrate... started it over at point 1). (VrOverlay.Fake: the made-up SteamVR of the --snapshot input check)
     public bool Start(VrSession vr, double now)
     {
-        if (vr == null || !vr.Connected || !vr.HmdValid) return false;
+        if (_on) return true;
+        if (vr == null || !(vr.Connected || VrOverlay.Fake) || !vr.HmdValid) return false;
         Run.Start(vr.Hmd, now);
         _on = true;
         _kept = false;
@@ -498,7 +504,14 @@ public sealed class EyeCalibPanel : IPointerTarget, IDisposable
         p.Fill(new RectangleF(MathF.Round(cx) - 1, MathF.Round(cy) - 1, 2, 2), Theme.W95Window);
     }
 
-    // ---------------- the lasers: they stop here (nothing behind it gets a click), drawn nowhere on it ----------------
+    // ---------------- the lasers: while it shows they see the board alone, drawn nowhere on it ----------------
+    // (10-24 review: they only stopped on it - a panel nearer than the board still won their nearest hit. The VR settings open 0.7 m
+    // ahead, and Calibrate... clicked there left the hand on it: the trigger meant for the first point pressed Calibrate... as well, its
+    // release started the run over at point 1 - it never got past it -, and the end's "press the trigger to close" started a new one; a
+    // hand that drifted pressed Reset, Use eye tracking or a key of the keyboard; with the eye cursor on a click or off a monitor beside
+    // the board took a click; the settings' beam and dot lay over the board. OrbitApp aims the lasers and the eye cursor by Aim, holds
+    // both hands back from the game while it shows and draws no beam that hits nothing meanwhile.)
+    public IReadOnlyList<IPointerTarget> Aim(IReadOnlyList<IPointerTarget> all) => _on ? _alone : all;
 
     public VrOverlay Overlay => _ov;
     public bool Interactive => _on && _ov != null && _vis > 0.5f;

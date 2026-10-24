@@ -54,7 +54,8 @@ static partial class Tools
         public string RoomStatus => Lang.F("{0} in {1}", 12, "Midnight Rooftop") + Lang.F(" · VRCX: {0} friends", 120);
         public string EyeStatus => Lang.T("your eyes are tracked");
         public int Calibrations;                        // Calibrate... clicked (EyeCalibTest.cs)
-        public bool CanCalibrateEyes => true;
+        public bool CanCalibrate = true;                // false: as while the board shows (Calibrate... greyed)
+        public bool CanCalibrateEyes => CanCalibrate;
         public void CalibrateEyes() => Calibrations++;
         public void ToggleRoom() { }
         public void TheaterEdited() { }

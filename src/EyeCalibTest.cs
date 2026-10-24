@@ -210,6 +210,152 @@ static class EyeCalibTools
         }
         return problems;
     }
+
+    // a panel of the input check (VrOverlay.Fake): where the VR settings or a monitor would be, facing the eyes; it counts what it got
+    sealed class CheckPanel : IPointerTarget, IDisposable
+    {
+        readonly VrOverlay _ov;
+        readonly bool _screen;
+        public int Downs, Ups;
+
+        public CheckPanel(string key, Vector3 at, float width, bool screen)
+        {
+            _ov = new VrOverlay("erik.orbit.check." + key, "OrbitOverlay check " + key);
+            WorldTransform = Matrix4x4.CreateTranslation(at);
+            _ov.SetAbsolute(WorldTransform);
+            _ov.SetWidth(width);
+            _ov.SetMouseScale(TextureSize.X, TextureSize.Y);
+            _screen = screen;
+        }
+
+        public VrOverlay Overlay => _ov;
+        public bool Interactive => true;
+        public bool AcceptsFrom(Hand h) => true;
+        public Vector2 TextureSize => new(1000, 600);
+        public bool WarpTarget => _screen;
+        public void PointerMove(Hand h, Vector2 px) { }
+        public void PointerLeave(Hand h) { }
+        public void PointerButton(Hand h, PtrButton b, bool down, Vector2 px) { if (down) Downs++; else Ups++; }
+        public void PointerScroll(Hand h, float notches, Vector2 px) { }
+        public bool Grabbable => false;
+        public Matrix4x4 WorldTransform { get; }
+        public void GrabBegin(bool detach) { }
+        public void GrabMove(Matrix4x4 world) { }
+        public void GrabStickX(float v, float dt) { }
+        public void GrabTwoHandBegin() { }
+        public void GrabTwoHandScale(float ratio) { }
+        public bool GrabSnapPreview => false;
+        public void GrabEnd() { }
+        public void Dispose() => _ov.Dispose();
+    }
+
+    // one pass of the input check: what each panel got, where the laser was, how far the run came
+    struct InputPass
+    {
+        public int SettingsDown, SettingsUp, MonitorDown, MonitorUp, First, Second, AfterAgain;
+        public bool FirstByTrigger, SecondByTrigger, Again, Held, Cancelled, AllBack;
+        public IPointerTarget OnFirst, OnSecond;
+    }
+
+    // The input while the board shows (10-24 review), on a made-up SteamVR (VrOverlay.Fake: the overlays exist, nothing is sent): the real
+    // laser and board, the VR settings where they open (0.7 m ahead, 0.12 m down - nearer than the board, in front of it) and a monitor
+    // left of the board. As in the review: Calibrate... clicked and the hand left on the settings, the trigger on the first dot; the hand on
+    // the monitor, the trigger on the second; Calibrate... again; B. Aimed as OrbitApp now aims the lasers (EyeCalibPanel.Aim) each press
+    // takes its point and reaches nothing else; aimed at every panel (OrbitApp before) the settings and the monitor got the presses.
+    public static void InputCheck(Gpu gpu, Painter painter, Action<string, bool> Want)
+    {
+        bool fake0 = VrOverlay.Fake, follow0 = Laser.EyeFollow, warp0 = Laser.EyeWarp;
+        string ray0 = Laser.RaycastMode;
+        VrOverlay.Fake = true;
+        Laser.RaycastMode = "local";
+        Laser.EyeFollow = Laser.EyeWarp = false;
+        try
+        {
+            var vr = new VrSession();
+            var head = Matrix4x4.CreateTranslation(0, 1.6f, 0);
+            vr.Device[0] = head;
+            vr.DeviceValid[0] = true;
+            var hand = new Vector3(0.15f, 1.35f, -0.25f);
+            var onSettings = new Vector3(0, 1.48f, -0.7f);         // (the ray goes on into the board, 0.1 m left of its middle)
+            var onMonitor = new Vector3(-1.2f, 1.6f, -1.2f);       // (left of the board: the ray misses it and the settings)
+            using var settings = new CheckPanel("settings", onSettings, 0.8f, false);
+            using var monitor = new CheckPanel("monitor", onMonitor, 0.6f, true);
+            using var board = new EyeCalibPanel(gpu, painter);
+            var all = new List<IPointerTarget> { board, settings, monitor };       // (OrbitApp's order: the board first)
+            string Who(IPointerTarget t) => t == null ? "nothing" : t == board ? "the board" : t == settings ? "the settings" : "the monitor";
+
+            InputPass Pass(bool aimed)
+            {
+                var r = new InputPass { Held = true };
+                settings.Downs = settings.Ups = monitor.Downs = monitor.Ups = 0;
+                using var laser = new Laser(gpu, painter, Hand.Right);
+                double t = 0;
+                void Frame(Vector3 at, bool trigger, bool b = false)
+                {
+                    t += 1 / 90.0;
+                    ref var hs = ref vr.Hands[1];
+                    hs.PoseValid = true;
+                    hs.Aim = Matrix4x4.CreateWorld(hand, Vector3.Normalize(at - hand), Vector3.UnitY);
+                    hs.ClickPrev = hs.Click; hs.Click = trigger;
+                    hs.SecondaryPrev = hs.Secondary; hs.Secondary = b;
+                    laser.Update(vr, aimed ? board.Aim(all) : all, true, 1 / 90f, false);
+                    board.Update(vr, 1 / 90f, t);
+                    if (!board.Showing) return;
+                    // the eyes right on the dot (the head still), a reading a frame
+                    var dot = board.Run.Dot(t, out _);
+                    var look = Vector3.Transform(new Vector3(dot.X, dot.Y, 0), board.Run.Board) - head.Translation;
+                    board.Feed(Vector3.Normalize(Vector3.TransformNormal(look, MathUtil.Invert(head))), Vector3.Zero, head, t);
+                }
+                board.Start(vr, t);
+                for (int i = 0; i < 36; i++) { Frame(onSettings, false); r.Held &= board.Showing; }     // 0.4 s: the board up
+                for (int i = 0; i < 8; i++) { Frame(onSettings, true); r.Held &= board.Showing; }       // the trigger on the first dot
+                r.OnFirst = laser.Hovered;
+                for (int i = 0; i < 120 && board.Run.Index < 1; i++) { Frame(onSettings, false); r.Held &= board.Showing; }
+                r.First = board.Run.Index;
+                r.FirstByTrigger = r.First >= 1 && !board.Run.Taken[0].Auto;
+                for (int i = 0; i < 20; i++) { Frame(onMonitor, false); r.Held &= board.Showing; }      // the hand on the monitor
+                for (int i = 0; i < 8; i++) { Frame(onMonitor, true); r.Held &= board.Showing; }        // the trigger on the second dot
+                r.OnSecond = laser.Hovered;
+                for (int i = 0; i < 120 && board.Run.Index < 2; i++) { Frame(onMonitor, false); r.Held &= board.Showing; }
+                r.Second = board.Run.Index;
+                r.SecondByTrigger = r.Second >= 2 && !board.Run.Taken[1].Auto;
+                r.Again = board.Start(vr, t);                                  // Calibrate... again
+                Frame(onMonitor, false);
+                r.AfterAgain = board.Run.Index;
+                r.Held &= board.Showing;
+                Frame(onMonitor, false, b: true);                              // B
+                Frame(onMonitor, false);
+                r.Cancelled = board.Run.State == EyeCalibRun.Phase.Cancelled && !board.Showing;
+                r.AllBack = ReferenceEquals(board.Aim(all), all);
+                (r.SettingsDown, r.SettingsUp, r.MonitorDown, r.MonitorUp) = (settings.Downs, settings.Ups, monitor.Downs, monitor.Ups);
+                board.Stop();
+                laser.Update(vr, all, false, 1 / 90f, false);                  // (let go)
+                return r;
+            }
+
+            var a = Pass(aimed: true);
+            var o = Pass(aimed: false);
+            Want($"eye calibration input (10-24 review): the hand left on the VR settings (0.7 m, nearer than the board), the trigger on the first " +
+                 $"dot - the laser on {Who(a.OnFirst)} (want the board), point {a.First} taken by the trigger {a.FirstByTrigger} (want 1, True), the " +
+                 $"settings got {a.SettingsDown} presses / {a.SettingsUp} releases (want 0 / 0); the hand on a monitor beside the board - on " +
+                 $"{Who(a.OnSecond)} (want nothing), point {a.Second} by the trigger {a.SecondByTrigger} (want 2, True), the monitor got " +
+                 $"{a.MonitorDown} / {a.MonitorUp} (want 0 / 0); Calibrate... again {a.Again} - at point {a.AfterAgain} (want True, 2: not started " +
+                 $"over); held as the board's the whole run {a.Held} (want True); B - cancelled {a.Cancelled}, every panel aimed at again " +
+                 $"{a.AllBack} (want True, True). Aimed at every panel (as before): the laser on {Who(o.OnFirst)} / {Who(o.OnSecond)}, the settings " +
+                 $"got {o.SettingsDown}, the monitor {o.MonitorDown} presses (want at least 1 each: the review's case)",
+                a.OnFirst == board && a.First == 1 && a.FirstByTrigger && a.SettingsDown == 0 && a.SettingsUp == 0 && a.OnSecond == null
+                && a.Second == 2 && a.SecondByTrigger && a.MonitorDown == 0 && a.MonitorUp == 0 && a.Again && a.AfterAgain == 2 && a.Held
+                && a.Cancelled && a.AllBack && o.SettingsDown >= 1 && o.MonitorDown >= 1);
+        }
+        finally
+        {
+            VrOverlay.Fake = fake0;
+            VrOverlay.Calls.Reset();
+            Laser.RaycastMode = ray0;
+            Laser.EyeFollow = follow0;
+            Laser.EyeWarp = warp0;
+        }
+    }
 }
 
 static partial class Tools
@@ -217,7 +363,8 @@ static partial class Tools
     // ORBIT_SNAP_ONLY=eyecalib: the eye calibration's screens (Sys/EyeCalib.cs, Panels/EyeCalibPanel.cs) - the board at its second point and
     // at its end in every style (eyecalib/board_<style>.png, done_<style>.png, failed_modern.png), the VRChat tab with Calibrate... / Reset in
     // every style (vrchat_<style>.png), both buttons clicked in Modern and in the 95 sheet, the texts by them against their boxes (Modern,
-    // Cyber). In seconds; no monitor captured, nothing of VR.
+    // Cyber); Calibrate... greyed while the board shows (Modern, Cyber, the 95 sheet) and the input while it shows (InputCheck: a made-up
+    // SteamVR, VrOverlay.Fake). In seconds; no monitor captured, nothing of VR.
     static int EyeCalibOnly(WristPanel wrist, PanelData data, ConfigStore cfg, Painter painter, Gpu gpu, string dir)
     {
         var culture = CultureInfo.CurrentCulture;
@@ -285,6 +432,33 @@ static partial class Tools
             Want($"eye calibration settings: Modern's Calibrate... asks the app {calM} (want True), Reset clears it {resetM} (want True); the 95 sheet's " +
                  $"Calibrate... {cal95} (want True), Reset {reset95} (want True)", calM && resetM && cal95 && reset95);
 
+            // while the board shows (the app can't start one now - 10-24 review: a second Calibrate... started the run over at point 1)
+            // Calibrate... asks nothing: Cyber (its HUD plate; first enabled, to know the click lands there), Modern, the 95 sheet (every retro style)
+            int n0 = host.Calibrations;
+            Look(CyberHud.Id);
+            ptr.Leave(); ui.ResetAnimations(); FrameM();
+            ClickM(602 + 10 + 75, 600 + 17);
+            bool calC = host.Calibrations == n0 + 1;
+            host.CanCalibrate = false;
+            ClickM(602 + 10 + 75, 600 + 17);
+            bool greyC = host.Calibrations == n0 + 1;
+            Look("modern");
+            ptr.Leave(); ui.ResetAnimations(); FrameM();
+            ClickM(602 + 10 + 75, 600 + 17);
+            bool greyM = host.Calibrations == n0 + 1;
+            Look("classic");
+            ptr.Leave(); ui.ResetAnimations(); Frame95();
+            Click95(388 + 40, 336 + 11);
+            bool grey95 = host.Calibrations == n0 + 1;
+            host.CanCalibrate = true;
+            Want($"eye calibration settings while the board shows: Cyber's Calibrate... asks the app when it may {calC} (want True), not while the " +
+                 $"board shows {greyC} (want True); Modern's asks nothing then {greyM}, the 95 sheet's {grey95} (want True, True)",
+                calC && greyC && greyM && grey95);
+
+            // the trigger and B / Y while it shows: the board's alone (a made-up SteamVR)
+            Look("modern");
+            EyeCalibTools.InputCheck(gpu, painter, Want);
+
             // the texts round them against their boxes (Modern, Cyber): the eye tracking section, calibrated and not
             foreach (var st in new[] { "modern", CyberHud.Id })
             {
@@ -321,6 +495,7 @@ static partial class Tools
         }
         finally
         {
+            host.CanCalibrate = true;
             cfg.Data.General.EyeCalib = null;
             cfg.Data.Appearance = look0;
             Theme.Apply(look0);

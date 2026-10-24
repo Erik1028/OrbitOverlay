@@ -646,7 +646,8 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             // the Windows cursor's shape: only while a laser points at a panel (nothing else shows it; Vr/SystemCursor.cs)
             if (_lasers[0].Active || _lasers[1].Active) _sysCursor?.Update(now);
             Spikes.Mark(Spikes.Cursor);
-            var targets = Targets();
+            // (the eye calibration's board, while it shows: the lasers and the eye cursor see it alone - Panels/EyeCalibPanel.cs Aim)
+            var targets = _eyeCalib.Aim(Targets());
             string lh = C.General.LaserHand;
             _lasers[0].Smoothing = _lasers[1].Smoothing = C.General.LaserSmoothing;
             Laser.RaycastMode = C.General.Raycast is "steamvr" or "local" ? C.General.Raycast : "shadow";
@@ -659,7 +660,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             foreach (var la in _lasers)
             {
                 la.Thickness = Math.Clamp(C.Appearance.LaserThickness, 1f, 10f) / 1000f;
-                la.AlwaysOn = C.Appearance.LaserAlways;
+                la.AlwaysOn = C.Appearance.LaserAlways && !_eyeCalib.Showing;     // (no beam beside the calibration's dot)
             }
             bool awake = _vr.HeadsetWorn || !C.General.PauseWhenOff;
             _awake = awake;
@@ -862,19 +863,23 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
     // done, not every time the beam crosses the gap between two screens (VRChat re-centres its cursor when it gets it
     // back). Not after the watch, keyboard and the small panels (0.3 s), and not at all once the panel it was on is gone
     // (turned off, faded away): Erik waited seconds for VRChat after switching the overlay off.
+    // The eye calibration's board (Panels/EyeCalibPanel.cs) takes the trigger and B / Y wherever the hands point: while it shows both
+    // hands are held back, whatever "Keep clicks from the game" says (10-24 review: a hand on nothing gave VRChat the trigger and B / Y
+    // too), and let go as after a small panel once it is gone and the buttons are up.
     readonly double[] _blockUntil = new double[2];
     readonly IPointerTarget[] _blockOn = new IPointerTarget[2];
 
     void BlockGameInput(bool on, double now)
     {
+        bool calib = on && _eyeCalib.Showing;
         for (int h = 0; h < 2; h++)
         {
             ref var hs = ref _vr.Hands[h];
-            bool busy = on && C.General.BlockGameInput && _lasers[h].Active;
+            bool busy = calib || on && C.General.BlockGameInput && _lasers[h].Active;
             if (busy)
             {
                 _vr.Suppress[h] = true;
-                var t = _lasers[h].Hovered;
+                var t = calib ? _eyeCalib : _lasers[h].Hovered;
                 if (t != null) _blockOn[h] = t;
                 _blockUntil[h] = now + (_blockOn[h] is DesktopPanel or WindowPanel && !_lasers[h].EyeCursorOn ? 1.5 : 0.3);   // (the eye cursor: soon)
             }
@@ -2470,8 +2475,9 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
 
     public void ToggleRoom() => _roomPanel.Toggle();
 
-    // VRChat > Eye tracking > Calibrate... (Sys/EyeCalib.cs): while VR runs with Virtual Desktop's eye tracking there
-    public bool CanCalibrateEyes => _vr.Connected && C.General.EyeTracking && _eyes.Present;
+    // VRChat > Eye tracking > Calibrate... (Sys/EyeCalib.cs): while VR runs with Virtual Desktop's eye tracking there - not while its board
+    // shows (10-24 review: a second Calibrate... started the run over; the button greyed in every style)
+    public bool CanCalibrateEyes => _vr.Connected && C.General.EyeTracking && _eyes.Present && !_eyeCalib.Showing;
     public void CalibrateEyes() { if (CanCalibrateEyes) _eyeCalibWanted = true; }
 
     // a calibration that came out right: in the config from the next reading on (Reset in the settings sets it back to null)
