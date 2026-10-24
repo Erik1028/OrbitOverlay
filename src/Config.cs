@@ -239,6 +239,9 @@ public sealed class GeneralConfig
     // the eye cursor (Vr/Laser.cs, with eye tracking): "follow" = the beam goes where your eyes are, the hand fine-tunes; "click" = a press on
     // a monitor while you look elsewhere on one turns the beam there; "off"
     public string EyeCursor { get; set; } = "follow";
+    // the eye tracking's calibration (Sys/EyeCalib.cs; VRChat > Calibrate...): null = none, written only once calibrated
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public EyeCalibConfig EyeCalib { get; set; }
     public bool PopOut { get; set; } = true;          // a window dragged off a monitor into the air becomes a panel of its own (OrbitApp.PopOut.cs)
     public bool PauseWhenOff { get; set; } = true;    // headset taken off: stop capturing and drawing
     public bool HeadsetPacing { get; set; } = true;   // the loop on its own clock at the headset's rate (off: once per game frame)
@@ -284,6 +287,23 @@ public sealed class AlertsConfig
     [JsonIgnore] public int HotLimit => HotC ?? HotDefault;
 
     public bool IsDefault => Battery && BatteryPct == 15 && !Fps && FpsPct == 80 && !Hot && HotLimit == HotDefault;
+}
+
+// The eye tracking's calibration (Sys/EyeCalib.cs, Erik 10-24): the look's yaw and pitch in the head corrected as yaw' = Xx yaw + Xy pitch
+// + Yaw, pitch' = Yx yaw + Yy pitch + Pitch (degrees; the linear term the identity unless the five points asked for one). Before / After:
+// how far off the points were without it and with it (degrees RMS - the settings show them). Null in GeneralConfig = none.
+public sealed class EyeCalibConfig
+{
+    public float Yaw { get; set; }                    // degrees added to the look's yaw (right +)
+    public float Pitch { get; set; }                  // degrees added to its pitch (up +)
+    public float Xx { get; set; } = 1;
+    public float Xy { get; set; }
+    public float Yx { get; set; }
+    public float Yy { get; set; } = 1;
+    public float Before { get; set; }
+    public float After { get; set; }
+    public int Points { get; set; }
+    [JsonIgnore] public bool Linear => Xx != 1 || Xy != 0 || Yx != 0 || Yy != 1;
 }
 
 // Layouts > Per game (Sys/GameRules.cs): when this SteamVR app starts, switch to that layout and / or watch page

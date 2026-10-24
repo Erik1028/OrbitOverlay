@@ -28,6 +28,9 @@ namespace Orbit;
 // keep EyesClosed up - it is how open the lids are, 0.81-1.00 already from looking 32-38 deg down - and the look does not jump.
 // (The --eyetest of 10-24: 72 new readings a second, a write every 11.5 ms mostly - some 90 Hz frames get none -, both eyes valid and
 // sure all the time, the raw look's step from reading to reading 0.34 deg RMS.)
+// The calibration (Sys/EyeCalib.cs, Erik 10-24 - the tracker's look sat ~1 deg beside what he looked at): put on each reading's look
+// before anything else (the blink tests, RawDir, the smoothing, everything that reads HeadDir); TrackerDir keeps the look as the tracker
+// gave it - what a new calibration measures.
 public sealed class EyeGaze : IDisposable
 {
     public const string MapName = "VirtualDesktop.BodyState";
@@ -88,6 +91,8 @@ public sealed class EyeGaze : IDisposable
     public bool NewReading { get; private set; }    // ... a new reading at all (shut eyes, an unsure one too: the probe's rate)
     public double SampleAt { get; private set; }    // when the last new look was first seen (Clock)
     public Vector3 RawDir { get; private set; } = -Vector3.UnitZ;       // the last new look, unsmoothed, relative to the head
+    public Vector3 TrackerDir { get; private set; } = -Vector3.UnitZ;   // ... as the tracker gave it (no calibration): what Calibrate measures
+    public EyeCalibConfig Calib;                     // the calibration in use (OrbitApp, from GeneralConfig.EyeCalib; null: none)
     public int PerSec { get; private set; }         // new readings a second (Virtual Desktop's own rate)
 
     Pose _pl, _pr;                                   // the last reading, to see a new one
@@ -113,7 +118,7 @@ public sealed class EyeGaze : IDisposable
             Valid = v;
             Fresh = v;
             SampleAt = now;
-            if (v) HeadDir = RawDir = Vector3.Normalize(d);
+            if (v) HeadDir = RawDir = TrackerDir = Vector3.Normalize(d);
             return;
         }
         if (!wanted) { Close(); Valid = false; return; }
@@ -144,6 +149,8 @@ public sealed class EyeGaze : IDisposable
             _vbl = s.LeftEyeIsValid; _vbr = s.RightEyeIsValid;
             _count++;
             bool look = Take(s, out var dir, out var origin, out float conf);
+            var tracker = dir;
+            if (look && Calib != null) dir = EyeCalib.Apply(Calib, dir);        // (the calibration first: Sys/EyeCalib.cs)
             _untracked = !look;
             bool lids = look && Closed(s) && dir.Y > BlinkDownY;               // shut lids (looking far down they follow the look: a look)
             if (lids && !_lids) _shutSince = now;
@@ -154,6 +161,7 @@ public sealed class EyeGaze : IDisposable
             else if (look && now - _closedAt >= BlinkTail)
             {
                 RawDir = dir;
+                TrackerDir = tracker;
                 HeadDir = Smooth(dir, now);
                 HeadOrigin = origin;
                 Confidence = conf;

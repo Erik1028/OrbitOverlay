@@ -119,8 +119,8 @@ public sealed partial class SettingsView
     {
         var p = ui.P;
         ui.Section(new RectangleF(x, y, 360, 20), "Controls");
-        y += 24;
-        foreach (var l in ControlsLines) { p.Text(l, new RectangleF(x, y, 366, 24), Theme.Dim, 13); y += 24; }
+        y += 22;                    // (22 px a line, was 24: the eye calibration's row fits under the eye tracking, 10-24)
+        foreach (var l in ControlsLines) { p.Text(l, new RectangleF(x, y, 366, 22), Theme.Dim, 13); y += 22; }
     }
 
     // ================= Layouts > Per game =================

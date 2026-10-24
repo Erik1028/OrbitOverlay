@@ -42,6 +42,9 @@ public interface IOrbitHost
     string StatusLinePreview { get; }      // what the chatbox status line would say now
     string RoomStatus { get; }             // VRChat log / VRCX found?
     string EyeStatus { get; }              // Virtual Desktop's eye tracking: found, tracking?
+    // the eye tracking's calibration (Sys/EyeCalib.cs): can it start now (VR, Virtual Desktop's eye tracking there); start it (in VR)
+    bool CanCalibrateEyes => false;
+    void CalibrateEyes() { }
     void ToggleRoom();
     void TheaterEdited();          // theater settings changed in the window: a screen that plays follows at once
     IReadOnlyList<WhatsNew.Entry> WhatsNewList { get; }    // after an update until OK: what changed (empty = nothing)
@@ -166,6 +169,7 @@ public sealed partial class SettingsView
                 break;
             case TabVrchat:
                 h.Add(_h.StatusLinePreview); h.Add(_h.RoomStatus);
+                h.Add(_h.EyeStatus); h.Add(_h.CanCalibrateEyes);       // (Calibrate... comes and goes with VR and the eye tracking)
                 break;
         }
         return h.ToHashCode();
@@ -1211,16 +1215,23 @@ public sealed partial class SettingsView
         int eci = Math.Max(0, Array.IndexOf(EyeCursorIds, g.EyeCursor ?? "follow"));
         ui.Label(new RectangleF(lx + 10, 594, 128, 40), "Eye cursor", g.EyeTracking ? Theme.Text : Theme.Dim, 15);
         if (ui.Segmented("vc.eyec", new RectangleF(lx + 140, 596, cw - 150, 38), EyeCursorNames, ref eci, g.EyeTracking)) g.EyeCursor = EyeCursorIds[eci];
-        DrawControlsHelp(ui, rx + 10, 392);
+        DrawControlsHelp(ui, rx + 10, 382);
         // eye tracking (Sys/EyeGaze.cs), under the controls: the look from Virtual Desktop's - gaze focus, smart capture, the watch's
-        // glance and the dim go by it; its state on the line under the two switches
+        // glance and the dim go by it; its state on the line under the two switches. Then its calibration (Sys/EyeCalib.cs, Erik 10-24:
+        // "az eye tracking kurzor pontosságán még lehetne javítani"), beside the eye cursor's row: Calibrate... (a board in VR), Reset,
+        // how far off the points were before it and are with it - level with the eye cursor's switch. (The controls 10 px higher and 2 px
+        // a line tighter, the section 24 px higher, its switches 4 px lower: the row fits.)
         var ge = C.General;
-        ui.Section(new RectangleF(rx + 10, 544, rw, 20), "Eye tracking");
+        ui.Section(new RectangleF(rx + 10, 520, rw, 20), "Eye tracking");
         bool eb = ge.EyeTracking;
-        if (ui.Toggle("vc.eyes", new RectangleF(rx, 566, rw / 2 - 4, 44), "Use eye tracking", ref eb)) ge.EyeTracking = eb;
+        if (ui.Toggle("vc.eyes", new RectangleF(rx, 540, rw / 2 - 4, 40), "Use eye tracking", ref eb)) ge.EyeTracking = eb;
         eb = ge.DimUnlooked;
-        if (ui.Toggle("vc.dim", new RectangleF(rx + rw / 2 + 4, 566, rw / 2 - 4, 44), "Dim the rest", ref eb, null, ge.EyeTracking)) ge.DimUnlooked = eb;
-        ui.P.Text(_h.EyeStatus, new RectangleF(rx + 10, 612, rw - 10, 20), Theme.Dim, 12);
+        if (ui.Toggle("vc.dim", new RectangleF(rx + rw / 2 + 4, 540, rw / 2 - 4, 40), "Dim the rest", ref eb, null, ge.EyeTracking)) ge.DimUnlooked = eb;
+        ui.P.Text(_h.EyeStatus, new RectangleF(rx + 10, 579, rw - 10, 18), Theme.Dim, 12);
+        if (ui.Button("vc.calib", new RectangleF(rx + 10, 600, 150, 34), "Calibrate...", Theme.IcoShow, false, _h.CanCalibrateEyes, 13)) _h.CalibrateEyes();
+        if (ui.Button("vc.calib0", new RectangleF(rx + 166, 600, 92, 34), "Reset", null, false, ge.EyeCalib != null, 13)) { ge.EyeCalib = null; ui.Changed = true; }
+        ui.P.Text(CalibLine(ge.EyeCalib, false), new RectangleF(rx + 266, 600, rw - 266, 34), Theme.Dim, 12, FontWeight.Normal, TextAlignment.Leading,
+            ParagraphAlignment.Center, null, true);
 
         ui.Section(new RectangleF(rx + 10, 84, rw, 22), "Who is in the room");
         b = rm.Enabled;
@@ -1265,6 +1276,15 @@ public sealed partial class SettingsView
     Lang.Memo<int> _oscHint, _oscHint95;
     Lang.Memo<string> _version95;
     Lang.Memo<double> _nang95;
+    Lang.Memo<(float, float)> _calibLine, _calibLine95;
+
+    // the calibration's line beside its buttons (Sys/EyeCalib.cs): none yet, or how far off the five points were before it and are with it
+    // (degrees RMS); the 95 sheet's starts with a capital
+    string CalibLine(EyeCalibConfig c, bool sheet) =>
+        c == null ? sheet ? "Not calibrated" : "not calibrated"
+        : sheet ? _calibLine95.Of((c.Before, c.After), static v => Lang.F("Calibrated: {0:0.0}° → {1:0.0}°", v.Item1, v.Item2))
+        : _calibLine.Of((c.Before, c.After), static v => Lang.F("calibrated: {0:0.0}° → {1:0.0}°", v.Item1, v.Item2));
+
     string _monitorNames;
     IReadOnlyList<MonitorInfo> _monitorNamesOf;
     int _monitorNamesCount = -1;

@@ -696,7 +696,7 @@ public sealed partial class SettingsView
             string.IsNullOrEmpty(prev) ? 0xFF808080 : K95, false, TextAlignment.Leading, true, true);
 
         // eye tracking (Sys/EyeGaze.cs)
-        ui.Group95(new RectangleF(376, 230, 358, 110), "Eye tracking");       // (right, under Who is in the room)
+        ui.Group95(new RectangleF(376, 230, 358, 142), "Eye tracking");       // (right, under Who is in the room)
         bool eb = C.General.EyeTracking;
         if (ui.Check95("vc95.eyes", 388, 250, "Use &eye tracking (Virtual Desktop's)", ref eb)) C.General.EyeTracking = eb;
         Hint(ui, 407, 268, 316, _h.EyeStatus, 16);
@@ -704,6 +704,11 @@ public sealed partial class SettingsView
         if (ui.Check95("vc95.dim", 388, 288, "&Dim the monitors you don't look at", ref eb, C.General.EyeTracking)) C.General.DimUnlooked = eb;
         int eci = Math.Max(0, Array.IndexOf(EyeCursorIds, C.General.EyeCursor ?? "follow"));
         if (ComboRow(ui, "vc95.eyec", 388, 306, 500, 170, "Eye &cursor:", EyeCursor95, ref eci, C.General.EyeTracking)) C.General.EyeCursor = EyeCursorIds[eci];
+        // its calibration (Sys/EyeCalib.cs, 10-24), under the eye cursor: the board comes up in VR; Reset; how far off it was and is now
+        float cbw = Btn95(ui, "Cal&ibrate...", 80), rsw = Btn95(ui, "&Reset", 60), lx95 = 388 + cbw + 6 + rsw + 8;
+        if (ui.Button95("vc95.calib", new RectangleF(388, 336, cbw, 23), "Cal&ibrate...", _h.CanCalibrateEyes)) _h.CalibrateEyes();
+        if (ui.Button95("vc95.calib0", new RectangleF(394 + cbw, 336, rsw, 23), "&Reset", C.General.EyeCalib != null)) { C.General.EyeCalib = null; ui.Changed = true; }
+        ui.Text95(Fit95(ui, CalibLine(C.General.EyeCalib, true), 722 - lx95), new RectangleF(lx95, 341, 722 - lx95, 13), K95);
         ui.Group95(new RectangleF(16, 270, 350, 64), "Controllers");
         b = g.BlockGameInput;
         ui.Check95("vc95.block", 28, 290, "&Keep clicks from the game", ref b);

@@ -334,8 +334,8 @@ static class Program
             if (args.Contains("--eyetest"))
                 return EyeProbe();
             if (args.Contains("--eyechecks"))           // the eye cursor's filter, the readings, the head of a moment - CPU only, no VR (GazeFocusTest.cs)
-            {
-                int bad = GazeFocusTools.EyeSpotChecks((line, ok) => Log.Info(line));
+            {                                           // ... and its calibration (EyeCalibTest.cs; "--eyechecks calib": that alone)
+                int bad = (args.Contains("calib") ? 0 : GazeFocusTools.EyeSpotChecks((line, ok) => Log.Info(line))) + EyeCalibTools.Checks((line, ok) => Log.Info(line));
                 Log.Info($"eye checks: {(bad == 0 ? "every check as wanted" : $"{bad} checks NOT as wanted")}");
                 return bad == 0 ? 0 : 1;
             }

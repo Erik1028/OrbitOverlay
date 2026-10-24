@@ -36,6 +36,9 @@ public interface IPointerTarget
     // a monitor / window with the mouse on: the laser may jump onto it where your eyes are (Laser.EyeWarp)
     bool WarpTarget => false;
 
+    // the beam and its dot are not drawn on it (the eye calibration's board: a laser's dot beside the target pulls the eyes off it)
+    bool HidesLaser => false;
+
     // A drag held on 'from' reaches this panel: true = it carries on here (the next monitor of the same Windows desktop),
     // false = 'from' keeps the beam on its edge (pointer capture)
     bool TakesDragFrom(IPointerTarget from, Hand h) => false;
@@ -467,7 +470,7 @@ public sealed class Laser : IDisposable
             }
             if (Math.Abs(hs.Stick.X) < 0.3f) _stepDir = 0;          // back near the middle: the next push is a step again
             Spikes.Mark(Spikes.Pointer);
-            if (_eyeOn) { _beam.Hide(); _dot.Hide(); }      // eye tracking only: the Windows cursor alone, no pointer line
+            if (_eyeOn || _hover.HidesLaser) { _beam.Hide(); _dot.Hide(); }      // eye tracking only: the Windows cursor alone, no pointer line
             else ShowBeam(vr, o, d, bestDist);
             float mpp = _hover?.LaserCursorScale(_hand) ?? 0;
             if (mpp > 0 && Cursor != null)
