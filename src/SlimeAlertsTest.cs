@@ -12,11 +12,13 @@ namespace Orbit;
 // --snapshot's part for SlimeVR's alerts and lying down (Sys/SlimeAlerts.cs, OrbitApp.SlimeVr.cs; ORBIT_SNAP_ONLY=slimealerts, and at the
 // end of =slimevr): made-up trackers only - the link on SlimeVrTest's made-up SolarXR server (a free port of 127.0.0.1, never SlimeVR's
 // 21110), a script of its updates (batteries crossing the thresholds, a tracker vanishing and coming back, a flicker, one asleep, one
-// disconnected), made-up head poses (sitting, a look at the watch low at the lap, a look up, lying on a side, on the back on a pillow with
-// the head straight and turned). Checked: the right notes once each, lying only after its 3 s and once per lying-down, the hint drawn only
-// while lying, no ResetRequest without the two taps (the watch's strip, the card's button), the card's "Reset?" and "Sent" drawn by the
-// panel's own redraw (as in VR), the laser only on its cards with a button, nothing allocated a frame at rest, the setting's switch on the
-// VRChat page. Pictures in every style: the hint on the face and opened, the card at rest and asking, the VRChat page.
+// disconnected, a tracker with an extension IMU - one battery - low, then timed out with another one's dropout), made-up head poses
+// (sitting, a look at the watch low at the lap, a look up, sitting 50° up, standing at fireworks, lying on a side, on the back on a pillow
+// with the head straight and turned, on a thick pillow). Checked: the right notes once each (a board's IMUs and one frame's trackers one
+// note), lying only after its 3 s and once per lying-down, the hint drawn only while lying, no ResetRequest without the two taps (the
+// watch's strip, the card's button), the card's "Reset?" and "Sent" drawn by the panel's own redraw (as in VR), the laser only on its
+// cards with a button, nothing allocated a frame at rest, the setting's switch on the VRChat page. Pictures in every style: the hint on
+// the face and opened, the card at rest and asking (one frame's dropouts as one card above it), the VRChat page.
 static class SlimeAlertsTools
 {
     static bool Want(string line, bool ok) => Tools.Want(line, ok);
@@ -45,12 +47,28 @@ static class SlimeAlertsTools
         var d = SolarXr.Dialect.V22;
         var devices = new List<FbObj> { SlimeVrViewTools.Device(d, 0, new(SlimeVrLink.Part.Head, -1, int.MinValue, -1, SlimeVrLink.Ok), true, "HMD") };
         foreach (var (id, t) in Script(n)) devices.Add(SlimeVrViewTools.Device(d, id, t, false, $"udp://192.168.1.{120 + id}/0"));
+        // board 7: a tracker on the left upper arm with an extension IMU on the lower arm - one battery, 40 % then 13 from 7 (one note at 8,
+        // not one an IMU); timed out 14..16 together with the right thigh's disconnect from 14 (one note for the three IMUs at 16), back at 17
+        devices.Add(Board2(7, 14, 16, n < 7 ? 40 : 13, n >= 14 && n <= 16 ? SlimeVrLink.TimedOut : SlimeVrLink.Ok, n));
         return new FbObj().Objs(SolarXr.BundleFeed, new FbObj().U8(0, SolarXr.FeedUpdate).Obj(1, new FbObj().Objs(0, devices.ToArray()))).Finish();
     }
 
+    // a board with two IMUs (v22, as SlimeVrViewTools.Device makes one): a tracker and its extension - one HardwareStatus (the battery, the
+    // Wi-Fi), two TrackerData (numbers 0 and 1); the parts are v22's BodyPart numbers
+    static FbObj Board2(int id, int part, int extPart, int bat, int status, int n)
+    {
+        var hs = new FbObj().U8(0, 1).U8(7, bat).F32(6, 3.9f).I16(2, -60).U16(1, n + 1);
+        FbObj Imu(int num, int p) => new FbObj().U16(0, id).U16(1, num)
+            .Obj(2, new FbObj().Bool(0, true).U8(2, p).U8(3, p).Str(6, $"udp://192.168.1.{120 + id}/{num}")).U8(3, status);
+        return new FbObj().U16(0, id).Obj(3, hs).Objs(4, Imu(0, part), Imu(1, extPart));
+    }
+
+    const string Arm = "Left upper arm + Left lower arm", ThighAndArm = "Right thigh, " + Arm;
+
     static readonly string[] WantNotes =
     {
-        "Low Right foot strap 12", "Low Left ankle 14", "Lost Left thigh 0", "Back Left thigh", "Low Left ankle 10", "Lost Right thigh 1",
+        "Low Right foot strap 12", "Low Left ankle 14", $"Low {Arm} 13", "Lost Left thigh 0", "Back Left thigh", "Low Left ankle 10",
+        $"Lost {ThighAndArm} 1", $"Back {Arm}",
     };
 
     static string Say(SlimeAlerts.Note x) => x.Kind == SlimeAlerts.Kind.Back ? $"Back {x.Name}" : $"{x.Kind} {x.Name} {(x.Kind == SlimeAlerts.Kind.Low ? x.Battery : x.Status)}";
@@ -63,11 +81,11 @@ static class SlimeAlertsTools
     }
 
     // head poses: sitting, a look at the watch low at the lap (bowed 65°, turned 25° on the neck: the roll alone reads 42°), lying on a side,
-    // on the back (bowed -75°: the face up, the head 15° up on a pillow)
-    static Matrix4x4 Head(float yawDeg, float bowDeg, float rollDeg)
+    // on the back (bowed -75°: the face up, the head 15° up on a pillow); y: the head over SteamVR's floor (sitting on a chair 1.1 m)
+    static Matrix4x4 Head(float yawDeg, float bowDeg, float rollDeg, float y = 1.1f)
     {
         const float k = MathF.PI / 180;
-        return Matrix4x4.CreateRotationZ(rollDeg * k) * Matrix4x4.CreateRotationY(yawDeg * k) * Matrix4x4.CreateRotationX(-bowDeg * k) * Matrix4x4.CreateTranslation(0, 1.1f, 0);
+        return Matrix4x4.CreateRotationZ(rollDeg * k) * Matrix4x4.CreateRotationY(yawDeg * k) * Matrix4x4.CreateRotationX(-bowDeg * k) * Matrix4x4.CreateTranslation(0, y, 0);
     }
 
     static void Tap(WristPanel wrist, PanelData data, Vector2 p)
@@ -178,7 +196,7 @@ static class SlimeAlertsTools
         link.Active = true;
         var alerts = new SlimeAlerts();
         var notes = new List<SlimeAlerts.Note>();
-        var said = new List<(int n, string what, string title)>();
+        var said = new List<(int n, string what, string title, string content, int count)>();
         int lastN = -1, seen = 0;
         bool ran = Until(() =>
         {
@@ -191,7 +209,7 @@ static class SlimeAlertsTools
             notes.Clear();
             alerts.Trackers(1000 + 2.0 * n, s, notes);
             alerts.Trackers(1000 + 2.0 * n, s, notes);               // (the next frame: the same snapshot says nothing again)
-            foreach (var x in notes) said.Add((n, Say(x), SlimeAlerts.Card(x).Title));
+            foreach (var x in notes) { var card = SlimeAlerts.Card(x); said.Add((n, Say(x), card.Title, card.Content, x.Count)); }
             return n >= 17;
         }, 40);
         link.Active = false;
@@ -202,6 +220,15 @@ static class SlimeAlertsTools
              $"{string.Join(", ", WantNotes)}) - nothing for the charging hip, the asleep chest, the thigh's 2 s flicker -", ran && each);
         var low = said.FirstOrDefault(x => x.what.StartsWith("Low Right foot", StringComparison.Ordinal));
         var lost = said.FirstOrDefault(x => x.what == "Lost Left thigh 0");
+        // the board with an extension (review 10-24: its one battery and one dropout were two cards each, a frame's dropouts a card each)
+        var armLow = said.FirstOrDefault(x => x.what == $"Low {Arm} 13");
+        var both = said.FirstOrDefault(x => x.what == $"Lost {ThighAndArm} 1");
+        var armBack = said.FirstOrDefault(x => x.what == $"Back {Arm}");
+        Want($"slimevr alerts, a tracker with an extension IMU: its battery one note at {armLow.n} (want 8) '{armLow.title}' (count {armLow.count}, want 1); its " +
+             $"dropout with the right thigh's in the same frame one note at {both.n} (want 16) '{both.title}' - '{both.content}' (count {both.count}, want 2); back " +
+             $"at {armBack.n} (want 17) '{armBack.title}' -",
+             armLow.n == 8 && armLow.count == 1 && armLow.title == $"{Arm}: 13 %" && both.n == 16 && both.count == 2 && both.title == "2 trackers lost" &&
+             both.content == ThighAndArm && armBack.n == 17 && armBack.count == 1 && armBack.title == $"{Arm} back");
         Want($"slimevr alerts: when - the strap at {low.n} (want 5: seen 10 s), the left ankle at {said.FirstOrDefault(x => x.what == "Low Left ankle 14").n} (want 6: low " +
              $"2 s) and again at {said.FirstOrDefault(x => x.what == "Low Left ankle 10").n} (want 11: charged to 30 at 9), the thigh lost at {lost.n} (want 9: gone 3 s), back at " +
              $"{said.FirstOrDefault(x => x.what == "Back Left thigh").n} (want 10); the cards '{low.title}', '{lost.title}' -",
@@ -235,8 +262,8 @@ static class SlimeAlertsTools
         var watch = Head(25, 65, 0);                 // bowed at the lap, turned on the neck
         var side = Head(0, 0, 80);                   // on a side
         var lookUp = Head(0, -30, 0);                // sitting, a look up
-        var back = Head(0, -75, 0);                  // on the back, the head 15° up on a pillow, straight
-        var backTurned = Head(20, -75, 0);           // the same, turned 20° on the pillow
+        var back = Head(0, -75, 0, 0.7f);            // on the back, the head 15° up on a pillow, straight (in bed: 0.7 m over the floor)
+        var backTurned = Head(20, -75, 0, 0.7f);     // the same, turned 20° on the pillow
         bool sitLies = MathUtil.IsLyingDown(sit, true), watchLies = MathUtil.IsLyingDown(watch, true), sideLies = MathUtil.IsLyingDown(side, true),
             offFace = MathUtil.IsLyingDown(side, false);
         var a = new SlimeAlerts();
@@ -299,6 +326,30 @@ static class SlimeAlertsTools
              $"30° sitting {upLies}, on the back with the headset off {backOff} (want False False); lying from {backFrom:0.0} s (want 8.0), up " +
              $"{(backUp < 0 ? "never" : $"from {backUp:0.0}")} (want never), offered {backOffers} time(s) (want 1) -",
              backLies && turnedLies && !upLies && !backOff && Math.Abs(backFrom - 8) < 0.05 && backUp < 0 && backOffers == 1);
+        // the face up alone is not lying (review 10-24: upright, a look up 50° at a stage screen held 3 s was a card and a buzz every time):
+        // sitting 50° up, standing (1.7 m) 65° up at fireworks - neither; on the back on a thick pillow (the face 50° up, 0.65 m) lies, and so
+        // does a flat pillow with SteamVR's floor set 40 cm low (75° up, 1.1 m)
+        var up50 = Head(0, -50, 0);
+        var fireworks = Head(0, -65, 0, 1.7f);
+        var thick = Head(0, -50, 0, 0.65f);
+        var lowFloor = Head(0, -75, 0, 1.1f);
+        bool up50Lies = MathUtil.IsLyingDown(up50, true), fireLies = MathUtil.IsLyingDown(fireworks, true), thickLies = MathUtil.IsLyingDown(thick, true),
+            lowFloorLies = MathUtil.IsLyingDown(lowFloor, true);
+        // and held: sitting 5 s, 50° up 6 s, sitting 3 s, up again 6 s, standing at the fireworks 6 s - never lying, nothing offered
+        var c = new SlimeAlerts();
+        int upOffers = 0;
+        bool upLying = false;
+        (double from, double to, Matrix4x4 pose)[] lookUps = { (0, 5, sit), (5, 11, up50), (11, 14, sit), (14, 20, up50), (20, 26, fireworks) };
+        foreach (var (from, to, pose) in lookUps)
+            for (int k = (int)Math.Round(from * 10); k < (int)Math.Round(to * 10); k++)
+            {
+                if (c.Lie(k / 10.0, MathUtil.IsLyingDown(pose, true), true, out bool offer)) upLying = true;
+                if (offer) upOffers++;
+            }
+        Want($"slimevr lying, the face up: sitting 50° up {up50Lies}, standing 65° up at fireworks {fireLies} (want False False); held 6 s twice and 6 s at the " +
+             $"fireworks: lying {upLying}, offered {upOffers} time(s) (want False, 0); on the back on a thick pillow (50° up, 0.65 m) {thickLies}, a flat pillow " +
+             $"with the floor 40 cm low (75° up, 1.1 m) {lowFloorLies} (want True True) -",
+             !up50Lies && !fireLies && !upLying && upOffers == 0 && thickLies && lowFloorLies);
     }
 
     // the two taps: the watch's strip and the card's button send exactly one ResetRequest (yaw), a first tap none; lying alone sends none
@@ -446,8 +497,8 @@ static class SlimeAlertsTools
                      sitting == 0 && onFace > 0 && opened > 0 && gone == 0 && perFace == 0 && perOpen == 0);
                 // the card: at rest, then asking (its first tap)
                 using var np = new NotificationPanel(gpu, painter, cfg);
-                np.AddForPreview(new Notification { Source = "SlimeVR", Title = Lang.F("{0} lost", Lang.T("Left thigh")), Content = Lang.T("Timed out - out of range?"),
-                    Glyph = WristPanel.SlimeKindIcon });
+                np.AddForPreview(SlimeAlerts.Card(new SlimeAlerts.Note(SlimeAlerts.Kind.Lost, $"{Lang.T("Right thigh")}, {Lang.T("Left upper arm")} + {Lang.T("Left lower arm")}",
+                    52, SlimeVrLink.TimedOut, 2)));              // (one frame's dropouts: one card)
                 var card = SlimeAlerts.YawCard(null);
                 np.AddForPreview(card);
                 np.Draw();
