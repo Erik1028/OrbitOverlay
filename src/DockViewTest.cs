@@ -13,6 +13,41 @@ namespace Orbit;
 // slider dragged, the question, Hexpad not running, not connected). tag: "" modern, "_95" the 95 style.
 static class DockViewTools
 {
+    // The link's faces while the dock is not seen (HexpadLink.Showing, Erik 10-24): made-up faces fed as Hexpad's lines (no pipe is
+    // opened) - not seen, nothing is decoded and the snapshot does not change; seen again, the latest face of each key is there (a
+    // newer one of the same key wins, a new device face clears the sharp one); seen, a face is decoded as it comes
+    public static void LinkFacesChecks()
+    {
+        static string Jpeg(System.Drawing.Color c, int size)
+        {
+            using var bmp = new System.Drawing.Bitmap(size, size);
+            using (var g = System.Drawing.Graphics.FromImage(bmp)) g.Clear(c);
+            using var ms = new MemoryStream();
+            bmp.Save(ms, System.Drawing.Imaging.ImageFormat.Jpeg);
+            return Convert.ToBase64String(ms.ToArray());
+        }
+        string red = Jpeg(System.Drawing.Color.Red, 68), blue = Jpeg(System.Drawing.Color.Blue, 68), green = Jpeg(System.Drawing.Color.Lime, 68),
+            hi = Jpeg(System.Drawing.Color.Yellow, 136);
+        static uint Mid(HexpadLink.Face f) => f == null ? 0 : f.Px[f.H / 2 * f.W + f.W / 2] & 0xFFFFFF;
+        using var link = new HexpadLink();
+        link.Showing = false;
+        int v0 = link.Version;
+        link.FeedForTest($"{{\"t\":\"faces\",\"keys\":{{\"0\":\"{red}\",\"1\":\"{blue}\"}},\"hi\":{{\"1\":\"{hi}\"}}}}");
+        link.FeedForTest($"{{\"t\":\"faces\",\"keys\":{{\"0\":\"{green}\"}}}}");
+        var s0 = link.Get();
+        bool waited = link.Version == v0 && s0.Faces[0] == null && s0.Faces[1] == null;
+        link.Showing = true;
+        link.SeenForTest();
+        var s1 = link.Get();
+        bool latest = s1.Faces[0] != null && (Mid(s1.Faces[0]) & 0x00FF00) > 0x00C000 && (Mid(s1.Faces[0]) & 0xFF0000) < 0x400000;     // green, not red
+        bool hiKept = s1.HiFaces[1] != null && s1.HiFaces[1].W == 136 && s1.Faces[1] != null && s1.HiFaces[0] == null;
+        link.FeedForTest($"{{\"t\":\"faces\",\"keys\":{{\"1\":\"{red}\"}}}}");
+        var s2 = link.Get();
+        bool live = s2.Faces[1] != null && (Mid(s2.Faces[1]) & 0xFF0000) > 0xC00000 && s2.HiFaces[1] == null && s2.FaceVersion[1] > s1.FaceVersion[1];
+        Log.Info($"hexpad faces: not seen - nothing decoded, the snapshot unchanged {waited} (want True); seen again - each key's latest {latest} (want True), " +
+                 $"the sharp face kept, none where a newer device face came {hiKept} (want True); seen - a face decoded as it comes, its sharp one cleared {live} (want True)");
+    }
+
     public static void Run(WristPanel wrist, PanelData data, ConfigStore cfg, Painter painter, Gpu gpu, string dir, string tag)
     {
         var wcfg = cfg.Data.Wrist;

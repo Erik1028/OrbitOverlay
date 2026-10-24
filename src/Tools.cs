@@ -138,6 +138,7 @@ static partial class Tools
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "social") return SocialOnly(wrist, data, cfg, painter, gpu, dir);
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "lights") return LightsOnly(wrist, data, cfg, painter, gpu, dir);
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "onthisday") return OnThisDayTempsTools.Only(wrist, data, cfg, gpu, dir);
+        if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "hexfaces") { DockViewTools.LinkFacesChecks(); return 0; }     // (DockViewTest.cs)
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "mixtape") return MixtapeOnly(wrist, data, cfg, painter, gpu, dir);
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") is { } kindOnly && kindOnly.StartsWith("kind:")) return KindOnly(wrist, data, cfg, painter, gpu, dir, kindOnly[5..]);
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "avatar") return AvatarOnly(wrist, data, cfg, painter, gpu, dir);
@@ -610,6 +611,7 @@ static partial class Tools
                 wrist.CloseForTest();
             }
             RoomViewTools.Run(wrist, data, cfg, gpu, dir, tag);      // the room opened: its cases, a tap opens it (not the Room panel)
+            if (tag == "") DockViewTools.LinkFacesChecks();                   // the link's faces held while the dock is not seen (no pipe)
             DockViewTools.Run(wrist, data, cfg, painter, gpu, dir, tag);      // the dock opened, on made-up data (not the Hexpad panel)
             if (tag == "") MixerViewTools.MasterChecks();                     // the Windows volume in VR, on a made-up device
             MixerViewTools.Run(wrist, data, cfg, gpu, dir, tag);              // the volume mixer, on made-up apps

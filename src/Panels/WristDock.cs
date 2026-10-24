@@ -25,6 +25,10 @@ public sealed partial class WristPanel
 
     bool DockLive => _open != null && !_closing && _dockReady && DetailIs("dock");
 
+    // the watch shows a dock now: up, with a dock widget on its page (or sliding in), opened, or a folder open (one may be in it) - the
+    // link decodes Hexpad's faces only then (HexpadLink.Showing)
+    public bool DockInView => Alpha > 0.02f && C.Face == "custom" && (HasWidget("dock") || DetailIs("dock") || DetailIs("folder"));
+
     // the link's latest snapshot in, the timers (a stick's final value, a held value running out)
     DockInput DockSync(PanelData d)
     {

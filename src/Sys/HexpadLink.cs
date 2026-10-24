@@ -93,6 +93,11 @@ public sealed class HexpadLink : IDisposable
     // what hello said about the device JPEGs
     int _rot = 90, _dx, _dy;
     bool _mirror;
+    // the faces that came while the dock was not seen (Showing): per key the latest device face's text (null: none) - which clears
+    // its sharp one -, and the latest sharp face's text; the worker's alone
+    readonly string[] _pendDev = new string[Keys], _pendHi = new string[Keys];
+    readonly bool[] _pendDevSet = new bool[Keys], _pendHiSet = new bool[Keys];
+    bool _pendAny, _pendDark, _pendDarkSet;
 
     // slider values and jogs wait here for the worker: only the newest value per knob, the detents summed up
     readonly object _qlock = new();
@@ -100,6 +105,22 @@ public sealed class HexpadLink : IDisposable
     readonly Dictionary<string, (float v, double at)> _setSent = new();
     readonly Dictionary<string, int> _jog = new();
     double _jogNext;
+
+    // Set every tick: the dock can be seen right now - its panel, or the watch up with a dock widget on its page (Erik 10-24:
+    // the faces Hexpad sends - up to 20 a second while a key animates - were all decoded, 4-5 MB/s of pixels, 90 % of Orbit's
+    // allocation, with the dock widget on another page). Not seen: a face's text is kept as it came, the latest per key; seen
+    // again, those are decoded at once (the worker is woken) - the picture is the dock's as it is now.
+    public bool Showing
+    {
+        get => _showing;
+        set
+        {
+            if (value == _showing) return;
+            _showing = value;
+            if (value) _wake.Set();
+        }
+    }
+    volatile bool _showing = true;
 
     // set every tick: VR is on and something shows the dock (its panel or a watch widget)
     public bool Active
@@ -245,6 +266,7 @@ public sealed class HexpadLink : IDisposable
         pipe.Connect(1500);
         // a new connection starts as api 1 until Hexpad's hello says more; nothing queued for the last one goes out
         ClearPending();
+        ForgetFaces();
         _api = 1;
         lock (_lock) { _s.Api = 1; _s.Caps = Array.Empty<string>(); _s.Values = new(); _s.HiFaces = new Face[Keys]; _s.Version++; }
         // api 2 and "hi": 2 ask for sliders and the faces at 2x; an api 1 Hexpad ignores both
@@ -273,11 +295,12 @@ public sealed class HexpadLink : IDisposable
                 for (int i = 0; i < n; i++)
                 {
                     if (buf[i] != (byte)'\n') { line.WriteByte(buf[i]); continue; }
-                    if (line.Length > 0) Handle(line.GetBuffer().AsSpan(0, (int)line.Length));
+                    if (line.Length > 0) Handle(line.GetBuffer(), (int)line.Length);
                     line.SetLength(0);
                 }
                 if (line.Length > 16 * 1024 * 1024) throw new IOException("line too long");
             }
+            if (_pendAny && _showing) DecodePending();          // seen again: the faces that waited
             while (_out.TryDequeue(out var msg)) Write(pipe, msg);
             Flush(pipe);
         }
@@ -330,9 +353,10 @@ public sealed class HexpadLink : IDisposable
         if (lines != null) foreach (var l in lines) Write(pipe, l);
     }
 
-    void Handle(ReadOnlySpan<byte> json)
+    // a line (the reader's own buffer, not copied: the document is read and let go before the next line comes in)
+    void Handle(byte[] json, int len)
     {
-        using var doc = JsonDocument.Parse(json.ToArray());
+        using var doc = JsonDocument.Parse(new ReadOnlyMemory<byte>(json, 0, len));
         var m = doc.RootElement;
         string t = m.TryGetProperty("t", out var tv) ? tv.GetString() : null;
         switch (t)
@@ -406,6 +430,8 @@ public sealed class HexpadLink : IDisposable
                 break;
             case "faces":
                 bool dark = Bool(m, "dark");
+                if (!_showing) { KeepFaces(m, dark); break; }        // not seen: kept as they came (Showing)
+                if (_pendAny) DecodePending();                       // (what waited first: this one is newer)
                 var dev = new List<(int, Face)>();
                 var hi = new List<(int, Face)>();
                 if (m.TryGetProperty("keys", out var keys) && keys.ValueKind == JsonValueKind.Object)
@@ -448,6 +474,71 @@ public sealed class HexpadLink : IDisposable
                 }
                 break;
         }
+    }
+
+    // a faces message while the dock is not seen: the latest text per key kept (the order of the live path: a device face clears the
+    // sharp one, the sharp ones of the same message come after)
+    void KeepFaces(JsonElement m, bool dark)
+    {
+        if (m.TryGetProperty("keys", out var keys) && keys.ValueKind == JsonValueKind.Object)
+            foreach (var k in keys.EnumerateObject())
+            {
+                if (!int.TryParse(k.Name, out int i) || i < 0 || i >= Keys) continue;
+                _pendDev[i] = k.Value.ValueKind == JsonValueKind.String ? k.Value.GetString() : null;
+                _pendDevSet[i] = true;
+                _pendHi[i] = null;
+                _pendHiSet[i] = true;
+            }
+        if (m.TryGetProperty("hi", out var hk) && hk.ValueKind == JsonValueKind.Object)
+            foreach (var k in hk.EnumerateObject())
+            {
+                if (!int.TryParse(k.Name, out int i) || i < 0 || i >= Keys) continue;
+                _pendHi[i] = k.Value.ValueKind == JsonValueKind.String ? k.Value.GetString() : null;
+                _pendHiSet[i] = true;
+            }
+        (_pendDark, _pendDarkSet) = (dark, true);
+        _pendAny = true;
+    }
+
+    // the faces that waited, decoded and published as one change
+    void DecodePending()
+    {
+        _pendAny = false;
+        var dev = new Face[Keys];
+        var hi = new Face[Keys];
+        for (int i = 0; i < Keys; i++)
+        {
+            if (_pendDevSet[i] && _pendDev[i] != null) dev[i] = Decode(_pendDev[i], true);
+            if (_pendHiSet[i] && _pendHi[i] != null) hi[i] = Decode(_pendHi[i], false);
+        }
+        lock (_lock)
+        {
+            for (int i = 0; i < Keys; i++)
+            {
+                if (_pendDevSet[i]) { _s.Faces[i] = dev[i]; _s.HiFaces[i] = null; _s.FaceVersion[i]++; }
+                if (_pendHiSet[i]) { _s.HiFaces[i] = hi[i]; _s.FaceVersion[i]++; }
+            }
+            if (_pendDarkSet) _s.Dark = _pendDark;
+            _s.Version++;
+        }
+        ForgetFaces();
+    }
+
+    // --snapshot's checks (DockViewTest.cs): a line as if Hexpad sent it, and the loop's "seen again" step - no pipe
+    internal void FeedForTest(string line)
+    {
+        var b = Encoding.UTF8.GetBytes(line);
+        Handle(b, b.Length);
+    }
+    internal void SeenForTest() { if (_pendAny && _showing) DecodePending(); }
+
+    void ForgetFaces()
+    {
+        Array.Clear(_pendDev);
+        Array.Clear(_pendHi);
+        Array.Clear(_pendDevSet);
+        Array.Clear(_pendHiSet);
+        _pendAny = _pendDarkSet = false;
     }
 
     static string KindOf(string summary)

@@ -2358,6 +2358,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         var d = C.Dock;
         bool widget = C.Wrist.Face == "custom" && WatchPages.Any(C.Wrist, "dock");
         _hexpad.Active = VrAfter(9) && d.Enabled && (d.Visible || widget);
+        _hexpad.Showing = d.Visible || (widget && _wrist.DockInView);       // (not seen: its faces wait undecoded - Sys/HexpadLink.cs)
         int v = _hexpad.Version;
         if (v != _dockSnap.Version)
         {
