@@ -395,6 +395,7 @@ public sealed partial class WristPanel
         "settings" => ("F6", "SETUP", "SETTINGS"),
         "status" => ("F7", "STATUS", "STATUS"),
         "theater" => ("F8", "CINEMA", "THEATER"),
+        "camera" => ("F9", "CAMERA", "CAMERA"),
         _ => ("F9", T.Up(id), T.Up(id)),
     };
 

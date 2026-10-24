@@ -503,6 +503,7 @@ public sealed partial class TerminalSkin : Win95Skin
         W95Icons.Id.People => "ROOM",
         W95Icons.Id.Chat => "CHAT",
         W95Icons.Id.Theater => "CINE",
+        W95Icons.Id.Camera => "CAM",
         W95Icons.Id.Mine => "*",
         W95Icons.Id.Flag => "F",
         W95Icons.Id.Info32 => "i",

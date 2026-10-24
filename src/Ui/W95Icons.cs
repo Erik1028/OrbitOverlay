@@ -8,7 +8,7 @@ namespace Orbit;
 // whole-pixel sizes, never smoothed.
 public static class W95Icons
 {
-    public enum Id { Orbit, Clock, Moon, Gear, Center, Info32, Computer, ComputerOff, Folder, Note, RadioOff, RadioOn, Window, Layouts, Keyboard, Palette, Delete, Download, Dock, People, Chat, Theater, Mine, Flag, Hourglass }
+    public enum Id { Orbit, Clock, Moon, Gear, Center, Info32, Computer, ComputerOff, Folder, Note, RadioOff, RadioOn, Window, Layouts, Keyboard, Palette, Delete, Download, Dock, People, Chat, Theater, Mine, Flag, Hourglass, Camera }
 
     // k black  w white  s silver  g grey  n navy  b blue  t teal  c cyan  r red  m maroon
     // y yellow o olive  e green   l lime  p purple f fuchsia   . transparent
@@ -467,6 +467,25 @@ public static class W95Icons
             "..kwwwwwwwwwwk..",
             "..kkkkkkkkkkkk..",
         },
+        Id.Camera => new[]                  // the watch's camera button: a silver camera, its prism hump and shutter release, the blue lens
+        {
+            "................",
+            "................",
+            ".....kkkkk......",
+            "....kwwwwsk.kk..",
+            ".kkkkkkkkkkkkkk.",
+            ".kwwwwkkkkkwwwk.",
+            ".kwsskncnnnksgk.",
+            ".kwsknccnnnnkgk.",
+            ".kwskncnnnnnkgk.",
+            ".kwsknnnnnnnkgk.",
+            ".kwsknnnnnbnkgk.",
+            ".kwssknnnbnksgk.",
+            ".kggggkkkkkgggk.",
+            ".kkkkkkkkkkkkkk.",
+            "................",
+            "................",
+        },
         Id.Mine => MineArt.Mine16,          // Minesweeper's own pictures (Mines.cs)
         Id.Flag => MineArt.Flag16,
         _ => new[] { "." },
@@ -489,7 +508,7 @@ public static class W95Icons
     }
 
     // (read from a table filled once: Map builds the picture's rows anew on every call - every icon of every frame did)
-    static readonly int[] _sizes = new int[(int)Id.Hourglass + 1];
+    static readonly int[] _sizes = new int[(int)Id.Camera + 1];
     public static int Size(Id id)
     {
         int i = (int)id;

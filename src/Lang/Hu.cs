@@ -817,6 +817,8 @@ static class Hu
         ("Latest photo", "Legutóbbi fotó"),
         ("Photo", "Fotó"),
         ("Imaging", "Képkezelő"),
+        // the camera button (VRChat's shutter over OSC, Sys/VrcCamera.cs)
+        ("Camera", "Kamera"),
         ("Capture", "Felvétel"),
         ("Cap", "Fotó"),
         ("No photos yet", "Még nincs fotó"),
@@ -1252,6 +1254,7 @@ static class Hu
         ("NGT", "ÉJ"),
         ("STS", "ÁLL"),
         ("CIN", "MOZ"),
+        ("CAM", "KAM"),
         ("KBD", "BIL"),
         ("CTR", "KÖZ"),
         ("SETUP", "BEÁLL"),

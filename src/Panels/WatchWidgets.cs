@@ -66,6 +66,9 @@ public static class WatchWidgets
         new("status", "Status line", "Status", "\uE8BD", W95Icons.Id.Chat, Btn, 1, true, 1),
         // one monitor / window as a big curved screen, the rest steps aside and the world dims
         new("theater", "Theater", "Theater", "\uE8B2", W95Icons.Id.Theater, Btn, 1, true, 1),
+        // VRChat's camera (Erik 10-24): a tap takes a photo with the camera open in VRChat - OSC /usercamera/Capture (Sys/VrcCamera.cs);
+        // the latest-photo widget then shows it by itself
+        new("camera", "Camera", "Camera", "\uE722", W95Icons.Id.Camera, Btn, 0, true, 0),
         // VRChat: who is in the instance; a tap grows it into the watch's opened view, the people there (WristRoom.cs)
         new("room", "Room", "Room", "\uE716", W95Icons.Id.People, new[] { (1, 1), (2, 1), (3, 1) }, 1, false, 2),
         // the stream dock (Hexpad): its keys live; a tap grows it into the watch's opened dock (WristDock.cs). Offered only while Hexpad runs.
@@ -120,7 +123,7 @@ public static class WatchWidgets
         "time" or "date" or "calendar" or "analog" or "timer" or "stopwatch" or "session" => 0,
         "perf" or "graph" or "fps" or "reproj" or "gpu" or "cputime" or "vram" or "cpu" or "ram" or "battery" or "temps" => 1,
         "media" or "volume" or "mixer" or "mic" => 2,
-        "room" or "notifications" or "status" or "friends" or "recap" or "photo" or "memory" or "avatar" => 3,
+        "room" or "notifications" or "status" or "friends" or "recap" or "photo" or "memory" or "avatar" or "camera" => 3,
         "keyboard" or "desktops" or "recenter" or "layout" or "night" or "settings" or "theater" or "buttons" or "dock" or "light" or "rgb" => 4,
         _ => 5,
     };
