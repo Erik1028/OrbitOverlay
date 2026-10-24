@@ -47,7 +47,7 @@ public sealed partial class WristPanel : IPointerTarget, IDisposable
 {
     public const int TW = 640, TH = 440;
     readonly Painter _p;
-    readonly Ui _ui;
+    Ui _ui;                              // (not readonly: the warm-up draws with a Ui of its own - WristWarm.cs)
     readonly ConfigStore _cfg;
     readonly PointerState _ptr = new();
     public readonly Surface Surf;

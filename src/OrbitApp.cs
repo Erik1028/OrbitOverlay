@@ -731,7 +731,10 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             PerfFrame(now);
             Spikes.Piece("the perf log", gp);
             Spikes.Mark(Spikes.PerfLog);
-            BootTick();                         // the connect's one-time work, a step a frame; monitors rebuilt later, one a frame
+            bool stepped = BootTick();          // the connect's one-time work, a step a frame; monitors rebuilt later, one a frame
+            // the watch's other pages and opened views drawn once while it is away, one a frame (WristWarm.cs): after the connect's
+            // steps and the 8 s warm-up, never in a frame that made an overlay or ran a step, not while theater plays
+            if (!stepped && _warmAt < 0 && VrAfter(10) && !_theater.On) _wrist.WarmStep(_data);
             Spikes.Mark(Spikes.Boot);
         }
 
@@ -936,11 +939,12 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
     // the first monitor / window panel whose overlay may still be missing (past the list's end: none; made only while SteamVR runs)
     int _deskNext = int.MaxValue, _winNext = int.MaxValue;
 
-    void BootTick()
+    // (true: a step ran this frame - an overlay made or a connect step)
+    bool BootTick()
     {
-        if (_vrFrames < 2) return;
-        if (CreatePendingOverlay()) return;          // the monitors and windows first (a rebuild later too)
-        if (_bootStep < 0) return;
+        if (_vrFrames < 2) return false;
+        if (CreatePendingOverlay()) return true;     // the monitors and windows first (a rebuild later too)
+        if (_bootStep < 0) return false;
         int s = _bootStep++, tabs = SettingsView.TabCount;
         long b0 = System.Diagnostics.Stopwatch.GetTimestamp();
         try
@@ -959,10 +963,11 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             else { ApplyAutoStart(); Spikes.Piece("boot: auto-start", b0); }
         }
         catch (Exception e) { Log.Warn($"connect step {s}: {e.Message}"); }
-        if (s < 3 + tabs) return;
+        if (s < 3 + tabs) return true;
         _bootStep = -1;
         _bootEnd = _vrFrames;
         Log.Info($"connect: everything made by frame {_vrFrames}, {Clock.Now - _connectAt:0.00} s after connecting");
+        return true;
     }
 
     // one enabled monitor's or window's missing overlay and capture made: true when one was (that is the frame's step). Nothing to make:
