@@ -1,4 +1,6 @@
 using System;
+using System.Buffers;
+using System.Buffers.Text;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Drawing;
@@ -6,6 +8,7 @@ using System.Drawing.Imaging;
 using System.Globalization;
 using System.IO;
 using System.IO.Pipes;
+using System.Numerics;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -93,9 +96,12 @@ public sealed class HexpadLink : IDisposable
     // what hello said about the device JPEGs
     int _rot = 90, _dx, _dy;
     bool _mirror;
-    // the faces that came while the dock was not seen (Showing): per key the latest device face's text (null: none) - which clears
-    // its sharp one -, and the latest sharp face's text; the worker's alone
-    readonly string[] _pendDev = new string[Keys], _pendHi = new string[Keys];
+    // the faces that came while the dock was not seen (Showing): per key the latest device face's text - which clears its sharp one -,
+    // and the latest sharp face's text, each as it came (base64, UTF-8) in the key's own buffer, grown once to the largest face (Erik
+    // 10-24, the alloc: line: the 'hexpad link' thread still made ~1 MB/s of strings with the dock away - every face's text read out as
+    // a string to be kept); length -1: none (null in the message). The worker's alone
+    readonly byte[][] _pendDev = new byte[Keys][], _pendHi = new byte[Keys][];
+    readonly int[] _pendDevLen = new int[Keys], _pendHiLen = new int[Keys];
     readonly bool[] _pendDevSet = new bool[Keys], _pendHiSet = new bool[Keys];
     bool _pendAny, _pendDark, _pendDarkSet;
 
@@ -356,6 +362,9 @@ public sealed class HexpadLink : IDisposable
     // a line (the reader's own buffer, not copied: the document is read and let go before the next line comes in)
     void Handle(byte[] json, int len)
     {
+        // a faces message while the dock is not seen: read straight off the line's bytes, its texts copied into the keys' buffers -
+        // nothing made for it (KeepFaces); every other message, and the faces while seen, through a document as before
+        if (!_showing && IsFaces(json.AsSpan(0, len), out bool keepDark)) { KeepFaces(json.AsSpan(0, len), keepDark); return; }
         using var doc = JsonDocument.Parse(new ReadOnlyMemory<byte>(json, 0, len));
         var m = doc.RootElement;
         string t = m.TryGetProperty("t", out var tv) ? tv.GetString() : null;
@@ -428,9 +437,8 @@ public sealed class HexpadLink : IDisposable
                 }
                 lock (_lock) { _s.Values = vals; _s.Version++; }
                 break;
-            case "faces":
+            case "faces":                                           // (the dock seen: an unseen one's were kept above - Showing)
                 bool dark = Bool(m, "dark");
-                if (!_showing) { KeepFaces(m, dark); break; }        // not seen: kept as they came (Showing)
                 if (_pendAny) DecodePending();                       // (what waited first: this one is newer)
                 var dev = new List<(int, Face)>();
                 var hi = new List<(int, Face)>();
@@ -476,28 +484,77 @@ public sealed class HexpadLink : IDisposable
         }
     }
 
-    // a faces message while the dock is not seen: the latest text per key kept (the order of the live path: a device face clears the
-    // sharp one, the sharp ones of the same message come after)
-    void KeepFaces(JsonElement m, bool dark)
+    // a faces message (its "dark" too)? The line's top level read, the faces' texts only stepped over
+    static bool IsFaces(ReadOnlySpan<byte> line, out bool dark)
     {
-        if (m.TryGetProperty("keys", out var keys) && keys.ValueKind == JsonValueKind.Object)
-            foreach (var k in keys.EnumerateObject())
+        dark = false;
+        if (!Seek(line, "t"u8, out var r) || r.TokenType != JsonTokenType.String || !r.ValueTextEquals("faces"u8)) return false;
+        dark = Seek(line, "dark"u8, out r) && r.TokenType == JsonTokenType.True;
+        return true;
+    }
+
+    // a faces message while the dock is not seen: the latest text per key kept (the order of the live path: a device face clears the
+    // sharp one, the sharp ones of the same message come after - "keys" read first wherever it stands, then "hi"). Nothing is made:
+    // the reader is a struct over the line, a text is copied into its key's buffer
+    void KeepFaces(ReadOnlySpan<byte> line, bool dark)
+    {
+        if (Seek(line, "keys"u8, out var r) && r.TokenType == JsonTokenType.StartObject)
+            while (r.Read() && r.TokenType == JsonTokenType.PropertyName)
             {
-                if (!int.TryParse(k.Name, out int i) || i < 0 || i >= Keys) continue;
-                _pendDev[i] = k.Value.ValueKind == JsonValueKind.String ? k.Value.GetString() : null;
+                bool key = KeyOf(ref r, out int i);
+                r.Read();
+                if (!key) { r.Skip(); continue; }
+                _pendDevLen[i] = Keep(ref r, ref _pendDev[i]);
                 _pendDevSet[i] = true;
-                _pendHi[i] = null;
+                _pendHiLen[i] = -1;
                 _pendHiSet[i] = true;
             }
-        if (m.TryGetProperty("hi", out var hk) && hk.ValueKind == JsonValueKind.Object)
-            foreach (var k in hk.EnumerateObject())
+        if (Seek(line, "hi"u8, out r) && r.TokenType == JsonTokenType.StartObject)
+            while (r.Read() && r.TokenType == JsonTokenType.PropertyName)
             {
-                if (!int.TryParse(k.Name, out int i) || i < 0 || i >= Keys) continue;
-                _pendHi[i] = k.Value.ValueKind == JsonValueKind.String ? k.Value.GetString() : null;
+                bool key = KeyOf(ref r, out int i);
+                r.Read();
+                if (!key) { r.Skip(); continue; }
+                _pendHiLen[i] = Keep(ref r, ref _pendHi[i]);
                 _pendHiSet[i] = true;
             }
         (_pendDark, _pendDarkSet) = (dark, true);
         _pendAny = true;
+    }
+
+    // the reader on the value of the line's top-level property 'name' (false: none, or the line is not an object). A malformed line
+    // throws JsonException, as JsonDocument.Parse does (the session starts over)
+    static bool Seek(ReadOnlySpan<byte> line, ReadOnlySpan<byte> name, out Utf8JsonReader r)
+    {
+        r = new Utf8JsonReader(line);
+        if (!r.Read() || r.TokenType != JsonTokenType.StartObject) return false;
+        while (r.Read() && r.TokenType == JsonTokenType.PropertyName)
+        {
+            bool hit = r.ValueTextEquals(name);
+            r.Read();
+            if (hit) return true;
+            r.Skip();                                   // (an object / array: to its end; a plain value: nothing to skip)
+        }
+        return false;
+    }
+
+    // a key's number from its property name: "0".."5" read off the bytes; anything else as int.TryParse reads it (only an odd name
+    // makes a string)
+    static bool KeyOf(ref Utf8JsonReader r, out int i)
+    {
+        var s = r.ValueSpan;
+        if (!r.ValueIsEscaped && s.Length == 1) { i = s[0] - '0'; return i >= 0 && i < Keys; }
+        return int.TryParse(r.GetString(), out i) && i >= 0 && i < Keys;
+    }
+
+    // the value the reader is on: a text copied into buf (a bigger one made, a power of two, only when it does not fit) - its length;
+    // anything else (null, a number...) -1, as GetString's null was
+    static int Keep(ref Utf8JsonReader r, ref byte[] buf)
+    {
+        if (r.TokenType != JsonTokenType.String) { r.Skip(); return -1; }
+        int most = r.ValueSpan.Length;                  // (as written: unescaped it is never longer)
+        if (buf == null || buf.Length < most) buf = new byte[Math.Max(4096, (int)BitOperations.RoundUpToPowerOf2((uint)most))];
+        return r.CopyString(buf);
     }
 
     // the faces that waited, decoded and published as one change
@@ -508,8 +565,8 @@ public sealed class HexpadLink : IDisposable
         var hi = new Face[Keys];
         for (int i = 0; i < Keys; i++)
         {
-            if (_pendDevSet[i] && _pendDev[i] != null) dev[i] = Decode(_pendDev[i], true);
-            if (_pendHiSet[i] && _pendHi[i] != null) hi[i] = Decode(_pendHi[i], false);
+            if (_pendDevSet[i] && _pendDevLen[i] >= 0) dev[i] = DecodeKept(_pendDev[i], _pendDevLen[i], true);
+            if (_pendHiSet[i] && _pendHiLen[i] >= 0) hi[i] = DecodeKept(_pendHi[i], _pendHiLen[i], false);
         }
         lock (_lock)
         {
@@ -524,18 +581,19 @@ public sealed class HexpadLink : IDisposable
         ForgetFaces();
     }
 
-    // --snapshot's checks (DockViewTest.cs): a line as if Hexpad sent it, and the loop's "seen again" step - no pipe
+    // --snapshot's checks (DockViewTest.cs): a line as if Hexpad sent it (or its bytes, as the reader's buffer holds it), and the
+    // loop's "seen again" step - no pipe
     internal void FeedForTest(string line)
     {
         var b = Encoding.UTF8.GetBytes(line);
         Handle(b, b.Length);
     }
+    internal void FeedForTest(byte[] line, int len) => Handle(line, len);
     internal void SeenForTest() { if (_pendAny && _showing) DecodePending(); }
 
+    // (the keys' buffers stay for the next faces kept)
     void ForgetFaces()
     {
-        Array.Clear(_pendDev);
-        Array.Clear(_pendHi);
         Array.Clear(_pendDevSet);
         Array.Clear(_pendHiSet);
         _pendAny = _pendDarkSet = false;
@@ -547,13 +605,30 @@ public sealed class HexpadLink : IDisposable
         return i > 0 ? summary[..i].Trim().ToLowerInvariant() : "";
     }
 
+    // a face's text (base64) to pixels (Decode below)
+    Face Decode(string b64, bool device)
+    {
+        byte[] jpeg;
+        try { jpeg = Convert.FromBase64String(b64); }
+        catch (FormatException e) { Log.Info("hexpad link: bad face: " + e.Message); return null; }
+        return Decode(jpeg, jpeg.Length, device);
+    }
+
+    // a kept face's text (DecodePending): decoded where it lies, in its key's buffer - the JPEG's bytes take its first part
+    Face DecodeKept(byte[] b64, int len, bool device)
+    {
+        if (Base64.DecodeFromUtf8InPlace(b64.AsSpan(0, len), out int n) == OperationStatus.Done) return Decode(b64, n, device);
+        Log.Info("hexpad link: bad face: not base64");
+        return null;
+    }
+
     // a face JPEG to pixels. The device one back to the face Hexpad drew: undo the 90 degree turn, the mirror and
     // the calibration shift. The sharp (2x) one is sent upright, as drawn.
-    Face Decode(string b64, bool device)
+    Face Decode(byte[] jpeg, int len, bool device)
     {
         try
         {
-            using var ms = new MemoryStream(Convert.FromBase64String(b64));
+            using var ms = new MemoryStream(jpeg, 0, len, false);
             using var img = new Bitmap(ms);
             if (device)
             {

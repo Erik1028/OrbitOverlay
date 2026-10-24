@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Numerics;
+using System.Text;
 using System.Threading;
 
 namespace Orbit;
@@ -15,7 +16,10 @@ static class DockViewTools
 {
     // The link's faces while the dock is not seen (HexpadLink.Showing, Erik 10-24): made-up faces fed as Hexpad's lines (no pipe is
     // opened) - not seen, nothing is decoded and the snapshot does not change; seen again, the latest face of each key is there (a
-    // newer one of the same key wins, a new device face clears the sharp one); seen, a face is decoded as it comes
+    // newer one of the same key wins, a new device face clears the sharp one); seen, a face is decoded as it comes. Then what a faces
+    // message makes while not seen (its texts kept in the keys' own buffers, 10-24: they were strings, ~1 MB/s): bytes a message after
+    // a warm-up, and the faces kept that way decoded to the very pixels a seen link makes of the same message; the odd lines too ("hi"
+    // before "keys", "t" last, an escaped '/', a null key, a text that is not base64, "dark")
     public static void LinkFacesChecks()
     {
         static string Jpeg(System.Drawing.Color c, int size)
@@ -46,6 +50,79 @@ static class DockViewTools
         bool live = s2.Faces[1] != null && (Mid(s2.Faces[1]) & 0xFF0000) > 0xC00000 && s2.HiFaces[1] == null && s2.FaceVersion[1] > s1.FaceVersion[1];
         Log.Info($"hexpad faces: not seen - nothing decoded, the snapshot unchanged {waited} (want True); seen again - each key's latest {latest} (want True), " +
                  $"the sharp face kept, none where a newer device face came {hiKept} (want True); seen - a face decoded as it comes, its sharp one cleared {live} (want True)");
+
+        // the odd lines, not seen: keys 4 and 5 shown first (seen), then a null and a text that is not base64 for them - both gone after
+        link.FeedForTest($"{{\"t\":\"faces\",\"keys\":{{\"4\":\"{green}\",\"5\":\"{green}\"}}}}");
+        bool shown45 = link.Get().Faces[4] != null && link.Get().Faces[5] != null;
+        link.Showing = false;
+        string esc = blue.Replace("/", "\\/");          // (JSON may write '/' as "\/": the text is the same)
+        link.FeedForTest($"{{\"hi\":{{\"2\":\"{hi}\"}},\"keys\":{{\"2\":\"{red}\",\"3\":\"{esc}\",\"4\":null,\"5\":\"not base64!\"}},\"dark\":true,\"t\":\"faces\"}}");
+        link.Showing = true;
+        link.SeenForTest();
+        var s3 = link.Get();
+        bool odd = shown45 && esc != blue && s3.Faces[2] != null && (Mid(s3.Faces[2]) & 0xFF0000) > 0xC00000 && s3.HiFaces[2] is { W: 136 } &&
+                   s3.Faces[3] != null && (Mid(s3.Faces[3]) & 0xFF) > 0xC0 && s3.Faces[4] == null && s3.Faces[5] == null && s3.Dark;
+
+        // what a faces message makes, not seen: six device faces and six sharp ones a message, as Hexpad sends them while keys animate
+        // (pictures with detail: JPEGs of a few KB, like real faces), fed as the reader's buffer holds a line; a warm-up first (the
+        // keys' buffers grown once, the code compiled)
+        var rng = new Random(7);
+        string Busy(int size)
+        {
+            using var bmp = new System.Drawing.Bitmap(size, size);
+            using (var g = System.Drawing.Graphics.FromImage(bmp))
+            {
+                g.Clear(System.Drawing.Color.FromArgb(rng.Next(256), rng.Next(256), rng.Next(256)));
+                for (int k = 0; k < 24; k++)
+                    using (var pen = new System.Drawing.Pen(System.Drawing.Color.FromArgb(rng.Next(256), rng.Next(256), rng.Next(256)), 1 + rng.Next(4)))
+                        g.DrawLine(pen, rng.Next(size), rng.Next(size), rng.Next(size), rng.Next(size));
+            }
+            using var ms = new MemoryStream();
+            bmp.Save(ms, System.Drawing.Imaging.ImageFormat.Jpeg);
+            return Convert.ToBase64String(ms.ToArray());
+        }
+        var lines = new List<byte[]>();
+        long strings = 0;
+        for (int v = 0; v < 4; v++)
+        {
+            var sb = new StringBuilder("{\"t\":\"faces\",\"dark\":false,\"keys\":{");
+            for (int i = 0; i < HexpadLink.Keys; i++)
+            {
+                string f = Busy(68);
+                sb.Append(i > 0 ? "," : "").Append('"').Append(i).Append("\":\"").Append(f).Append('"');
+                strings += 22 + 2L * f.Length;
+            }
+            sb.Append("},\"hi\":{");
+            for (int i = 0; i < HexpadLink.Keys; i++)
+            {
+                string f = Busy(136);
+                sb.Append(i > 0 ? "," : "").Append('"').Append(i).Append("\":\"").Append(f).Append('"');
+                strings += 22 + 2L * f.Length;
+            }
+            lines.Add(Encoding.UTF8.GetBytes(sb.Append("}}").ToString()));
+        }
+        strings /= lines.Count;
+        link.Showing = false;
+        for (int k = 0; k < 5; k++) foreach (var l in lines) link.FeedForTest(l, l.Length);
+        const int N = 400;
+        long a0 = GC.GetAllocatedBytesForCurrentThread();
+        for (int k = 0; k < N; k++) { var l = lines[k % lines.Count]; link.FeedForTest(l, l.Length); }
+        long per = (GC.GetAllocatedBytesForCurrentThread() - a0) / N;
+        // seen again: each key's faces the very pixels a seen link decodes from the last message
+        link.Showing = true;
+        link.SeenForTest();
+        var s4 = link.Get();
+        using var seen = new HexpadLink();
+        var lastLine = lines[(N - 1) % lines.Count];
+        seen.FeedForTest(lastLine, lastLine.Length);
+        var s5 = seen.Get();
+        static bool Same(HexpadLink.Face a, HexpadLink.Face b) => a != null && b != null && a.W == b.W && a.H == b.H && a.Px.AsSpan().SequenceEqual(b.Px);
+        bool same = true;
+        for (int i = 0; i < HexpadLink.Keys; i++) same &= Same(s4.Faces[i], s5.Faces[i]) && Same(s4.HiFaces[i], s5.HiFaces[i]);
+        Log.Info($"hexpad faces, not seen: a message of six device faces and six sharp ones ({lastLine.Length / 1024} KB) made {per} B (want under 64; " +
+                 $"kept as strings, as before, its texts were {strings / 1024} KB); after {N} of them " +
+                 $"each key's faces the very pixels a seen link decodes from the last {same} (want True); the odd lines - \"hi\" before \"keys\", \"t\" last, " +
+                 $"an escaped '/', a null key, a text that is not base64, \"dark\" - kept as a seen link has them {odd} (want True)");
     }
 
     public static void Run(WristPanel wrist, PanelData data, ConfigStore cfg, Painter painter, Gpu gpu, string dir, string tag)
