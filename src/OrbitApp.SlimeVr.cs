@@ -9,7 +9,7 @@ namespace Orbit;
 // SteamVR runs; else nothing is open. A reset goes out from the watch's second tap (OnSlimeReset, set in the constructor).
 // The alerts (Erik 10-24; Sys/SlimeAlerts.cs, VRChat > SlimeVR alerts - never switched: on while a SlimeVR widget is on a page): the link
 // stays open whenever SteamVR runs (its one small update a second), and while the headset is on a tracker's low battery, a tracker lost
-// (and back) come as cards with a buzz in the watch's hand. Lying down (the head lies ~3 s, MathUtil.IsLying) with SlimeVR connected: the
+// (and back) come as cards with a buzz in the watch's hand. Lying down (the head lies ~3 s, MathUtil.IsLyingDown) with SlimeVR connected: the
 // widget puts its Yaw reset first (PanelData.SlimeLying) - and with the alerts on, a card offers it once per lying-down, its button asking
 // first like the widget's. Nothing is ever reset by itself: only the watch's or the card's second tap sends one.
 public sealed partial class OrbitApp
@@ -30,7 +30,7 @@ public sealed partial class OrbitApp
         _data.SlimeVr = want ? s : null;
         // lying down a while with SlimeVR's trackers there: the widget's Yaw reset first; with the alerts on, a card once per lying-down
         bool connected = s.State == SlimeVrLink.State.Ok && s.Dialect != SolarXr.Dialect.Unknown && s.Connected > 0;
-        bool lying = _slimeAlerts.Lie(now, _vr.Connected && _vr.HmdValid && MathUtil.IsLying(_vr.Hmd, _vr.OnFace), connected, out bool offer);
+        bool lying = _slimeAlerts.Lie(now, _vr.Connected && _vr.HmdValid && MathUtil.IsLyingDown(_vr.Hmd, _vr.OnFace), connected, out bool offer);
         _data.SlimeLying = lying && connected;
         if (!alerts) { _slimeAlerts.Forget(); return; }
         if (!_awake) return;                         // (the cards are for your eyes: with the headset off nothing moves on)

@@ -22,7 +22,7 @@ public sealed class Notification
     public string Glyph;                        // without an Icon: this symbol instead of the bell (a friend: a heart)
     // a button on the card (SlimeVR's Yaw reset while you lie: OrbitApp.SlimeVr.cs, Erik 10-24): its words; Ask: what a first tap asks
     // (4 s) before the second does it (null: the first does it); Act: what it does (true: done; null in the tools: only counted). While a
-    // card with one shows, the panel takes the laser (NotificationPanel's IPointerTarget)
+    // card with one shows, the panel takes the laser on its cards with a button (NotificationPanel's IPointerTarget, HitsAt)
     public string Action, Ask;
     public Func<bool> Act;
     public double AskedAt = -10, ActedAt = -10;  // (main thread)
@@ -281,14 +281,21 @@ public sealed partial class NotificationPanel : IPointerTarget, IDisposable
         }
         if (_cards.Count == 0) { _ov.Hide(); return; }
         Place(Math.Clamp(_cfg.Data.General.NotificationAngle, 0f, 40f));
-        if (_dirty || now >= _wake)
-        {
-            Draw();
-            _ov.SetTexture(_surf.Tex);
-            _dirty = _ui.Animating || _ui.Interacting;         // a button easing or held: the next frame too
-            _wake = AnimWake.Take();
-        }
+        if (Redraw(now)) _ov.SetTexture(_surf.Tex);
         _ov.Show();
+    }
+
+    // a frame when something changed or a style's animation asked for one (Update; --snapshot drives it without an overlay). _dirty goes
+    // false before Draw, like the watch's: a card's button tapped inside Draw (ActTap) asks for the next frame itself - cleared after Draw,
+    // the first tap's "Reset?" was never drawn in modern and the retro styles (review 10-24: no button eases there, the beam stays on it)
+    public bool Redraw(double now)
+    {
+        if (!_dirty && now < _wake) return false;
+        _dirty = false;
+        Draw();
+        _dirty |= _ui.Animating || _ui.Interacting;        // a button easing or held: the next frame too
+        _wake = AnimWake.Take();
+        return true;
     }
 
     Surface _canvas95;
@@ -465,9 +472,27 @@ public sealed partial class NotificationPanel : IPointerTarget, IDisposable
         get
         {
             if (_ov == null || !_ov.Visible) return false;
-            foreach (var c in _cards) if (c.Action != null && !c.Leaving && c.Vis > 0.8f) return true;
+            foreach (var c in _cards) if (Pressable(c)) return true;
             return false;
         }
+    }
+
+    static bool Pressable(Notification c) => c.Action != null && !c.Leaving && c.Vis > 0.8f;
+
+    // the laser takes only the cards with a button (review 10-24): the rest of the 960 x 640 panel is see-through - under one card 0.2 m
+    // of nothing, where the beam belongs to what is behind (a monitor, the game: "Keep clicks from the game" let go of the hand there too).
+    // Every style's card is 20 px in, CardH tall at its place in the stack (the retro styles' half-size canvas doubled). No allocation.
+    public bool HitsAt(Vector2 px)
+    {
+        float y = 0;
+        foreach (var c in _cards)
+        {
+            float cy = Theme.Classic || float.IsNaN(c.Y) ? y : c.Y;
+            if (Pressable(c) && px.X >= 20 && px.X <= TW - 20 && px.Y >= cy && px.Y <= cy + CardH) return true;
+            y += CardH + CardGap;
+            if (y > TH - CardH) break;
+        }
+        return false;
     }
 
     public bool AcceptsFrom(Hand h) => true;

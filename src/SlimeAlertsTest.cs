@@ -12,10 +12,11 @@ namespace Orbit;
 // --snapshot's part for SlimeVR's alerts and lying down (Sys/SlimeAlerts.cs, OrbitApp.SlimeVr.cs; ORBIT_SNAP_ONLY=slimealerts, and at the
 // end of =slimevr): made-up trackers only - the link on SlimeVrTest's made-up SolarXR server (a free port of 127.0.0.1, never SlimeVR's
 // 21110), a script of its updates (batteries crossing the thresholds, a tracker vanishing and coming back, a flicker, one asleep, one
-// disconnected), made-up head poses (sitting, a look at the watch low at the lap, lying on a side). Checked: the right notes once each,
-// lying only after its 3 s and once per lying-down, the hint drawn only while lying, no ResetRequest without the two taps (the watch's
-// strip, the card's button), nothing allocated a frame at rest, the setting's switch on the VRChat page. Pictures in every style: the hint
-// on the face and opened, the card at rest and asking, the VRChat page.
+// disconnected), made-up head poses (sitting, a look at the watch low at the lap, a look up, lying on a side, on the back on a pillow with
+// the head straight and turned). Checked: the right notes once each, lying only after its 3 s and once per lying-down, the hint drawn only
+// while lying, no ResetRequest without the two taps (the watch's strip, the card's button), the card's "Reset?" and "Sent" drawn by the
+// panel's own redraw (as in VR), the laser only on its cards with a button, nothing allocated a frame at rest, the setting's switch on the
+// VRChat page. Pictures in every style: the hint on the face and opened, the card at rest and asking, the VRChat page.
 static class SlimeAlertsTools
 {
     static bool Want(string line, bool ok) => Tools.Want(line, ok);
@@ -61,7 +62,8 @@ static class SlimeAlertsTools
         return true;
     }
 
-    // head poses: sitting, a look at the watch low at the lap (bowed 65°, turned 25° on the neck: the roll alone reads 42°), lying on a side
+    // head poses: sitting, a look at the watch low at the lap (bowed 65°, turned 25° on the neck: the roll alone reads 42°), lying on a side,
+    // on the back (bowed -75°: the face up, the head 15° up on a pillow)
     static Matrix4x4 Head(float yawDeg, float bowDeg, float rollDeg)
     {
         const float k = MathF.PI / 180;
@@ -76,13 +78,23 @@ static class SlimeAlertsTools
         wrist.PointerLeave(Hand.Left); wrist.Draw(data);
     }
 
-    static void Tap(NotificationPanel np, Vector2 p)
+    // a tap on a card's button the way the overlay gets it: each pointer event, then the panel's own redraw gate (NotificationPanel.Redraw,
+    // as Update calls it), the beam left on the button - and every text the next frame draws (null: no frame came). Review 10-24: the first
+    // tap's "Reset?" never came in modern and the retro styles; a tap that drew every step itself (and left after) could not see that.
+    static List<string> TapGated(NotificationPanel np, Painter painter, Vector2 p)
     {
-        np.PointerMove(Hand.Left, p); np.Draw();
-        np.PointerButton(Hand.Left, PtrButton.Primary, true, p); np.Draw();
-        np.PointerButton(Hand.Left, PtrButton.Primary, false, p); np.Draw();
-        np.PointerLeave(Hand.Left); np.Draw();
+        np.PointerMove(Hand.Left, p); np.Redraw(Clock.Now);
+        np.PointerButton(Hand.Left, PtrButton.Primary, true, p); np.Redraw(Clock.Now);
+        np.PointerButton(Hand.Left, PtrButton.Primary, false, p); np.Redraw(Clock.Now);
+        var texts = new List<string>();
+        painter.TextSpy = (s, _, _, _, _, _) => texts.Add(s);
+        bool drew;
+        try { drew = np.Redraw(Clock.Now); }
+        finally { painter.TextSpy = null; }
+        return drew ? texts : null;
     }
+
+    static bool Says(List<string> texts, string what) => texts != null && texts.Exists(s => s.Contains(Lang.T(what), StringComparison.OrdinalIgnoreCase));
 
     static List<WatchWidget> Face() => new()
     {
@@ -222,7 +234,11 @@ static class SlimeAlertsTools
         var sit = Head(0, 5, 0);
         var watch = Head(25, 65, 0);                 // bowed at the lap, turned on the neck
         var side = Head(0, 0, 80);                   // on a side
-        bool sitLies = MathUtil.IsLying(sit, true), watchLies = MathUtil.IsLying(watch, true), sideLies = MathUtil.IsLying(side, true), offFace = MathUtil.IsLying(side, false);
+        var lookUp = Head(0, -30, 0);                // sitting, a look up
+        var back = Head(0, -75, 0);                  // on the back, the head 15° up on a pillow, straight
+        var backTurned = Head(20, -75, 0);           // the same, turned 20° on the pillow
+        bool sitLies = MathUtil.IsLyingDown(sit, true), watchLies = MathUtil.IsLyingDown(watch, true), sideLies = MathUtil.IsLyingDown(side, true),
+            offFace = MathUtil.IsLyingDown(side, false);
         var a = new SlimeAlerts();
         int offers = 0;
         var log = new List<string>();
@@ -239,7 +255,7 @@ static class SlimeAlertsTools
             for (int k = (int)Math.Round(from * 10); k < (int)Math.Round(to * 10); k++)
             {
                 double t = k / 10.0;
-                bool lying = a.Lie(t, MathUtil.IsLying(pose, true), conn, out bool offer);
+                bool lying = a.Lie(t, MathUtil.IsLyingDown(pose, true), conn, out bool offer);
                 if (lying && !wasLying) { if (firstLie < 0) firstLie = t; log.Add($"lying from {t:0.0}"); }
                 if (!lying && wasLying) { if (endLie < 0) endLie = t; log.Add($"up from {t:0.0}"); }
                 wasLying = lying;
@@ -257,6 +273,32 @@ static class SlimeAlertsTools
              $"offered {offers} time(s) (want 3) - at {offerAt:0.0}, {offer2At:0.0} (want 8.0, 22.0), and lying without SlimeVR then with it at {lateOfferAt:0.0} (want 34.0) -",
              Math.Abs(firstLie - 8) < 0.05 && Math.Abs(endLie - 18) < 0.05 && offers == 3 && Math.Abs(offerAt - 8) < 0.05 && Math.Abs(offer2At - 22) < 0.05 &&
              Math.Abs(lateOfferAt - 34) < 0.05);
+        // on the back (review 10-24: IsLying alone read the head straight on the pillow as up and turned 20° as lying - a card with every
+        // turn): sitting 5 s, on the back, turned 4 s, straight, turned again, straight - one lying-down from 8 s, offered once
+        bool backLies = MathUtil.IsLyingDown(back, true), turnedLies = MathUtil.IsLyingDown(backTurned, true), upLies = MathUtil.IsLyingDown(lookUp, true),
+            backOff = MathUtil.IsLyingDown(back, false), oldBack = MathUtil.IsLying(back, true), oldTurned = MathUtil.IsLying(backTurned, true);
+        var b = new SlimeAlerts();
+        int backOffers = 0;
+        double backFrom = -1, backUp = -1;
+        bool was = false;
+        (double from, double to, Matrix4x4 pose)[] onBack =
+        {
+            (0, 5, sit), (5, 12, back), (12, 16, backTurned), (16, 20, back), (20, 24, backTurned), (24, 28, back),
+        };
+        foreach (var (from, to, pose) in onBack)
+            for (int k = (int)Math.Round(from * 10); k < (int)Math.Round(to * 10); k++)
+            {
+                double t = k / 10.0;
+                bool lying = b.Lie(t, MathUtil.IsLyingDown(pose, true), true, out bool offer);
+                if (lying && backFrom < 0) backFrom = t;
+                if (!lying && was && backUp < 0) backUp = t;
+                was = lying;
+                if (offer) backOffers++;
+            }
+        Want($"slimevr lying on the back: on a pillow straight {backLies}, turned 20° {turnedLies} (want True True; IsLying alone {oldBack} {oldTurned}), a look up " +
+             $"30° sitting {upLies}, on the back with the headset off {backOff} (want False False); lying from {backFrom:0.0} s (want 8.0), up " +
+             $"{(backUp < 0 ? "never" : $"from {backUp:0.0}")} (want never), offered {backOffers} time(s) (want 1) -",
+             backLies && turnedLies && !upLies && !backOff && Math.Abs(backFrom - 8) < 0.05 && backUp < 0 && backOffers == 1);
     }
 
     // the two taps: the watch's strip and the card's button send exactly one ResetRequest (yaw), a first tap none; lying alone sends none
@@ -311,20 +353,24 @@ static class SlimeAlertsTools
         var cp = np.ActionPoint();
         int cOne = -1, cTwo = -1, acts = -1;
         bool asked = false;
+        List<string> drawnOne = null, drawnTwo = null;
         if (cp is { } cpp)
         {
-            Tap(np, cpp);
+            drawnOne = TapGated(np, painter, cpp);
             asked = card.AskedAt > 0 && card.ActedAt < 0;
             Thread.Sleep(600);
             cOne = server.Resets(out _) - c0;
-            Tap(np, cpp);
+            drawnTwo = TapGated(np, painter, cpp);
             Until(() => server.Resets(out _) - c0 >= 1, 3);
             Thread.Sleep(400);
             cTwo = server.Resets(out last) - c0;
             acts = np.Acts;
+            np.PointerLeave(Hand.Left);
         }
-        Want($"slimevr lying card: its button drawn {cp != null}; a first tap asks ({asked}) and sends {cOne} (want 0); the second sends {cTwo} (want 1) of type {last.type} " +
-             $"(want 0), went out {card.ActOk}, {acts} act(s) counted (want 1) -", cp != null && asked && cOne == 0 && cTwo == 1 && last.type == 0 && card.ActOk && acts == 1);
+        Want($"slimevr lying card: its button drawn {cp != null}; a first tap asks ({asked}, the panel's next frame {(drawnOne == null ? "never came" : "drew")} 'Reset?' " +
+             $"{Says(drawnOne, "Reset?")}) and sends {cOne} (want 0); the second sends {cTwo} (want 1) of type {last.type} (want 0), went out {card.ActOk}, 'Sent' drawn " +
+             $"{Says(drawnTwo, "Sent")}, {acts} act(s) counted (want 1) -",
+             cp != null && asked && Says(drawnOne, "Reset?") && cOne == 0 && cTwo == 1 && last.type == 0 && card.ActOk && Says(drawnTwo, "Sent") && acts == 1);
         link.Active = false;
         wrist.OnSlimeReset = null;
         wrist.CloseForTest();
@@ -408,12 +454,18 @@ static class SlimeAlertsTools
                 string rest = Path.Combine(dir, $"slimevr_card{tag}.png");
                 np.Surface.SavePng(gpu, rest);
                 var cp = np.ActionPoint();
-                if (cp is { } cpp) Tap(np, cpp);
-                np.Draw();
+                var drawn = cp is { } cpp ? TapGated(np, painter, cpp) : null;
                 string ask = Path.Combine(dir, $"slimevr_card_ask{tag}.png");
-                np.Surface.SavePng(gpu, ask);
-                Want($"slimevr lying card {(tag.Length == 0 ? "modern" : tag[1..])}: its button drawn {cp != null}, a first tap asks {card.AskedAt > 0 && card.ActedAt < 0} -",
-                     cp != null && card.AskedAt > 0 && card.ActedAt < 0);
+                np.Surface.SavePng(gpu, ask);            // (the frame the panel's own redraw made after the tap)
+                // the laser (HitsAt): on the button and the rest of its card; not on the plain card above it, nor the see-through rest under them
+                const float Mid = NotificationPanel.TW / 2f;
+                bool onButton = cp is { } bp && np.HitsAt(bp), onCard = np.HitsAt(new Vector2(60, 204 + 40)), onPlain = np.HitsAt(new Vector2(Mid, 95)),
+                    under = np.HitsAt(new Vector2(Mid, NotificationPanel.TH - 60)), beside = np.HitsAt(new Vector2(8, 204 + 95));
+                np.PointerLeave(Hand.Left);
+                Want($"slimevr lying card {(tag.Length == 0 ? "modern" : tag[1..])}: its button drawn {cp != null}, a first tap asks {card.AskedAt > 0 && card.ActedAt < 0}, the " +
+                     $"panel's next frame {(drawn == null ? "never came" : "drew")} 'Reset?' {Says(drawn, "Reset?")}; the laser takes the button {onButton}, its card {onCard} " +
+                     $"(want True True), the plain card {onPlain}, under the cards {under}, beside them {beside} (want False False False) -",
+                     cp != null && card.AskedAt > 0 && card.ActedAt < 0 && Says(drawn, "Reset?") && onButton && onCard && !onPlain && !under && !beside);
                 Pictures.RemoveAll(x => x.tag == tag);
                 Pictures.Add((tag, new[] { face, open, rest, ask }));
             }

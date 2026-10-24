@@ -132,6 +132,19 @@ static class MathUtil
         return MathF.Abs(MathF.Atan2(r.Y, u.Y)) * 180 / MathF.PI > LieRollDeg && (MathF.Abs(r.Y) > 0.57f || Forward(head).Y > 0);
     }
 
+    // SlimeVR's lying hint (OrbitApp.SlimeVr.cs): IsLying, or on the back - the face more than ~45° up (forward.y past 0.7). On the back
+    // with the head straight on a pillow the roll reads 0 (right.y ~0), so IsLying alone missed it and came and went with every small turn
+    // of the head on the pillow, a new card each time (review 10-24: pillow 15°, turned 20° lying, 12° not). The placement keeps IsLying
+    // (lying back GazeFrame already follows the look). A seated look up past 45° held 3 s (SlimeAlerts.Lie) counts too: only a hint, and
+    // nothing is reset by itself.
+    public static bool IsLyingDown(in Matrix4x4 head, bool worn)
+    {
+        if (IsLying(head, worn)) return true;
+        if (!worn) return false;
+        Vector3 f = Forward(head);
+        return f.LengthSquared() > 1e-6f && Vector3.Normalize(f).Y > 0.7f;
+    }
+
     // Where Recenter, Reset position, Join and "bring here" put things: GazeFrame as ever (upright a nod or a slight tilt ignored,
     // reclined it follows the look), unless the head lies (IsLying) - then its full rotation, so the monitors lie parallel to the eyes
     // and what goes under them goes towards the chin. Roll = atan2(right.y, up.y): both scale with cos(pitch), so it reads the same at

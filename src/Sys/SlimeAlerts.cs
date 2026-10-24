@@ -10,7 +10,7 @@ namespace Orbit;
 //   readings after it connects can say 0 %).
 // - a tracker that was connected is disconnected or timed out (out of range) - or gone from SlimeVR's list - for LostFor (3 s): once; when
 //   it comes back, a short "back" note (no buzz). One that goes to sleep (v22's Sleeping) is not lost; a flicker under 3 s says nothing.
-// - lying down (Erik's long-standing SlimeVR trouble: lying twists his hip and legs): the head lies (MathUtil.IsLying) for LieFor (3 s),
+// - lying down (Erik's long-standing SlimeVR trouble: lying twists his hip and legs): the head lies (MathUtil.IsLyingDown) for LieFor (3 s),
 //   and lies until it has been up for UpFor (2 s) - a glance up, a turn on the pillow does not end it. Once per lying-down, with SlimeVR
 //   connected, the Yaw reset is offered (the widget puts it first; with the alerts on a card too, its button asking first - nothing is
 //   ever reset by itself).
@@ -106,7 +106,7 @@ public sealed class SlimeAlerts
     double _lieSince = -1, _upSince = -1;
     bool _lying, _offered;
 
-    // every frame: head = the head lies now (MathUtil.IsLying; false without SteamVR or the headset off), connected = SlimeVR's trackers
+    // every frame: head = the head lies now (MathUtil.IsLyingDown; false without SteamVR or the headset off), connected = SlimeVR's trackers
     // are there. True while lying (LieFor in, UpFor out); offer: true once per lying-down - its first frame with SlimeVR connected
     public bool Lie(double now, bool head, bool connected, out bool offer)
     {
