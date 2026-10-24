@@ -53,6 +53,10 @@ static partial class Tools
         public string StatusLinePreview => "\U0001F3B5 Midnight City \u2013 M83";
         public string RoomStatus => Lang.F("{0} in {1}", 12, "Midnight Rooftop") + Lang.F(" · VRCX: {0} friends", 120);
         public string EyeStatus => Lang.T("your eyes are tracked");
+        public int Calibrations;                        // Calibrate... clicked (EyeCalibTest.cs)
+        public bool CanCalibrate = true;                // false: as while the board shows (Calibrate... greyed)
+        public bool CanCalibrateEyes => CanCalibrate;
+        public void CalibrateEyes() => Calibrations++;
         public void ToggleRoom() { }
         public void TheaterEdited() { }
         public IReadOnlyList<WhatsNew.Entry> WhatsNewList { get; set; } = Array.Empty<WhatsNew.Entry>();
@@ -154,6 +158,7 @@ static partial class Tools
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "focus") return FocusOnly(wrist, data, cfg, painter, gpu, dir);     // gaze focus (GazeFocusTest.cs)
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "theaterperf") return TheaterPerfOnly(cfg, painter, gpu, dir);  // a theater frame's cost, 20 s of it (ToolsTheaterPerf.cs)
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "cyfloor") return CyberFloorOnly(cfg, painter, gpu, dir);        // Cyber theater's floor grid, the headset views (CyberFloorTest.cs)
+        if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "eyecalib") return EyeCalibOnly(wrist, data, cfg, painter, gpu, dir);    // the eye calibration's screens (EyeCalibTest.cs)
         if (everything)
         {
             var sw0 = System.Diagnostics.Stopwatch.StartNew();

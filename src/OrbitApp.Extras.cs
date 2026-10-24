@@ -44,8 +44,9 @@ public sealed partial class OrbitApp
         {
             ref var hs = ref _vr.Hands[h];
             var t = _lasers[h].Hovered;
-            // Orbit's own panels only (not a monitor / window: B / Y is their right click), and the game already kept from this hand
-            bool eligible = DoublePress.Eligible(C.General.BlockGameInput, _vr.Suppress[h], t, hs.Grab);
+            // Orbit's own panels only (not a monitor / window: B / Y is their right click), and the game already kept from this hand;
+            // not while the eye calibration's board shows (its B / Y cancels it - not half of a double press, 10-24 review)
+            bool eligible = !_eyeCalib.Showing && DoublePress.Eligible(C.General.BlockGameInput, _vr.Suppress[h], t, hs.Grab);
             if (!_double.Update(h, hs.SecondaryPressed, eligible, now)) continue;
             if (C.General.Haptics) _vr.Haptic((Hand)h, 0.45f, 0.03f);
             if (mode == "watch")

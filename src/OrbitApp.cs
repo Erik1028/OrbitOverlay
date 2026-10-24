@@ -77,6 +77,8 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
     readonly List<ITheaterScreen> _screens = new(), _theaterChoices = new();
     TheaterBar _theaterBar;
     WhatsNewPanel _whatsNewPanel;
+    EyeCalibPanel _eyeCalib;         // the eye tracking's calibration board (Panels/EyeCalibPanel.cs; VRChat > Calibrate...)
+    bool _eyeCalibWanted;            // Calibrate... clicked: the board comes up on the next VR frame
     readonly VrSession _vr = new();
     readonly FramePacer _pacer = new();
     bool _awake = true;
@@ -155,6 +157,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         _wrist.DockIn = new DockInput(_hexpad, _cfg);       // the watch's opened dock: the same link, its own presses
         _roomPanel = new RoomPanel(_gpu, _painter, _cfg);
         _whatsNewPanel = new WhatsNewPanel(_gpu, _painter) { OnOk = DismissWhatsNew };
+        _eyeCalib = new EyeCalibPanel(_gpu, _painter) { OnDone = KeepEyeCalib };
         _theater = new Theater(_gpu, _painter);
         _theater.SoundLevel = _mixer.OutputPeak;             // Cyber's horizon breathes with what plays (Panels/TheaterHorizon.cs)
         _theaterBar = new TheaterBar(_gpu, _painter, _cfg)
@@ -626,6 +629,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             _vr.Update();
             Spikes.Piece("vr: poses + input", vp); vp = System.Diagnostics.Stopwatch.GetTimestamp();
             // the look: the eyes while they are tracked, else the head (VrSession.Gaze)
+            _eyes.Calib = C.General.EyeCalib;            // the calibration on each reading first (Sys/EyeCalib.cs; null: none)
             _eyes.Update(now, C.General.EyeTracking && _vr.HmdValid);
             _vr.EyesValid = _eyes.Valid && _vr.HmdValid;
             _vr.EyeRate = _eyes.PerSec;
@@ -642,6 +646,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
                 _vr.EyeRay = _eyes.RawWorldDir(head);
                 _vr.EyeRayNew = _eyes.Fresh;
                 if (_eyes.Fresh) _eyeLag.Add(_vr, _eyes.RawDir, _eyes.HeadOrigin, _eyes.SampleAt, now);     // (logs the real lag now and then)
+                if (_eyes.Fresh && _eyeCalib.Showing) _eyeCalib.Feed(_eyes.TrackerDir, _eyes.HeadOrigin, head, now);   // (the tracker's own look)
             }
             else
             {
@@ -669,7 +674,8 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             // the Windows cursor's shape: only while a laser points at a panel (nothing else shows it; Vr/SystemCursor.cs)
             if (_lasers[0].Active || _lasers[1].Active) _sysCursor?.Update(now);
             Spikes.Mark(Spikes.Cursor);
-            var targets = Targets();
+            // (the eye calibration's board, while it shows: the lasers and the eye cursor see it alone - Panels/EyeCalibPanel.cs Aim)
+            var targets = _eyeCalib.Aim(Targets());
             string lh = C.General.LaserHand;
             _lasers[0].Smoothing = _lasers[1].Smoothing = C.General.LaserSmoothing;
             Laser.RaycastMode = C.General.Raycast is "steamvr" or "local" ? C.General.Raycast : "shadow";
@@ -682,7 +688,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             foreach (var la in _lasers)
             {
                 la.Thickness = Math.Clamp(C.Appearance.LaserThickness, 1f, 10f) / 1000f;
-                la.AlwaysOn = C.Appearance.LaserAlways;
+                la.AlwaysOn = C.Appearance.LaserAlways && !_eyeCalib.Showing;     // (no beam beside the calibration's dot)
             }
             bool awake = _vr.HeadsetWorn || !C.General.PauseWhenOff;
             _awake = awake;
@@ -707,6 +713,9 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             // after an update: what changed, in front of you once the headset is on (a moment after connecting)
             _whatsNewPanel.Update(_vr, dt, WhatsNewList, WhatsNewSub,
                 awake && _vr.HeadsetWorn && _data.VrSince is { } since && (DateTime.Now - since).TotalSeconds > 3);
+            // the eye calibration (Sys/EyeCalib.cs): the board in front of you, the trigger / B / Y read here, wherever the hands point
+            if (_eyeCalibWanted) { _eyeCalibWanted = false; if (!_eyeCalib.Start(_vr, now)) Log.Info("eye calibration: not started - no headset pose"); }
+            _eyeCalib.Update(_vr, dt, now);
             Perf(4, ref t);
             Spikes.Mark(Spikes.Settings);
             long dp = System.Diagnostics.Stopwatch.GetTimestamp();
@@ -883,19 +892,23 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
     // done, not every time the beam crosses the gap between two screens (VRChat re-centres its cursor when it gets it
     // back). Not after the watch, keyboard and the small panels (0.3 s), and not at all once the panel it was on is gone
     // (turned off, faded away): Erik waited seconds for VRChat after switching the overlay off.
+    // The eye calibration's board (Panels/EyeCalibPanel.cs) takes the trigger and B / Y wherever the hands point: while it shows both
+    // hands are held back, whatever "Keep clicks from the game" says (10-24 review: a hand on nothing gave VRChat the trigger and B / Y
+    // too), and let go as after a small panel once it is gone and the buttons are up.
     readonly double[] _blockUntil = new double[2];
     readonly IPointerTarget[] _blockOn = new IPointerTarget[2];
 
     void BlockGameInput(bool on, double now)
     {
+        bool calib = on && _eyeCalib.Showing;
         for (int h = 0; h < 2; h++)
         {
             ref var hs = ref _vr.Hands[h];
-            bool busy = on && C.General.BlockGameInput && _lasers[h].Active;
+            bool busy = calib || on && C.General.BlockGameInput && _lasers[h].Active;
             if (busy)
             {
                 _vr.Suppress[h] = true;
-                var t = _lasers[h].Hovered;
+                var t = calib ? _eyeCalib : _lasers[h].Hovered;
                 if (t != null) _blockOn[h] = t;
                 _blockUntil[h] = now + (_blockOn[h] is DesktopPanel or WindowPanel && !_lasers[h].EyeCursorOn ? 1.5 : 0.3);   // (the eye cursor: soon)
             }
@@ -911,7 +924,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
     List<IPointerTarget> Targets()
     {
         if (_targets != null) return _targets;
-        _targets = new List<IPointerTarget>(_desktops.Count + _windowPanels.Count + 4) { _settingsPanel, _dockPanel, _roomPanel, _whatsNewPanel, _wrist, _kb, _theaterBar };
+        _targets = new List<IPointerTarget>(_desktops.Count + _windowPanels.Count + 8) { _eyeCalib, _settingsPanel, _dockPanel, _roomPanel, _whatsNewPanel, _wrist, _kb, _theaterBar };
         _targets.AddRange(_windowPanels);
         _targets.AddRange(_desktops);
         return _targets;
@@ -1190,6 +1203,8 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         _dockPanel.DestroyOverlay();
         _roomPanel.DestroyOverlay();
         _whatsNewPanel.DestroyOverlay();
+        _eyeCalib.Stop();
+        _eyeCalibWanted = false;
         ExtrasReset();
         AutoTheaterReset();
         if (_theater.On) StopTheater(glide: false);
@@ -2492,6 +2507,18 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
 
     public void ToggleRoom() => _roomPanel.Toggle();
 
+    // VRChat > Eye tracking > Calibrate... (Sys/EyeCalib.cs): while VR runs with Virtual Desktop's eye tracking there - not while its board
+    // shows (10-24 review: a second Calibrate... started the run over; the button greyed in every style)
+    public bool CanCalibrateEyes => _vr.Connected && C.General.EyeTracking && _eyes.Present && !_eyeCalib.Showing;
+    public void CalibrateEyes() { if (CanCalibrateEyes) _eyeCalibWanted = true; }
+
+    // a calibration that came out right: in the config from the next reading on (Reset in the settings sets it back to null)
+    void KeepEyeCalib(EyeCalibConfig c)
+    {
+        C.General.EyeCalib = c;
+        _cfg.MarkDirty();
+    }
+
     public void TheaterEdited()
     {
         _theater.Apply(C.Theater);
@@ -2537,6 +2564,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         foreach (var d in _desktops) d.Dispose();
         foreach (var w in _windowPanels) w.Dispose();
         _wrist?.Dispose(); _kb?.Dispose(); _settingsPanel?.Dispose(); _dockPanel?.Dispose(); _dockFaces?.Dispose(); _roomPanel?.Dispose(); _theater?.Dispose(); _theaterBar?.Dispose(); _whatsNewPanel?.Dispose();
+        _eyeCalib?.Dispose();
         SocialDispose();                    // a session still open ends here: its recap written (OrbitApp.Social.cs)
         _room.Dispose();
         _photos.Dispose();
