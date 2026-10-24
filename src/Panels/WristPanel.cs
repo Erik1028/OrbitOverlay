@@ -142,7 +142,9 @@ public sealed partial class WristPanel : IPointerTarget, IDisposable
             else target = 0;
         }
         Alpha = Motion.Any ? Alpha + (target - Alpha) * Math.Min(1, dt * 10) : target;      // Motion off: there at once
-        if (Alpha < 0.02f) { Ov.Hide(); _ptr.Leave(); SwipeCancel(); DockLetGo(); _open = null; return; }      // looking away closes an opened widget
+        // looking away keeps an opened widget open: a look back finds it as it was (Erik 10-24: "a wristwatch megjegyezhetné hogy melyik
+        // widget van nyitva akkor is ha elfordítom"); its X, a tap beside it or another page closes it
+        if (Alpha < 0.02f) { Ov.Hide(); _ptr.Leave(); SwipeCancel(); DockLetGo(); return; }
         Ov.SetAlpha(Math.Min(1, Alpha));
         if (!Ov.Visible)
         {
@@ -151,7 +153,8 @@ public sealed partial class WristPanel : IPointerTarget, IDisposable
             // (a 1.2 s cascade on every raise made a look at the time slow; Erik 10-18: "very responsive")
             // Cyber, back within 20 s: the boot again, quicker (Erik 10-19: "ha elnézek és vissza utána nem [animálódik], csak ha sok ideig
             // nem nézek rá"; WristCyberFx.cs)
-            if ((C.Face == "custom" || Theme.Cyber) && !Theme.Classic)
+            // (a widget left open: no cascade or boot under it - the watch is back as it was left)
+            if ((C.Face == "custom" || Theme.Cyber) && !Theme.Classic && _open == null)
             {
                 // (gone under 0.4 s: the eyes slipped off its edge a moment - it simply stays)
                 double away = now - _shownAt;
