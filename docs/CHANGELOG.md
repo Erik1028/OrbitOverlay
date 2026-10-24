@@ -3,6 +3,27 @@
 This file is built into the app: after an update, the "What's new" window shows every section newer than the
 version you came from. Format: "## <version> | <title>", then "- " points (an indented line continues a point).
 
+## 1.18.0 | A photo gallery on the watch, recenter lying down, a steadier eye cursor
+- Photo gallery: the photo widget's opened view (and On this day's) has a Gallery button - every VRChat photo you took,
+  one sheet of them as in VR Gallery (or by day: "All | Days"), newest first. Drag it with the laser or scroll with the
+  stick; the rail at its right jumps through the months and years. A tap opens a photo big, and the arrows then step
+  through all of them.
+- Delete a photo from the watch: the bin button asks first ("Delete?"), a second tap moves the photo into the Recycle
+  Bin - never deleted for good, you can restore it from there.
+- Lying on your side, Recenter (and Reset position, Join, opening the settings...) puts the monitors parallel to your
+  eyes, and the keyboard towards your chin. Sitting, a tilted head or a look down at the watch keeps everything upright.
+- The eye cursor is steadier and more accurate: it stays put while your eyes rest on something, no longer runs ahead
+  when you turn your head, stays on the same spot while gaze focus enlarges the monitor, and a double click lands on one
+  spot. A blink or a short pause in the eye data no longer hands the cursor back to your hand.
+- Cyber: an opened photo fills the whole card.
+- An opened widget stays open when you look away from the watch and back.
+- The bar under the monitors (theater mode and the rest) is always there under the middle monitor.
+- Smoother and lighter, especially in long sessions: the volume mixer no longer leaks memory, VRChat's log is read
+  without turning every line into text, the dock's key pictures are unpacked only while the dock can be seen, textures
+  of what you are not using are let go, the perf log works in the background, and the start-up work after SteamVR
+  connects is spread over frames and done ahead where it can be (from the second start on, the code is compiled ahead
+  on spare cores too: the first frame took half as long).
+
 ## 1.17.0 | Virtual monitors, monitors in front of you, undo in the editor
 - Virtual monitors (Desktops, at the right of the monitor map): screens that exist only in VR, to put windows on. "Add"
   installs the free Virtual Display Driver once (Windows asks you about its publisher); then "- 1 +" sets how many,

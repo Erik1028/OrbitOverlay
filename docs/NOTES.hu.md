@@ -196,6 +196,28 @@ dotnet publish -c Release -o dist
   és a billentyűzetet számolja; az Orbit saját lebegő beállításpanelje nem (Erik: a DXOverlay
   elindult, amikor csak a beállításokat nyitotta meg).
 
+## 1.18.0 – fotógaléria az órán, fekvő recenter, pontosabb szemkurzor (2026-10-24)
+
+- **Fotógaléria** (`Panels/WristGallery.cs`, `Sys/PhotoAlbum.cs`): a fotó- és az Ezen a napon nézetben Galéria gomb – az összes
+  VRChat-fotó (a mappa és a hónap-mappák, név szerint listázva: Eriknél 1903 fotó 83 ms). Alapból „All”: egy lap, négyzetes csempék,
+  5 oszlop (mint a VR Gallery All-ja); „Days”: napcímekkel, a felső nap címe ragad (`Wrist.GalleryDays`). A lap egy vezérlő: lézerrel
+  húzható (modern/Cyber: dobásra csúszik tovább), koppintás nyit; jobb oldalt idősáv (hónap-jelek, évszámok, húzva ugrik, buborékban a
+  hónap); retróban a stílus saját görgetősávja. Cellák: a Windows thumbnail-cache-éből (`IShellItemImageFactory`, ~17 ms; tartalék:
+  a PNG streamelt dekódolása ~160 ms), legfeljebb 72; nagy nézet: 640 px + a VRCX-metaadat a fájl elejéről (az iTXt az IDAT előtt
+  van). Mind a 7 stílusban (modern/Cyber a fotó sarkában, a retrók saját eszköztárukban, a Terminál `> ls`). `--albumbench`
+  (csak olvas), `ORBIT_SNAP_ONLY=photo` (kitalált fotók), `ORBIT_SNAP_WARP=1` (a tesztek WARP-on, GPU nélkül – VR közben).
+- **Törlés**: első koppintás kérdez („Delete?”, 4 s), a második `PhotoBin.Recycle`: csak `VRChat_*.png` a fotómappán belül,
+  link nélkül, fix lemezen, bekapcsolt és elég nagy Lomtárral, `FOF_ALLOWUNDO | FOF_WANTNUKEWARNING`; utána a figyelő, az Ezen a napon
+  és az album azonnal elengedi. Teszt csak a `PhotoBin.Check`-et futtatja, valódi törlés soha.
+- **Fekvő recenter** (`MathUtil.PlacementFrame` / `IsLying`): roll > 40° és (|right.y| > 0,57 vagy felfelé néz) – akkor a fej saját
+  forgatásában; levett headsetnél soha (`VrSession.OnFace`). `FitCurve` a panel saját felfelé-tengelyére merőlegesen mér.
+- **Szemkurzor** (`Vr/EyeSpot.cs`, `Sys/EyeGaze.cs`, `Sys/EyeLag.cs`, `Laser.EyeTick`): lásd fent a Szemkurzor / Szemkövetés pontot.
+- **Hexpad-képek** csak látható dockkal (`HexpadLink.Showing`): addig a szöveg marad meg kulcsonként; 5,3 → 1,1 MB/s foglalás.
+- **Optimalizálás**: keverő natív szivárgása (`IAudioSessionNotification`), a VRChat-napló csak a jelölt sorokból csinál stringet,
+  perf napló szálon, a csatlakozás lépésekben + `BootWarm` + a widgetek bemelegítése (`Panels/WristWarm.cs`), VRAM-elengedés
+  (`OrbitApp.GpuRelease.cs`), multicore JIT (az első képkocka 162 → 79 ms a második indulástól).
+- Nyitva maradó widget ránézésre, mindig látszó sáv a monitorok alatt.
+
 ## 1.17.0 – virtuális monitorok, monitorok eléd, undo a szerkesztőben (2026-10-23)
 
 - **Virtuális monitorok** (`Sys/VirtualMonitors.cs`, `OrbitApp.Virtual.cs`): a részletek lent, a „Virtuális monitorok” fejezetben.
