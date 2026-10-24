@@ -59,6 +59,59 @@ public sealed class VrSession : IDisposable
     // (Sys/EyeGaze.cs), else the head's forward - gaze focus, smart capture, the watch's glance and the dim go by it
     public Vector3 Gaze = -Vector3.UnitZ, GazeOrigin;
     public bool EyesValid;
+    // the eye cursor's ray (Vr/Laser.cs EyeTick): the last new reading, unsmoothed, on the head of its own time (HeadAt); EyeRayNew: a
+    // new reading this frame; EyeRate: Virtual Desktop's readings a second
+    public Vector3 EyeRay = -Vector3.UnitZ;
+    public bool EyeRayNew;
+    public int EyeRate;
+
+    // ---- the head's poses of the last ~0.7 s, each with the moment it is for (Erik 10-24: "az eye tracking kurzor pontosságán még
+    // lehetne javítani"): an eye reading is tens of ms old, the head pose of the frame is predicted ahead - the look put on that head
+    // ran ahead of every head turn. HeadAt gives the head of any moment in between (slerp / lerp of the two around it). The poses kept
+    // are the head as it was, not as predicted for the frame (10-24 review: a prediction overshoots when a head turn stops - ~0.6 deg at
+    // 25 ms of it -, and that went straight into the look): one more pose call a frame, the headset's alone, predicting nothing. ----
+    const int HeadKeep = 64;
+    readonly TrackedDevicePose_t[] _headNow = new TrackedDevicePose_t[1];
+    readonly double[] _headAt = new double[HeadKeep];
+    readonly Quaternion[] _headQ = new Quaternion[HeadKeep];
+    readonly Vector3[] _headP = new Vector3[HeadKeep];
+    int _headN, _headI;
+
+    // the head as it is (or is predicted) at 'at' (Clock seconds)
+    public void NoteHead(double at, in Matrix4x4 m)
+    {
+        var q = Quaternion.Normalize(Quaternion.CreateFromRotationMatrix(m));
+        if (!float.IsFinite(q.W) || !float.IsFinite(m.M41)) return;
+        if (_headN > 0 && at <= _headAt[_headI]) { _headQ[_headI] = q; _headP[_headI] = m.Translation; return; }    // (the same moment again)
+        _headI = (_headI + 1) % HeadKeep;
+        _headAt[_headI] = at;
+        _headQ[_headI] = q;
+        _headP[_headI] = m.Translation;
+        if (_headN < HeadKeep) _headN++;
+    }
+
+    // the head at moment t: between the two poses around it; newer than all: the newest, older than all: the oldest, none (or none of
+    // late - kept only while eye tracking is in use, it may have just come back): Hmd
+    public Matrix4x4 HeadAt(double t)
+    {
+        if (_headN == 0 || t - _headAt[_headI] > 0.25) return Hmd;
+        int i = _headI;
+        if (t >= _headAt[i]) return HeadPose(i, i, 0);
+        for (int k = 1; k < _headN; k++)
+        {
+            int j = (i + HeadKeep - 1) % HeadKeep;
+            if (t >= _headAt[j]) return HeadPose(j, i, (float)((t - _headAt[j]) / Math.Max(1e-6, _headAt[i] - _headAt[j])));
+            i = j;
+        }
+        return HeadPose(i, i, 0);
+    }
+
+    Matrix4x4 HeadPose(int a, int b, float f)
+    {
+        var m = Matrix4x4.CreateFromQuaternion(a == b ? _headQ[a] : Quaternion.Slerp(_headQ[a], _headQ[b], f));
+        m.Translation = a == b ? _headP[a] : Vector3.Lerp(_headP[a], _headP[b], f);
+        return m;
+    }
     readonly ulong[] _handSource = new ulong[2];
     readonly VRActiveActionSet_t[] _handSets = new VRActiveActionSet_t[2];
     bool _perHandFailed;
@@ -154,6 +207,7 @@ public sealed class VrSession : IDisposable
         }
         catch (Exception ex) { Log.Warn("IdentifyApplication: " + ex.Message); }
         SetupInput(actionManifestPath);
+        _headN = 0;
         Connected = true;
         Log.Info($"SteamVR connected: adapter {adapter}, {DisplayHz:0.#} Hz, input: {InputStatus}");
         return true;
@@ -232,6 +286,13 @@ public sealed class VrSession : IDisposable
             DeviceValid[i] = _poses[i].bPoseIsValid && _poses[i].bDeviceIsConnected;
             DeviceConnected[i] = _poses[i].bDeviceIsConnected;
             if (DeviceValid[i]) Device[i] = MathUtil.FromHmd(_poses[i].mDeviceToAbsoluteTracking);
+        }
+        // the head now, unpredicted (HeadAt) - while eye tracking is in use (the readings come, or the look is held)
+        if (EyesValid || EyeRate > 0)
+        {
+            double at = Clock.Now;
+            Sys.GetDeviceToAbsoluteTrackingPose(ETrackingUniverseOrigin.TrackingUniverseStanding, 0, _headNow);
+            if (_headNow[0].bPoseIsValid && _headNow[0].bDeviceIsConnected) NoteHead(at, MathUtil.FromHmd(_headNow[0].mDeviceToAbsoluteTracking));
         }
         UpdateWorn();
         _idleTick = Idle ? _idleTick + 1 : 0;
@@ -337,6 +398,7 @@ public sealed class VrSession : IDisposable
     {
         if (!Connected) return;
         Connected = false;
+        _headN = 0;
         try { if (acknowledgeQuit) Sys.AcknowledgeQuit_Exiting(); } catch { }
         try { OpenVR.Shutdown(); } catch { }
         Sys = null; Ov = null; Comp = null; _in = null;

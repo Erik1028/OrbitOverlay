@@ -81,4 +81,19 @@ public static class LocalRaycast
         return true;
     }
 
+    // the other way round: the point in the world where uv (top-left origin) of the overlay is (the eye cursor's spot kept on the pixel
+    // it is on while the screen moves - Laser.EyeTick)
+    public static Vector3 PointAt(in Matrix4x4 world, float width, float curvature, float texW, float texH, Vector2 uvTopLeft)
+    {
+        float h = texW > 0 ? width * texH / texW : 0;
+        float y = (0.5f - uvTopLeft.Y) * h;
+        Vector3 p;
+        if (!(curvature > 0)) p = new Vector3((uvTopLeft.X - 0.5f) * width, y, 0);
+        else
+        {
+            double r = width / (2 * Math.PI * curvature), th = (uvTopLeft.X - 0.5) * 2 * Math.PI * curvature;
+            p = new Vector3((float)(r * Math.Sin(th)), y, (float)(r - r * Math.Cos(th)));
+        }
+        return Vector3.Transform(p, world);
+    }
 }

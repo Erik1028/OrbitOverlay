@@ -41,7 +41,7 @@ static class Program
         bool has(string a) => args.Contains(a);
         if (has("--tempstest")) { Log.Init("orbit-tool.log"); return TempSensors.Probe(); }      // the real temperature sources read twice, read only (Sys/Temps.cs)
         if (has("--avatartest")) { Log.Init("orbit-tool.log"); return AvatarProbe.Run(); }      // VRChat's real OSC configs read, only counts logged (AvatarViewTest.cs)
-        bool tool = has("--snapshot") || has("--animstrip") || has("--faceshot") || has("--clockshot") || has("--selftest") || has("--scene") || has("--osctest") || has("--tasktest") || has("--filtertest") || has("--focustest") || has("--leaktest") || has("--raytest") || has("--updatetest") || has("--wintest") || has("--docktest") || has("--roomtest") || has("--theatertest") || has("--perfbench") || has("--ovdump") || has("--pacetest") || has("--pacertest") || has("--capturetest") || has("--voltest") || has("--mixertest") || has("--tapotest") || has("--eyetest") || has("--mixtapetest") || has("--virtualstatus") || has("--tapofind") || has("--tapofollow") || has("--statsbench") || has("--albumbench");
+        bool tool = has("--snapshot") || has("--animstrip") || has("--faceshot") || has("--clockshot") || has("--selftest") || has("--scene") || has("--osctest") || has("--tasktest") || has("--filtertest") || has("--focustest") || has("--leaktest") || has("--raytest") || has("--updatetest") || has("--wintest") || has("--docktest") || has("--roomtest") || has("--theatertest") || has("--perfbench") || has("--ovdump") || has("--pacetest") || has("--pacertest") || has("--capturetest") || has("--voltest") || has("--mixertest") || has("--tapotest") || has("--eyetest") || has("--eyechecks") || has("--mixtapetest") || has("--virtualstatus") || has("--tapofind") || has("--tapofollow") || has("--statsbench") || has("--albumbench");
         if (tool) return RunTool(args);
 
         // install / uninstall (the same exe: named "OrbitSetup.exe" it is the installer)
@@ -131,36 +131,99 @@ static class Program
     }
 
     // dev: Virtual Desktop's eye tracking, READ ONLY (Sys/EyeGaze.cs) - 8 s of what the map says, 5 lines a second: look around (ahead, left,
-    // right, up, down) and blink while it runs; nothing is written anywhere
+    // right, up, down) and blink while it runs; nothing is written anywhere. (Erik 10-24, the eye cursor's accuracy) Read every 1 ms, so
+    // it also shows Virtual Desktop's own rate (new readings a second, the gaps between them, how many 90 Hz frames got none / one / more),
+    // each eye's raw look, the eyes' vergence and height difference, the right eye's place, the blink weights (EyesClosed 12 / 13,
+    // EyesLookDown 14 / 15); at the end every weight's maximum (which went past 0.5) and the raw look's step-to-step noise.
     static int EyeProbe()
     {
         using var g = new EyeGaze();
+        Native.timeBeginPeriod(1);                       // (Sleep(1) a millisecond, not the 15.6 ms tick)
+        try { return EyeProbeRun(g); }
+        finally { Native.timeEndPeriod(1); }
+    }
+
+    static unsafe int EyeProbeRun(EyeGaze g)
+    {
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        int lines = 0, valid = 0;
+        int lines = 0, valid = 0, news = 0, gapN = 0, slot = -1, inSlot = 0, slots0 = 0, slots1 = 0, slots2 = 0, stepN = 0;
+        var gaps = new double[4096];
+        var maxW = new float[70];
+        float min12 = float.MaxValue, max12 = float.MinValue, min13 = float.MaxValue, max13 = float.MinValue;
+        double lastNew = -1, step2 = 0;
+        System.Numerics.Vector3 prevRaw = default;
+        bool havePrev = false;
+        static float Yaw(System.Numerics.Vector3 v) => MathF.Atan2(v.X, -v.Z) * 180 / MathF.PI;
+        static float Pitch(System.Numerics.Vector3 v) => MathF.Asin(Math.Clamp(v.Y, -1, 1)) * 180 / MathF.PI;
+        static System.Numerics.Vector3 Look(System.Numerics.Quaternion q) =>
+            q.LengthSquared() > 1e-6f ? System.Numerics.Vector3.Transform(-System.Numerics.Vector3.UnitZ, System.Numerics.Quaternion.Normalize(q)) : -System.Numerics.Vector3.UnitZ;
         while (sw.Elapsed.TotalSeconds < 8)
         {
             double now = sw.Elapsed.TotalSeconds;
             g.Update(now, true);
+            var s = g.Last;
+            int sl = (int)(now * 90);                    // the 1/90 s slot (a frame) this read is in
+            if (sl != slot)
+            {
+                if (slot >= 0) { if (inSlot == 0) slots0++; else if (inSlot == 1) slots1++; else slots2++; }
+                slot = sl;
+                inSlot = 0;
+            }
+            if (g.Present && g.NewReading)
+            {
+                news++;
+                inSlot++;
+                if (lastNew >= 0 && gapN < gaps.Length) gaps[gapN++] = now - lastNew;
+                lastNew = now;
+                for (int i = 0; i < 70; i++) maxW[i] = Math.Max(maxW[i], s.ExpressionWeights[i]);
+                min12 = Math.Min(min12, s.ExpressionWeights[12]); max12 = Math.Max(max12, s.ExpressionWeights[12]);
+                min13 = Math.Min(min13, s.ExpressionWeights[13]); max13 = Math.Max(max13, s.ExpressionWeights[13]);
+            }
+            if (g.Fresh)
+            {
+                if (havePrev)
+                {
+                    float st = EyeSpot.Angle(prevRaw, g.RawDir) * 180 / MathF.PI;
+                    if (st < 1) { step2 += st * st; stepN++; }          // (a saccade's step left out)
+                }
+                prevRaw = g.RawDir;
+                havePrev = true;
+            }
             if (now * 5 >= lines)
             {
                 lines++;
-                var s = g.Last;
                 if (!g.Present) { Log.Info("eyes: no VirtualDesktop.BodyState map (the streamer, 'Forward tracking data' on?)"); }
                 else
                 {
                     var d = g.HeadDir;
-                    float yaw = MathF.Atan2(d.X, -d.Z) * 180 / MathF.PI, pitch = MathF.Asin(Math.Clamp(d.Y, -1, 1)) * 180 / MathF.PI;
+                    float yaw = Yaw(d), pitch = Pitch(d);
                     var ql = s.LeftEyePose.Orientation; var qr = s.RightEyePose.Orientation;
+                    System.Numerics.Vector3 dl = Look(ql), dr = Look(qr);
                     if (g.Valid) valid++;
                     Log.Info($"eyes: {(g.Valid ? "valid" : "-----")} look {yaw,6:0.0} right {pitch,6:0.0} up | L valid {s.LeftEyeIsValid} conf {s.LeftEyeConfidence:0.00} |q| {ql.Length():0.000} " +
                              $"at {s.LeftEyePose.Position.X:0.000},{s.LeftEyePose.Position.Y:0.000},{s.LeftEyePose.Position.Z:0.000} | R valid {s.RightEyeIsValid} conf {s.RightEyeConfidence:0.00} " +
-                             $"|q| {qr.Length():0.000} | flags {s.FaceFlags} follow {s.EyeFollowingBlendshapesValid}");
+                             $"|q| {qr.Length():0.000} at {s.RightEyePose.Position.X:0.000},{s.RightEyePose.Position.Y:0.000},{s.RightEyePose.Position.Z:0.000} | flags {s.FaceFlags} " +
+                             $"follow {s.EyeFollowingBlendshapesValid} | raw L {Yaw(dl),5:0.0} {Pitch(dl),5:0.0} R {Yaw(dr),5:0.0} {Pitch(dr),5:0.0}, vergence {Yaw(dr) - Yaw(dl),5:0.00} " +
+                             $"height {Pitch(dl) - Pitch(dr),5:0.00} deg | closed {s.ExpressionWeights[12]:0.00} {s.ExpressionWeights[13]:0.00} look down " +
+                             $"{s.ExpressionWeights[14]:0.00} {s.ExpressionWeights[15]:0.00} | {g.PerSec} a second");
                 }
             }
-            System.Threading.Thread.Sleep(10);
+            System.Threading.Thread.Sleep(1);
         }
         Log.Info($"eyes: {valid} of {lines} readings valid");
-        return g.Present ? 0 : 1;
+        if (!g.Present) return 1;
+        Array.Sort(gaps, 0, gapN);
+        double Gap(double q) => gapN == 0 ? 0 : gaps[Math.Min(gapN - 1, (int)(q * gapN))] * 1000;
+        Log.Info($"eyes: {news / 8.0:0.0} new readings a second; gaps p50 {Gap(0.5):0.0} / p95 {Gap(0.95):0.0} / max {Gap(1):0.0} ms; 90 Hz frames with " +
+                 $"0 / 1 / 2+ new readings: {slots0} / {slots1} / {slots2}");
+        double rms = stepN > 0 ? Math.Sqrt(step2 / stepN) : 0;
+        Log.Info($"eyes: the raw look's step from reading to reading {rms:0.000} deg RMS ({stepN} steps under 1 deg) - noise ~{rms / 2:0.000} deg an axis if white");
+        var over = new System.Text.StringBuilder();
+        float maxAll = 0;
+        for (int i = 0; i < 70; i++) { maxAll = Math.Max(maxAll, maxW[i]); if (maxW[i] > 0.5f) over.Append(' ').Append(i).Append('=').Append(maxW[i].ToString("0.00")); }
+        Log.Info($"eyes: the weights' maximum {maxAll:0.00}, past 0.5:{(over.Length > 0 ? over.ToString() : " none")}; EyesClosed 12 {min12:0.00}-{max12:0.00}, " +
+                 $"13 {min13:0.00}-{max13:0.00} (a blink: both near 1)");
+        return 0;
     }
 
     // dev: the bulb straight (TapoDirect), READ ONLY - its state with the key from Hexpad's / Lumos's account (made in memory, not kept),
@@ -270,6 +333,12 @@ static class Program
                 return MixerViewTools.Probe();
             if (args.Contains("--eyetest"))
                 return EyeProbe();
+            if (args.Contains("--eyechecks"))           // the eye cursor's filter, the readings, the head of a moment - CPU only, no VR (GazeFocusTest.cs)
+            {
+                int bad = GazeFocusTools.EyeSpotChecks((line, ok) => Log.Info(line));
+                Log.Info($"eye checks: {(bad == 0 ? "every check as wanted" : $"{bad} checks NOT as wanted")}");
+                return bad == 0 ? 0 : 1;
+            }
             if (args.Contains("--mixtapetest"))
                 return MixtapeLinkTest.Run(args.Contains("live"));
             if (args.Contains("--tapotest"))

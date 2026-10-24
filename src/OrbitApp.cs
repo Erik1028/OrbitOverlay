@@ -29,6 +29,9 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
     readonly GpuStats _gpuStats = new();
     readonly AllocWatch _allocWatch = new();         // what allocates, by type and thread: the perf log's "alloc:" line (Sys/AllocWatch.cs)
     readonly EyeGaze _eyes = new();                  // Virtual Desktop's eye tracking (Sys/EyeGaze.cs)
+    readonly EyeLag _eyeLag = new();                 // how far its readings lag behind the head (logged only; Sys/EyeLag.cs)
+    Matrix4x4 _eyeHead = Matrix4x4.Identity;         // the head of the last reading's time (worked out once a reading)
+    double _eyeHeadFor = double.NaN;
     readonly MixtapeLink _mixtape = new();           // Mixtape's Remote API: the Mixtape widget (Sys/MixtapeLink.cs)
     readonly MediaInfo _media = new();
     readonly AudioMixer _mixer = new();              // the output device's apps; the Windows volume in VR (Sys/AudioMixer.cs)
@@ -595,8 +598,27 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             // the look: the eyes while they are tracked, else the head (VrSession.Gaze)
             _eyes.Update(now, C.General.EyeTracking && _vr.HmdValid);
             _vr.EyesValid = _eyes.Valid && _vr.HmdValid;
-            _vr.Gaze = _vr.EyesValid ? _eyes.WorldDir(_vr.Hmd) : MathUtil.Forward(_vr.Hmd);
-            _vr.GazeOrigin = _vr.EyesValid ? _eyes.WorldOrigin(_vr.Hmd) : _vr.Hmd.Translation;
+            _vr.EyeRate = _eyes.PerSec;
+            if (_vr.EyesValid)
+            {
+                // on the head of the reading's own time, not the one predicted for this frame (Erik 10-24: "az eye tracking kurzor
+                // pontosságán még lehetne javítani" - the cursor ran ahead of every head turn and slid back; EyeGaze.Latency). Once a
+                // reading: a look held through shut eyes (EyeGaze.HoldShut, 1.5 s) outlives the head poses VrSession keeps (~0.7 s) -
+                // looked up again it would turn with the head of 0.7 s ago
+                if (_eyeHeadFor != _eyes.SampleAt) { _eyeHeadFor = _eyes.SampleAt; _eyeHead = _vr.HeadAt(_eyes.SampleAt - EyeGaze.Latency); }
+                var head = _eyeHead;
+                _vr.Gaze = _eyes.WorldDir(head);
+                _vr.GazeOrigin = _eyes.WorldOrigin(head);
+                _vr.EyeRay = _eyes.RawWorldDir(head);
+                _vr.EyeRayNew = _eyes.Fresh;
+                if (_eyes.Fresh) _eyeLag.Add(_vr, _eyes.RawDir, _eyes.HeadOrigin, _eyes.SampleAt, now);     // (logs the real lag now and then)
+            }
+            else
+            {
+                _vr.Gaze = MathUtil.Forward(_vr.Hmd);
+                _vr.GazeOrigin = _vr.Hmd.Translation;
+                _vr.EyeRayNew = false;
+            }
             Spikes.Piece("vr: eyes", vp); vp = System.Diagnostics.Stopwatch.GetTimestamp();
             bool watched = (_wrist?.Alpha ?? 0) > 0.02f;
             _data.Vr.Watched = watched;                 // the batteries every second while the watch shows, else every 5 s
@@ -624,6 +646,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             string eyeCursor = C.General.EyeTracking ? C.General.EyeCursor : "off";       // the eye cursor (Vr/Laser.cs)
             Laser.EyeWarp = eyeCursor == "click";
             Laser.EyeFollow = eyeCursor == "follow";
+            Laser.EyeTick(_vr, targets, dt);                                 // the eye cursor's spot, once a frame for both hands
             Laser.PopOut = _popOut ??= PopOutWindow;                         // a window pulled off a monitor (OrbitApp.PopOut.cs)
             RestoreDueWindow(now);
             foreach (var la in _lasers)
