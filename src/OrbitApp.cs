@@ -147,6 +147,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         _wrist.OnDeletePhoto = DeletePhoto;                  // the photo view's Delete, after its second tap: into the Recycle Bin (OrbitApp.Photos.cs)
         _wrist.OnSendNewest = SendNewestPhoto;               // ... its Send: VR Gallery sends its newest photo to Discord (OrbitApp.Photos.cs)
         _wrist.OnWantHi = WantHiPhoto;                       // ... its zoom: the photo read sharp (OrbitApp.Photos.cs)
+        _wrist.OnSlimeReset = k => _slime.Reset((SlimeVrLink.ResetKind)k);     // SlimeVR's resets, after their second tap (OrbitApp.SlimeVr.cs)
         _kb = new KeyboardPanel(_gpu, _painter, _cfg);
         _settingsPanel = new SettingsPanel(_gpu, _painter, _cfg, this, PreparePreviews);
         _dockFaces = new HexpadFaces();
@@ -785,6 +786,8 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         Spikes.Piece("app: temperatures", ap); ap = System.Diagnostics.Stopwatch.GetTimestamp();
         UpdateAvatar(now);                  // the VRChat avatar's toggles (OrbitApp.Avatar.cs)
         Spikes.Piece("app: avatar", ap); ap = System.Diagnostics.Stopwatch.GetTimestamp();
+        UpdateSlimeVr(now);                 // SlimeVR's trackers while its widget can be seen (OrbitApp.SlimeVr.cs)
+        Spikes.Piece("app: slimevr", ap); ap = System.Diagnostics.Stopwatch.GetTimestamp();
         // the weather: the place from the settings (else Hexpad's), fetched while a weather widget is on one of the pages
         _weather.SetLocation(C.Weather?.Location);
         _weather.Active = C.Wrist.Face == "custom" && WatchPages.Any(C.Wrist, "weather");
@@ -1041,7 +1044,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
 
     // SteamVR connected and the watchers' turn: n frames after the connect's last step. They wake one a frame, not all in the first
     // frame (Erik 10-24: their threads, sockets and first reads were 20-45 ms of it - the spike line's "app (photos, friends, temps,
-    // avatar...)"): notifications 1, room 2, photos 3, friends 4, on this day 5, temperatures 6, avatar 7, Mixtape 8, Hexpad 9 (~0.1 s).
+    // avatar...)"): notifications 1, room 2, photos 3, friends 4, on this day 5, temperatures 6, avatar 7, Mixtape 8, Hexpad 9, SlimeVR 10 (~0.1 s).
     bool VrAfter(int n) => _vr.Connected && _bootStep < 0 && _vrFrames >= _bootEnd + n;
 
     void CreateDashboard()
@@ -2513,6 +2516,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         _memories.Dispose();
         _album.Dispose();
         _temps.Dispose();
+        _slime.Dispose();
         _weather.Dispose();
         _lumos.Dispose();
         _vramAdapter?.Dispose();

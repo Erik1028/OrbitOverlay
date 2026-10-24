@@ -118,6 +118,7 @@ static partial class Tools
         AvatarViewTools.Fake(data);                     // a made-up avatar's toggles: never VRChat, its OSC folder or its port (AvatarViewTest.cs)
         data.Memories = OnThisDayTempsTools.Memories(); // made-up photos of this day in earlier years, made-up temperatures (OnThisDayTempsTest.cs)
         data.Temps = OnThisDayTempsTools.Temps();
+        data.SlimeVr = SlimeVrViewTools.Fake();         // made-up trackers: never SlimeVR's server (SlimeVrTest.cs)
         var frng = new Random(3);
         for (int i = 0; i < VrStats.FrameHistory; i++)
         {
@@ -142,6 +143,7 @@ static partial class Tools
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "mixtape") return MixtapeOnly(wrist, data, cfg, painter, gpu, dir);
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") is { } kindOnly && kindOnly.StartsWith("kind:")) return KindOnly(wrist, data, cfg, painter, gpu, dir, kindOnly[5..]);
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "avatar") return AvatarOnly(wrist, data, cfg, painter, gpu, dir);
+        if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "slimevr") return SlimeVrOnly(wrist, data, cfg, painter, gpu, dir);    // SlimeVR's widget and link (SlimeVrTest.cs)
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "backdrops") return BackdropsOnly(cfg, painter, gpu, dir);    // theater's backdrops (ToolsBackdrops.cs)
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "citylife") return CityLifeOnly(cfg, painter, gpu, dir);     // Cyber's night city alive (CityLifeTest.cs)
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "ambilight") return AmbilightOnly(cfg, painter, gpu, dir);     // theater's glow (AmbilightTest.cs)
@@ -629,6 +631,8 @@ static partial class Tools
             LightsViewTools.Run(wrist, data, cfg, gpu, dir, tag);             // the light and RGB widgets and opened, on made-up states
             if (tag == "") OnThisDayTempsTools.DataChecks(dir);               // on this day's picking, the temperatures' parsing, the hot alert
             OnThisDayTempsTools.Run(wrist, data, cfg, gpu, dir, tag);         // both widgets and opened, on made-up photos and readings
+            if (tag == "") SlimeVrViewTools.DataChecks(wrist, data, cfg, gpu, dir);     // the SolarXR link on a made-up server of the tool's own (never SlimeVR's)
+            SlimeVrViewTools.Run(wrist, data, cfg, gpu, dir, tag);            // the SlimeVR widget and opened, on made-up trackers
             // gallery 0's media widget (cells 0-2, row 2): a tap on its card, away from its button
             wcfg.Widgets = Gallery(0);
             wrist.Settle();

@@ -46,6 +46,7 @@ public sealed partial class WristPanel
         "memory" => "memory",
         "temps" => "temps",
         "avatar" => "avatar",
+        "slimevr" => "slimevr",
         _ => null,
     };
 
@@ -63,6 +64,7 @@ public sealed partial class WristPanel
         NotesFromTop();
         PhotoFromNewest();
         SocialFromTop();
+        SvDisarm();                         // (SlimeVR's resets ask again: WristSlimeVr.cs)
         DockLetGo();
         _ui.SpringFrom(OpenKey, 0);
         _dirty = true;
@@ -93,6 +95,7 @@ public sealed partial class WristPanel
         NotesFromTop();
         PhotoFromNewest();
         SocialFromTop();
+        SvDisarm();
         _ui.SpringFrom(OpenKey, 1);
         return true;
     }
@@ -204,6 +207,7 @@ public sealed partial class WristPanel
             case "memory": PhotoDetail(E, d); break;
             case "temps": TempsDetail(c, d); break;
             case "avatar": AvatarDetail(E, d); break;         // every button of the avatar (WristAvatar.cs)
+            case "slimevr": SlimeDetail(E, d); break;         // the trackers and SlimeVR's resets (WristSlimeVr.cs)
             case "mixtape": MixtapeDetail(E, d); break;       // the whole player (WristMixtape.cs)
         }
         _ui.Inert = inert;
@@ -646,6 +650,7 @@ public sealed partial class WristPanel
             case "rgb": Rgb95Detail(c, d); break;
             case "temps": Temps95Detail(c, d); break;
             case "avatar": Avatar95Detail(c, d); break;       // (WristAvatar95.cs)
+            case "slimevr": Slime95Detail(c, d); break;       // (WristSlimeVr.cs)
             case "mixtape": Mixtape95Detail(c); break;
         }
     }

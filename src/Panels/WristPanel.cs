@@ -29,6 +29,7 @@ public sealed class PanelData
     public TempReport Temps;             // the temperatures (the Temperatures widget, the hot alert; null = not read)
     public WeatherReport Weather;        // the weather widget's report (Sys/Weather.cs; null = none asked for)
     public FriendsWatcher.Snapshot Friends;  // VRCX's friends online (the friends widget; null = not followed)
+    public SlimeVrLink.Snapshot SlimeVr;     // SlimeVR's trackers (the SlimeVR widget, Sys/SlimeVrLink.cs; null = not followed)
     public SessionRecap Recap;           // the last session's recap (the recap widget; null = none yet)
     public LumosLink Lamp;               // the room light through Lumos (Sys/RoomLights.cs; null = none)
     public PrismaLink Rgb;               // the PC's RGB through Prisma
@@ -569,7 +570,7 @@ public sealed partial class WristPanel : IPointerTarget, IDisposable
         if (DockLive) { DockIn.Scroll(px, n); if (DockIn.TakeDirty()) _dirty = true; return; }      // the stick over a knob turns it
         if (MixerScroll(px, n)) return;            // the stick over a mixer's slider moves it, in the opened mixer off them it scrolls
         if (PhotoScroll(n)) return;                // the opened photo: the stick steps through the day's photos (WristPhoto.cs)
-        if (!(DetailIs("room") || DetailIs("notifications") || DetailIs("friends") || DetailIs("recap") || DetailIs("avatar") || DetailIs("mixtape")) || _closing) return;
+        if (!(DetailIs("room") || DetailIs("notifications") || DetailIs("friends") || DetailIs("recap") || DetailIs("avatar") || DetailIs("mixtape") || DetailIs("slimevr")) || _closing) return;
         if (Theme.Classic)
         {
             _wheel95 += n / 3;
