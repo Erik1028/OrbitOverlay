@@ -355,6 +355,9 @@ public sealed partial class NotificationPanel : IDisposable
     public void AddForPreview(Notification n) { n.Vis = 1; n.Shown = 0; _cards.Add(n); }
     public Surface Surface => _surf;
 
+    // no retro style on a while (OrbitApp.GpuSweep, Erik 10-24: Orbit's VRAM): its half-size canvas let go, made again by the next retro draw
+    public void ReleaseStyle() { if (!Theme.Classic) { _canvas95?.Dispose(); _canvas95 = null; } }
+
     public void Dispose() { DestroyOverlay(); _surf.Dispose(); _sound.Dispose(); _canvas95?.Dispose(); }
 }
 

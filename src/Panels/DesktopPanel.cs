@@ -215,6 +215,9 @@ public sealed class DesktopPanel : ITheaterScreen, IDisposable
     CyberScreenFx _cyFx;
     double _lastNow;
 
+    // Cyber's HUD frame unused a minute: its texture let go (CyberScreenFx.ReleaseIdle; OrbitApp.GpuSweep)
+    public void ReleaseIdleFx(double now) => _cyFx?.ReleaseIdle(now);
+
     // ---- IPointerTarget ----
     public VrOverlay Overlay => Ov;
     public bool Interactive => Ov != null && Ov.Visible && _vis > 0.8f;

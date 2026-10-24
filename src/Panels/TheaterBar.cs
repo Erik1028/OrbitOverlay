@@ -525,6 +525,10 @@ public sealed partial class TheaterBar : IPointerTarget, IDisposable
         return _surf;
     }
 
+    // no retro style on a while (OrbitApp.GpuSweep, Erik 10-24: Orbit's VRAM): its half-size canvas let go, made again by the next retro
+    // draw (a relayout lets it go too - only once the bar is laid out again)
+    public void ReleaseStyle() { if (!Theme.Classic) { _canvas95?.Dispose(); _canvas95 = null; } }
+
     public void Dispose()
     {
         DestroyOverlay();

@@ -43,7 +43,15 @@ public sealed partial class SettingsView
         ui.End();
     }
 
-    public void Dispose95() { _canvas95?.Dispose(); _canvas95 = null; _cyKeep?.Dispose(); _cyKeep = null; }
+    public void Dispose95() { _canvas95?.Dispose(); _canvas95 = null; _cyKeep?.Dispose(); _cyKeep = null; _cyKept = false; }
+
+    // the style changed a while ago (OrbitApp.GpuSweep, Erik 10-24: Orbit's VRAM): the 1995 canvas without a retro style, Cyber's kept
+    // console without Cyber - each made again by the next draw that wants it
+    public void ReleaseStyle()
+    {
+        if (!Theme.Classic) { _canvas95?.Dispose(); _canvas95 = null; }
+        if (!Theme.Cyber) { _cyKeep?.Dispose(); _cyKeep = null; _cyKept = false; }
+    }
 
     public static int H95() => W95H;
 

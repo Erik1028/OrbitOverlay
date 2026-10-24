@@ -42,6 +42,8 @@ public sealed class CyberScreenFx : IDisposable
     float _sel;
     bool _selShown;                                  // the overlay's texture is the "selected" picture (only its alpha changes)
     Surface _selSurf;
+    double _usedAt = -1e9;                           // the frame overlay last showed (ReleaseIdle)
+    const double IdleS = 60;
 
     public CyberScreenFx(Gpu g, string key) { _g = g; _key = key; }
 
@@ -69,6 +71,7 @@ public sealed class CyberScreenFx : IDisposable
         bool appear = ta < 0.42, lockOn = tl < 0.6, release = tr < 0.35;
         bool frame = on && CyberFx.Full && Painter != null && panel.Visible && (appear || lockOn || release || hiding || k < 1);
         _sel = on && theater && !hiding && k >= 1 && Painter != null && panel.Visible ? BarSelect : 0;
+        if (frame || _sel > 0.01f) _usedAt = now;
         if (!frame)
         {
             if (_sel > 0.01f) { Selected(panel, tex); return; }
@@ -282,6 +285,20 @@ public sealed class CyberScreenFx : IDisposable
         float aspect = tex.X > 1 && tex.Y > 1 ? tex.Y / tex.X : 9 / 16f;
         int h = (int)MathF.Round((HudW - 2 * M) * Math.Clamp(aspect, 0.1f, 4f) + 2 * M);
         if (_surf == null || _surf.H != h) { _surf?.Dispose(); _surf = new Surface(_g, HudW, h); }
+    }
+
+    // A minute without its animation or "selected" (or in another style): the frame's texture let go (Erik 10-24: Orbit's VRAM - 2.3 MB a
+    // screen, kept for good after the first appear, for the 0.25-0.6 s it shows). Only with its overlay hidden (the headset off stops the
+    // panels' updates: one may be frozen half way through), SteamVR told first; EnsureSurf makes it again the next time it shows. The
+    // overlay stays (no texture until then). OrbitApp.GpuSweep, once a second.
+    public void ReleaseIdle(double now)
+    {
+        if (_surf == null || now - _usedAt < IdleS || (_hud != null && _hud.Visible)) return;
+        _hud?.ClearTexture();
+        _surf.Dispose();
+        _surf = null;
+        _selSurf = null;
+        _selShown = false;
     }
 
     // the panel's overlay goes (monitors rebuilt, window closed): the frame with it; the bounds are the new overlay's own

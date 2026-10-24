@@ -399,7 +399,8 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
                  $"all threads {(GC.GetTotalAllocatedBytes() - _allocAllMark) / secs / 1024:0.0} KB/s, " +
                  $"GC {GC.CollectionCount(0) - _gcMark[0]}/{GC.CollectionCount(1) - _gcMark[1]}/{GC.CollectionCount(2) - _gcMark[2]} " +
                  $"({(GC.GetTotalPauseDuration() - _gcPauseMark).TotalMilliseconds:0.0} ms pause), heap {GC.GetGCMemoryInfo().HeapSizeBytes / 1048576.0:0.0} MB, " +
-                 $"{ProcessCounters()}, gc committed {GC.GetGCMemoryInfo().TotalCommittedBytes / 1048576.0:0} MB | bytes/loop:{sa}");      // (Environment.WorkingSet: no - it may read every process too)
+                 $"{ProcessCounters()}, gc committed {GC.GetGCMemoryInfo().TotalCommittedBytes / 1048576.0:0} MB | bytes/loop:{sa}" +       // (Environment.WorkingSet: no - it may read every process too)
+                 $" | surfaces {Surface.LiveCount}, {Surface.LiveBytes / 1048576.0:0} MB{OwnVram()}");     // (the textures Orbit holds; its VRAM: OrbitApp.GpuRelease.cs)
         if (_allocWatch.TakeLine(secs) is { } al) Log.Info(al);
         var gi = GC.GetGCMemoryInfo(GCKind.Any);
         if (gi.Index > 0 && gi.Index != _lastGcLogged)
@@ -784,7 +785,9 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         _win.Tick(now);
         Spikes.Piece("the settings window", wt); wt = System.Diagnostics.Stopwatch.GetTimestamp();
         _cfg.SaveIfDue();
-        Spikes.Piece("config save", wt);
+        Spikes.Piece("config save", wt); wt = System.Diagnostics.Stopwatch.GetTimestamp();
+        GpuSweep(now);                      // the textures of what is not in use let go, outside every draw (OrbitApp.GpuRelease.cs)
+        Spikes.Piece("gpu: release", wt);
         Spikes.Mark(Spikes.Window);
         Spikes.End();                       // (the frame's parts kept if it was the window's slowest: Sys/Spikes.cs)
     }
@@ -874,6 +877,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         _roomPanel.CreateOverlay(_vr);
         _whatsNewPanel.CreateOverlay(_vr);
         _theater.CreateOverlay();
+        _gpuIdleFrom = Clock.Now;           // (theater's textures go once Orbit is unused 5 minutes from here on: OrbitApp.GpuRelease.cs)
         _theaterBar.CreateOverlay();
         _notifyPanel.CreateOverlay();
         try { _winrtDev ??= MonitorCapture.CreateWinRtDevice(_gpu); }
@@ -914,6 +918,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             _dashThumb.SetFlag(VROverlayFlags.IsPremultiplied, true);
             _dashThumb.SetTexture(_thumbSurf.Tex);
             _dashDirty = true;
+            _dashClosedAt = Clock.Now;
         }
         catch (Exception e) { Log.Error("dashboard: " + e.Message); }
     }
@@ -927,7 +932,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         if (_dash == null) return;
         if (!dashOpen)
         {
-            if (_dashWasOpen) { _dashWasOpen = false; _dashPtr.Leave(); _dashDirty = true; }
+            if (_dashWasOpen) { _dashWasOpen = false; _dashPtr.Leave(); _dashDirty = true; _dashClosedAt = now; }   // (its picture goes a minute on)
             return;
         }
         _dashWasOpen = true;
@@ -962,6 +967,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         if (!_dashDirty && now < _dashNext) return;
         _dashDirty = false;
         _dashNext = now + 0.5;
+        _dashSurf ??= new Surface(_gpu, DashW, DashH);         // (let go while the dashboard was closed: OrbitApp.GpuRelease.cs)
         PreparePreviews(_dashView);
         AnimWake.Take();             // the previews' asks are their own panels', not the dashboard's
         DrawDashboard();
@@ -2349,6 +2355,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         _temps.Dispose();
         _weather.Dispose();
         _lumos.Dispose();
+        _vramAdapter?.Dispose();
         _dxgi?.Dispose();
         _eyes.Dispose();
         _mixtape.Dispose();

@@ -18,6 +18,10 @@ public sealed partial class WristPanel
     bool _dismissReq, _dismissed;      // its _ or X: hidden until you look away (or a few seconds)
     double _dismissUntil;
 
+    // no retro style on a while (OrbitApp.GpuSweep, Erik 10-24: Orbit's VRAM): its half-size canvas let go, made again by the next retro
+    // draw (the settings' 95 previews ask for it null-checked)
+    public void ReleaseStyle() { if (!Theme.Classic) { Canvas95?.Dispose(); Canvas95 = null; } }
+
     const uint Blk95 = 0xFF000000, Wht95 = 0xFFFFFFFF, Gry95 = 0xFF808080, Teal95 = 0xFF008080, Deep95 = 0xFF004040;
 
     static readonly string[] PlayGlyph = { "k...", "kk..", "kkk.", "kkkk", "kkk.", "kk..", "k..." };

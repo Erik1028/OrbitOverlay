@@ -86,6 +86,7 @@ public sealed class SettingsPanel : IPointerTarget, IDisposable
         float target = _open ? 1 : 0;
         if (_vis <= 0 && target > 0) _view.ShownAt = now;          // coming into view (a style's opening animation)
         _vis = Motion.Step(_vis, _open, dt, 0.18f);                      // Look > Motion off: at once
+        if (_vis > 0) _lastSeen = now;
         if (_vis <= 0 || C.Place.M == null || !Placement.Apply(C.Place, vr, Ov))
         {
             if (_vis <= 0) _ptr.Leave();
@@ -179,6 +180,7 @@ public sealed class SettingsPanel : IPointerTarget, IDisposable
         _view.Tab = keep;
         _ui.ResetAnimations();
         _dirty = true;
+        _lastSeen = Clock.Now;            // (what it made is kept a minute, as if it had been open: ReleaseIdle)
     }
 
     // ---- IPointerTarget ----
@@ -242,6 +244,14 @@ public sealed class SettingsPanel : IPointerTarget, IDisposable
     public void GrabTwoHandScale(float r) { C.Width = Math.Clamp(_twoStartWidth * r, 0.4f, 2f); _cfg.MarkDirty(); }
     public bool GrabSnapPreview => false;
     public void GrabEnd() { }
+
+    // its page's textures of another style (SettingsView.ReleaseStyle; OrbitApp.GpuSweep)
+    public void ReleaseStyle() => _view.ReleaseStyle();
+
+    // closed (faded out) a minute: its page's kept textures let go - the 1995 canvas, Cyber's console (5.5 MB; drawn again on every new
+    // minute in VR anyway) - made again by its next draw (SettingsView.Dispose95; OrbitApp.GpuSweep, Erik 10-24)
+    double _lastSeen;
+    public void ReleaseIdle(double now) { if (!_open && _vis <= 0 && now - _lastSeen >= 60) _view.Dispose95(); }
 
     public void Dispose() { DestroyOverlay(); Surf.Dispose(); _view.Dispose95(); }
 }

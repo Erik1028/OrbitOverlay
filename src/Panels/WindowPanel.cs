@@ -71,6 +71,9 @@ public sealed class WindowPanel : ITheaterScreen, IDisposable
         _vr = null;
     }
 
+    // Cyber's HUD frame unused a minute: its texture let go (CyberScreenFx.ReleaseIdle; OrbitApp.GpuSweep)
+    public void ReleaseIdleFx(double now) => _cyFx?.ReleaseIdle(now);
+
     public void Attach(WindowInfo w)
     {
         if (w.Hwnd == Hwnd && (_cap != null || Error != null)) return;    // same window: no retry loop on errors
