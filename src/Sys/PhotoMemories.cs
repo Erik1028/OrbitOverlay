@@ -27,6 +27,7 @@ public sealed class PhotoMemories : IPhotoSource, IDisposable
     Thread _thread;
     volatile bool _stop, _active;
     PhotoWatcher.Snapshot _pub = new();
+    string _drop;
     int _version;
     string _want;
 
@@ -56,6 +57,14 @@ public sealed class PhotoMemories : IPhotoSource, IDisposable
         _wake.Set();
     }
 
+    // a photo was deleted (the watch's Delete): out of the list now (the day's list is not looked for again until the day turns)
+    public void Drop(string path)
+    {
+        if (path == null) return;
+        Volatile.Write(ref _drop, path);
+        _wake.Set();
+    }
+
     // ---- the worker ----
 
     readonly List<PhotoWatcher.Photo> _list = new();
@@ -82,6 +91,8 @@ public sealed class PhotoMemories : IPhotoSource, IDisposable
                 if (today != _day) { Rescan(today); changed = true; }
                 if (_list.Count > 0 && _list[0].Thumb == null && !_failed.Contains(_list[0].Path)) changed |= Load(0);
                 changed |= LoadWanted();
+                if (Interlocked.Exchange(ref _drop, null) is { } gone)
+                    changed |= _list.RemoveAll(p => string.Equals(p.Path, gone, StringComparison.OrdinalIgnoreCase)) > 0;
             }
             catch (Exception e) { Log.Info("memories: " + e.Message); }
             if (changed) Publish();

@@ -139,6 +139,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         _wrist.UseRealAudio(_mixer);                         // the watch's volume and mixer on the real output device (the tools' are made up)
         _wrist.Mixtape = _mixtape;                           // the Mixtape widget's link (Sys/MixtapeLink.cs)
         _wrist.OnOpenPhoto = PhotoGallery.Open;              // the latest photo's Open in VR Gallery, on a tap (Sys/PhotoWatcher.cs)
+        _wrist.OnDeletePhoto = DeletePhoto;                  // the photo view's Delete, after its second tap: into the Recycle Bin (OrbitApp.Photos.cs)
         _kb = new KeyboardPanel(_gpu, _painter, _cfg);
         _settingsPanel = new SettingsPanel(_gpu, _painter, _cfg, this, PreparePreviews);
         _dockFaces = new HexpadFaces();
@@ -748,6 +749,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         UpdateSocial(now);                  // VRCX's friends online, the session and its recap (OrbitApp.Social.cs)
         Spikes.Piece("app: friends + recap (VRCX)", ap); ap = System.Diagnostics.Stopwatch.GetTimestamp();
         UpdateMemories(now);                // this day's photos of earlier years, On this day (OrbitApp.Memories.cs)
+        UpdateAlbum(now);                   // every photo, while the photo view's gallery is open (OrbitApp.Photos.cs)
         Spikes.Piece("app: on this day", ap); ap = System.Diagnostics.Stopwatch.GetTimestamp();
         UpdateTemps(now);                   // the temperatures widget / the hot alert's sensors (OrbitApp.Temps.cs)
         Spikes.Piece("app: temperatures", ap); ap = System.Diagnostics.Stopwatch.GetTimestamp();
@@ -2459,6 +2461,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         _room.Dispose();
         _photos.Dispose();
         _memories.Dispose();
+        _album.Dispose();
         _temps.Dispose();
         _weather.Dispose();
         _lumos.Dispose();

@@ -34,6 +34,13 @@ public sealed class Gpu : IDisposable
         IDXGIAdapter1 adapter = null;
         if (adapterIndex >= 0 && Dxgi.EnumAdapters1((uint)adapterIndex, out var a).Success)
             adapter = a;
+        // ORBIT_SNAP_WARP=1 (the tools while SteamVR / VRChat run): Windows' software renderer - the snapshot's pictures without the GPU
+        if (adapter == null && Environment.GetEnvironmentVariable("ORBIT_SNAP_WARP") == "1")
+            for (uint i = 0; Dxgi.EnumAdapters1(i, out var c).Success; i++)
+            {
+                if ((c.Description1.Flags & AdapterFlags.Software) != 0) { adapter = c; break; }
+                c.Dispose();
+            }
         if (adapter == null)
         {
             // first hardware adapter

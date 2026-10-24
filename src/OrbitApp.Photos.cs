@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 
 namespace Orbit;
 
@@ -6,10 +7,13 @@ namespace Orbit;
 // latest photo widget is on a watch page and the watch can be seen (SteamVR runs, or the settings show the watch's preview) - else
 // the watcher is off, its thread asleep, no thumbnail kept. A new photo is noted in Orbit's own notifications (the notifications
 // widget's list, no card): "Photo saved · <world>" once VRCX's metadata says the world, or after 6 s without it. A tap on Open in VR
-// Gallery opens it there (PhotoGallery: VR Gallery, else Windows' viewer). Nothing here allocates at rest.
+// Gallery opens it there (PhotoGallery: VR Gallery, else Windows' viewer). The photo view's gallery lists every photo (PhotoAlbum) only
+// while it is open and the watch can be seen; its Delete moves a photo into the Recycle Bin (PhotoBin) on a thread of its own, then
+// the watcher, On this day and the album drop it at once. Nothing here allocates at rest.
 public sealed partial class OrbitApp
 {
     readonly PhotoWatcher _photos = new();
+    readonly PhotoAlbum _album = new();
     PhotoWatcher.Snapshot _photoSnap;
     string _photoNoted, _photoPending;                    // the newest photo noted / waiting for its world
     double _photoPendingAt, _photoPreview = -10;
@@ -38,5 +42,34 @@ public sealed partial class OrbitApp
         _notes.Add("VRChat", shot.World != null ? Lang.F("Photo saved · {0}", shot.World) : Lang.T("Photo saved"), "", shot.Taken);
         _photoNoted = _photoPending;
         _photoPending = null;
+    }
+
+    void UpdateAlbum(double now)
+    {
+        bool want = _wrist != null && _wrist.GalleryOn && (VrAfter(3) || now - _photoPreview < 3);
+        _album.Active = want;
+        _data.Album = want ? _album.Get() : null;
+    }
+
+    // the watch's Delete (its second tap): into the Recycle Bin - checked and moved by PhotoBin, never deleted for good - then every
+    // list of photos drops it; done(null), or done(why not), from that thread
+    void DeletePhoto(string path, Action<string> done)
+    {
+        var t = new Thread(() =>
+        {
+            string why;
+            try { why = PhotoBin.Recycle(path, PhotoWatcher.PictureFolder()); }
+            catch (Exception e) { Log.Warn("photo bin: " + e.Message); why = "Windows did not move it"; }
+            if (why == null)
+            {
+                _photos.Recheck();
+                _memories.Drop(path);
+                _album.Rescan();
+            }
+            else Log.Info("photo bin: not moved - " + why);
+            done(why);
+        }) { IsBackground = true, Name = "photo bin" };
+        t.SetApartmentState(ApartmentState.STA);
+        t.Start();
     }
 }

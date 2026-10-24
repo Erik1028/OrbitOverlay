@@ -148,22 +148,34 @@ public sealed partial class WristPanel
 
     void TPhotoDetail(RectangleF win, PanelData d)
     {
-        var p = PhotoShown();
+        bool grid = _gal && _galGrid;                // the gallery: "> ls", the files by day (WristGallery.cs)
+        var p = grid ? null : PhotoShown();
         var words = Words(_phwOpen, p, DateTime.Now);
         PhotoOpenShown = p?.Path;
-        PhotoEmptyShown = p == null;
+        if (!grid) PhotoEmptyShown = p == null;
         _p.Fill(win, T.BG);
         _p.Bevel(win, Painter.Edge.Window);
         _ui.Caption95(new RectangleF(win.X + 3, win.Y + 3, win.Width - 6, 18), "PHOTO VIEWER");       // (in capitals already: the tube's title is not made again in every frame)
         if (_ui.CaptionClose95("wd95x", win.Right - 5 - 16, win.Y + 5, true, 6)) { CloseDetail(); return; }
         if (_ui.Button95("wd95ok", new RectangleF(win.Right - 8 - 75, win.Bottom - 8 - 23, 75, 23), "OK", true, true)) { CloseDetail(); return; }
         var c = new RectangleF(win.X + 8, win.Y + 27, win.Width - 16, win.Height - 27 - 36);
-        // the keys beside OK
+        // the keys beside OK: the arrows, ALL (the gallery), DEL (asking: SURE?), GALLERY (VR Gallery)
         int n = PhotoCount;
-        float ky = c.Bottom + 5, kw = MathF.Floor((c.Width - 75 - 3 * 4) / 3);
-        if (TKey("wph95p", new RectangleF(c.X, ky, kw, 23), "[F1]", false, _phIndex < n - 1, "PREV")) PhotoStep(1);
-        if (TKey("wph95n", new RectangleF(c.X + kw + 4, ky, kw, 23), "[F2]", false, _phIndex > 0, "NEXT")) PhotoStep(-1);
-        if (TKey("wphgal", new RectangleF(c.X + 2 * (kw + 4), ky, kw, 23), "[F3]", false, p != null, "GALLERY")) PhotoOpen(p);
+        float ky = c.Bottom + 5, kw = MathF.Floor((c.Width - 75 - 2 * 26 - 4 * 4) / 3);
+        RectangleF Key(int i) => new(c.X + 2 * 30 + i * (kw + 4), ky, kw, 23);
+        if (TGlyphKey("wph95p", new RectangleF(c.X, ky, 26, 23), PhPrev95, !grid && _phIndex < n - 1)) PhotoStep(1);
+        if (TGlyphKey("wph95n", new RectangleF(c.X + 30, ky, 26, 23), PhNext95, !grid && _phIndex > 0)) PhotoStep(-1);
+        if (TKey("wphall", Key(0), "[F3]", grid, true, "ALL")) GalleryToggle(p);
+        bool asking = DeleteArmed(p);
+        if (TKey("wphdel", Key(1), "[F4]", asking, p != null && !DeleteBusy, asking ? "SURE?" : "DEL")) DeleteTap(p);
+        if (TKey("wphgal", Key(2), "[F5]", false, p != null, "GALLERY")) PhotoOpen(p);
+        string ds = DeleteStatus(p);
+        if (grid)
+        {
+            TGallery(new RectangleF(c.X, c.Y, c.Width, c.Height - (ds != null ? 11 : 0)));
+            if (ds != null) TCaps(PhotoCut(Upper(ds), c.Width, Ui.F95, FontWeight.Normal, null, 2), c.X, c.Bottom - 9, T.HOT);
+            return;
+        }
         if (p == null)
         {
             TCaps("> view", c.X, c.Y + 2, T.MID);
@@ -191,6 +203,7 @@ public sealed partial class WristPanel
         float ww = T.W(when);
         TCaps(when, c.X, y1, T.INK);
         if (p.World != null) TCaps(PhotoCut(Upper(p.World), c.Width - ww - 12, Ui.F95, FontWeight.Normal, null, 2), c.X + ww + 12, y1, T.HOT);
+        if (ds != null) { TCaps(PhotoCut(Upper(ds), c.Width, Ui.F95, FontWeight.Normal, null, 2), c.X, y2, T.HOT); return; }
         string people = PhotoPeople(p, c.Width, Ui.F95, FontWeight.Normal, 2);
         TCaps(people ?? PhotoCut(Upper("Nobody known"), c.Width, Ui.F95, FontWeight.Normal, null, 2), c.X, y2, people != null ? T.MID : T.DIM);
     }

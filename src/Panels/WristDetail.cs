@@ -164,10 +164,11 @@ public sealed partial class WristPanel
         if (kind is not ("mines" or "room" or "dock" or "mixtape") && Theme.Cyber)
             // Cyber: a yellow tag (it types in: WristCyberFx.cs) - the clock's CLOCK (its time card has a TIME tag of its own), the
             // notifications' INCOMING
-            CyberDetailTag(E, Upper(kind switch { "clock" => "Clock", "notifications" => "Incoming", "photo" => "Capture", _ => k.Name }));
+            CyberDetailTag(E, Upper(_gal && kind is "photo" or "memory" ? GalleryWord      // (the photo view's gallery: WristGallery.cs)
+                : kind switch { "clock" => "Clock", "notifications" => "Incoming", "photo" => "Capture", _ => k.Name }));
         else if (kind is not ("mines" or "room" or "dock" or "weather" or "mixtape"))      // (Mixtape: its name and its tabs - WristMixtape.cs)     // Minesweeper's board takes the left: its name is over its own column; the room: its world; the weather: its place
-            _p.Text(Ellipsize(k.Name, E.Width - 120, 24, FontWeight.SemiBold), new RectangleF(E.X + 24, E.Y + 16, E.Width - 120, 40), Bento.Text, 24,
-                FontWeight.SemiBold);
+            _p.Text(Ellipsize(_gal && kind is "photo" or "memory" ? GalleryWord : k.Name, E.Width - 120, 24, FontWeight.SemiBold),
+                new RectangleF(E.X + 24, E.Y + 16, E.Width - 120, 40), Bento.Text, 24, FontWeight.SemiBold);
         if (Press("wclose", new RectangleF(E.Right - 22 - 46, E.Y + 14, 46, 46), "\uE711", null, false, !_closing, 18, true))
             CloseDetail();
         // Now playing on another player's song, Mixtape linked: its button beside the X opens Mixtape's player anyway (its library)

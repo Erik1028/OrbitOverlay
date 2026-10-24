@@ -589,12 +589,15 @@ static partial class Tools
         var culture = System.Globalization.CultureInfo.CurrentCulture;
         System.Globalization.CultureInfo.CurrentCulture = Tools.SnapCulture;
         PhotoViewTools.WatcherChecks(wrist, data, cfg, gpu, dir);
+        GalleryViewTools.AlbumChecks(dir);
         foreach (var (style, tag) in new[] { ("modern", ""), ("classic", "_95"), ("xp", "_xp"), ("aero", "_aero"), ("mac", "_mac"), ("terminal", "_term"), (CyberHud.Id, "_cyber") })
         {
             cfg.Data.Appearance = new AppearanceConfig { Style = style, Clock24h = true };
             Theme.Apply(cfg.Data.Appearance);
             PhotoViewTools.Run(wrist, data, cfg, gpu, dir, tag);
             PhotoViewTools.Perf(wrist, data, cfg, tag);
+            GalleryViewTools.Run(wrist, data, cfg, gpu, dir, tag);
+            GalleryViewTools.Perf(wrist, data, cfg, tag);
             if (Environment.GetEnvironmentVariable("ORBIT_PERF_TYPES") == "1")
             {
                 // what the opened view allocates, by type (ToolsPerf's sampler)
@@ -613,6 +616,7 @@ static partial class Tools
             cfg.Data.Wrist.Widgets = null;
         }
         PhotoViewTools.PreviewSheet(dir);
+        GalleryViewTools.PreviewSheet(dir);
         System.Globalization.CultureInfo.CurrentCulture = culture;
         Log.Info("snapshot (photo only) written to " + dir);
         return 0;

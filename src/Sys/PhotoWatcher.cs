@@ -62,7 +62,7 @@ public sealed class PhotoWatcher : IPhotoSource, IDisposable
     readonly object _lock = new();
     readonly AutoResetEvent _wake = new(false);
     Thread _thread;
-    volatile bool _stop, _active;
+    volatile bool _stop, _active, _recheck;
     Snapshot _pub = new();
     int _version;
 
@@ -96,6 +96,9 @@ public sealed class PhotoWatcher : IPhotoSource, IDisposable
         Volatile.Write(ref _want, path);
         _wake.Set();
     }
+
+    // a photo was deleted (the watch's Delete): the folder looked at now - the photo dropped at once, not at the next poll
+    public void Recheck() { _recheck = true; _wake.Set(); }
 
     // ---- the worker ----
 
@@ -131,7 +134,7 @@ public sealed class PhotoWatcher : IPhotoSource, IDisposable
             {
                 if (!_started) { Start(now); changed = true; }
                 changed |= TakeEvents(now);
-                if (now >= _nextPoll) { _nextPoll = now + 4; changed |= Poll(now); }
+                if (now >= _nextPoll || _recheck) { _recheck = false; _nextPoll = now + 4; changed |= Poll(now); }
                 changed |= Settle(now);
                 changed |= LoadWanted();
             }
@@ -632,9 +635,15 @@ public sealed class PhotoWatcher : IPhotoSource, IDisposable
     // ... into at most maxW x maxH (On this day keeps smaller ones)
     public static (uint[] px, int w, int h, int fullW, int fullH) Decode(byte[] bytes, int maxW, int maxH)
     {
+        using var ms = new MemoryStream(bytes, false);
+        return Decode(ms, maxW, maxH);
+    }
+
+    // ... from a stream (the gallery's: the file itself, never a byte[] of a 4K photo)
+    public static (uint[] px, int w, int h, int fullW, int fullH) Decode(Stream ms, int maxW, int maxH)
+    {
         try
         {
-            using var ms = new MemoryStream(bytes, false);
             using var img = Image.FromStream(ms, false, false);
             int W = img.Width, H = img.Height;
             if (W <= 0 || H <= 0) return default;

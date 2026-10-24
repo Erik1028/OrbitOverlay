@@ -62,14 +62,16 @@ public sealed partial class WristPanel
 
     void PhotoDetailAero(RectangleF win, PanelData d)
     {
-        using var set = UseSet(_open?.Type);
+        using var set = UseOpenSet();
         PhotoFrame(d);
-        var p = PhotoShown();
+        bool grid = _gal && _galGrid;                // the gallery's grid: the folder's thumbnails (WristGallery.cs)
+        var p = grid ? null : PhotoShown();
         var words = Words(_phwOpen, p, DateTime.Now);
         PhotoOpenShown = p?.Path;
-        PhotoEmptyShown = p == null;
+        if (!grid) PhotoEmptyShown = p == null;
         var cl = AeroSkin.Window7(_p, win, 24, ViewerGround);
-        string title = p == null ? "Windows Photo Viewer" : PhotoCut(PhotoCaption(words, "{0} - Windows Photo Viewer"), win.Width - 70, 12, FontWeight.Normal, Ae.Font);
+        string title = grid ? PhotoCut(GalTitle(null), win.Width - 70, 12, FontWeight.Normal, Ae.Font)
+            : p == null ? "Windows Photo Viewer" : PhotoCut(PhotoCaption(words, "{0} - Windows Photo Viewer"), win.Width - 70, 12, FontWeight.Normal, Ae.Font);
         Ae.GlowText(_p, title, new RectangleF(win.X + 9, win.Y + 3, win.Width - 70, 18), 0xFF000000, 12);
         var rc = new RectangleF(win.Right - 6 - 43, win.Y + 1, 43, 18);
         bool x = _ui.Clickable("wd95x", RectangleF.Inflate(rc, 4, 4), out bool xh, out bool xd);
@@ -100,18 +102,39 @@ public sealed partial class WristPanel
             TextAlignment.Leading, ParagraphAlignment.Center, Ae.Font);
         _p.Pixels(DropAero, gal.Right - 9, MathF.Floor(gal.Y + gal.Height / 2) - 1, gc);
         if (go) PhotoOpen(p);
-        // the control bar: Previous, which one, Next
+        // the control bar: the gallery at its left (where the viewer's display size was), Previous, which one, Next; Delete's red X at
+        // its right, as the viewer had it
         var bar = new RectangleF(cl.X, cl.Bottom - 30, cl.Width, 30);
         _p.GradientRaw(bar, ViewerBar1, ViewerBar2);
         _p.Fill(new RectangleF(bar.X, bar.Y, bar.Width, 1), 0xFF6F8DB5);
         int n = PhotoCount;
         float cx = MathF.Floor(bar.X + bar.Width / 2), cy = MathF.Floor(bar.Y + bar.Height / 2);
-        if (OrbAero("wph95p", cx - 42, cy, PrevAero, _phIndex < n - 1)) PhotoStep(1);
-        if (OrbAero("wph95n", cx + 42, cy, NextAero, _phIndex > 0)) PhotoStep(-1);
-        if (p != null)
-            _p.Text(words.Count, new RectangleF(cx - 28, bar.Y, 56, bar.Height), 0xFFE8F0FB, 11, FontWeight.Normal, TextAlignment.Center, ParagraphAlignment.Center, Ae.Font);
+        if (OrbAero("wphall", bar.X + 22, cy, Grid95, true)) GalleryToggle(p);
+        if (DelAero("wphdel", new RectangleF(bar.Right - 34, bar.Y + 3, 28, 24), p != null && !DeleteBusy, DeleteArmed(p))) DeleteTap(p);
+        if (grid)
+        {
+            if (_ph is { Recent.Count: > 0 } a)
+                _p.Text(GalCountText(a.Recent.Count), new RectangleF(cx - 80, bar.Y, 160, bar.Height), 0xFFE8F0FB, 11, FontWeight.Normal, TextAlignment.Center,
+                    ParagraphAlignment.Center, Ae.Font);
+        }
+        else
+        {
+            if (OrbAero("wph95p", cx - 42, cy, PrevAero, _phIndex < n - 1)) PhotoStep(1);
+            if (OrbAero("wph95n", cx + 42, cy, NextAero, _phIndex > 0)) PhotoStep(-1);
+            if (p != null)
+                _p.Text(words.Count, new RectangleF(cx - 28, bar.Y, 56, bar.Height), 0xFFE8F0FB, 11, FontWeight.Normal, TextAlignment.Center, ParagraphAlignment.Center, Ae.Font);
+        }
         // the photo whole on the viewer's ground; when and where under it
         var view = new RectangleF(cl.X + 8, cmd.Bottom + 6, cl.Width - 16, bar.Y - 18 - (cmd.Bottom + 6));
+        string ds = DeleteStatus(p);
+        if (grid)
+        {
+            GalGrid(new RectangleF(cl.X + 4, cmd.Bottom + 4, cl.Width - 8, bar.Y - 4 - (cmd.Bottom + 4)), 2);
+            return;
+        }
+        if (ds != null)
+            _p.Text(PhotoCut(Lang.T(ds), view.Width, 11, FontWeight.Normal, Ae.Font), new RectangleF(view.X, bar.Y - 15, view.Width, 14), _delNoteBad || DeleteArmed(p) ? 0xFFC42B1C : InkAero,
+                11, FontWeight.Normal, TextAlignment.Leading, ParagraphAlignment.Center, Ae.Font);
         if (p == null)
         {
             _p.Text(PhotoCut(NoPhotos, view.Width, 12, FontWeight.Normal, Ae.Font), view, SubAero, 12, FontWeight.Normal, TextAlignment.Center,
@@ -125,6 +148,7 @@ public sealed partial class WristPanel
         if (bmp != null) _p.ImagePart(bmp, pic, new RectangleF(0, 0, p.TW, p.TH));
         else _p.Fill(pic, 0xFFDCE6F2);
         PhotoFlash95(pic);
+        if (ds != null) return;
         float iy = bar.Y - 15, iw = view.Width;
         float ww = MathF.Min(WAero(words.When, 11), 110);
         _p.Text(PhotoCut(words.When, 110, 11, FontWeight.Normal, Ae.Font), new RectangleF(view.Right - ww - 2, iy, ww + 4, 14), SubAero, 11, FontWeight.Normal,
@@ -142,6 +166,21 @@ public sealed partial class WristPanel
         }
         else if (people != null)
             _p.Text(people, new RectangleF(view.X, iy, lw, 14), SubAero, 11, FontWeight.Normal, TextAlignment.Leading, ParagraphAlignment.Center, Ae.Font);
+    }
+
+    // the control bar's Delete: flat, its red X; under the pointer (and asking) the bar's soft glass glow
+    bool DelAero(string id, RectangleF r, bool enabled, bool asking)
+    {
+        bool click = _ui.Clickable(id, r, out bool hover, out bool held) && enabled;
+        if ((hover || held || asking) && enabled)
+        {
+            _p.Smooth(true);
+            _p.FillRound(r, Theme.WithAlpha(asking ? 0xFFFF6040 : 0xFFFFFFFF, held || asking ? 0.28f : 0.18f), 3);
+            _p.StrokeRound(new RectangleF(r.X + 0.5f, r.Y + 0.5f, r.Width - 1, r.Height - 1), Theme.WithAlpha(0xFFFFFFFF, 0.5f), 1, 3);
+            _p.Smooth(false);
+        }
+        _p.Pixels(Del95, MathF.Floor(r.X + (r.Width - 7) / 2), MathF.Floor(r.Y + (r.Height - 7) / 2), enabled ? 0xFFF05A3C : 0xFF7C8EA8);
+        return click;
     }
 
     // a round silver button of the viewer's control bar (Media Player's orb, small)

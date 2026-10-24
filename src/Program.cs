@@ -41,7 +41,7 @@ static class Program
         bool has(string a) => args.Contains(a);
         if (has("--tempstest")) { Log.Init("orbit-tool.log"); return TempSensors.Probe(); }      // the real temperature sources read twice, read only (Sys/Temps.cs)
         if (has("--avatartest")) { Log.Init("orbit-tool.log"); return AvatarProbe.Run(); }      // VRChat's real OSC configs read, only counts logged (AvatarViewTest.cs)
-        bool tool = has("--snapshot") || has("--animstrip") || has("--faceshot") || has("--clockshot") || has("--selftest") || has("--scene") || has("--osctest") || has("--tasktest") || has("--filtertest") || has("--focustest") || has("--leaktest") || has("--raytest") || has("--updatetest") || has("--wintest") || has("--docktest") || has("--roomtest") || has("--theatertest") || has("--perfbench") || has("--ovdump") || has("--pacetest") || has("--pacertest") || has("--capturetest") || has("--voltest") || has("--mixertest") || has("--tapotest") || has("--eyetest") || has("--mixtapetest") || has("--virtualstatus") || has("--tapofind") || has("--tapofollow") || has("--statsbench");
+        bool tool = has("--snapshot") || has("--animstrip") || has("--faceshot") || has("--clockshot") || has("--selftest") || has("--scene") || has("--osctest") || has("--tasktest") || has("--filtertest") || has("--focustest") || has("--leaktest") || has("--raytest") || has("--updatetest") || has("--wintest") || has("--docktest") || has("--roomtest") || has("--theatertest") || has("--perfbench") || has("--ovdump") || has("--pacetest") || has("--pacertest") || has("--capturetest") || has("--voltest") || has("--mixertest") || has("--tapotest") || has("--eyetest") || has("--mixtapetest") || has("--virtualstatus") || has("--tapofind") || has("--tapofollow") || has("--statsbench") || has("--albumbench");
         if (tool) return RunTool(args);
 
         // install / uninstall (the same exe: named "OrbitSetup.exe" it is the installer)
@@ -288,6 +288,7 @@ static class Program
             }
             if (args.Contains("--virtualstatus")) return VirtualMonitors.Status();      // read only: the driver's device and its settings file
             if (args.Contains("--statsbench")) return StatsBench.Run();             // read only: the perf log's SteamVR calls, timed
+            if (args.Contains("--albumbench")) return GalleryViewTools.Bench();     // read only: the gallery's album on VRChat's real folder, timed
             if (args.Contains("--tapofollow"))                                          // read only: a dead address found again
             {
                 int i = Array.IndexOf(args, "--tapofollow");

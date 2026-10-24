@@ -21,7 +21,8 @@ namespace Orbit;
 // The thumbnails become bitmaps once (a few kept); the words are made when the photo, the minute or the language changes: a frame at
 // rest makes nothing.
 // On this day (WristMemory.cs) is drawn by these same views on its own set of photos: each set has its own snapshot, opened photo,
-// words and bitmaps (PhotoSet), and a view picks the set of the widget it draws first (UseSet).
+// words and bitmaps (PhotoSet), and a view picks the set of the widget it draws first (UseSet). The gallery (WristGallery.cs) is a
+// third set, every photo: the opened view draws it while the gallery is open (UseOpenSet), its grid or one of its photos big.
 public sealed partial class WristPanel
 {
     public const string PhotoKindIcon = "\uE722";          // Segoe's camera: the widget in the editor's palette
@@ -38,6 +39,7 @@ public sealed partial class WristPanel
     sealed class PhotoSet
     {
         public bool Memory;                         // On this day's (else the latest photo's)
+        public bool Album;                          // the gallery's: every photo (WristGallery.cs)
         public PhotoWatcher.Snapshot Snap;          // the photos of this frame
         public long Stamp = -1;
         public string NewestPath;                   // the newest seen: another one pops the widget
@@ -95,14 +97,16 @@ public sealed partial class WristPanel
     int PhotoCount => _ph?.Recent.Count ?? 0;
 
     // the snapshot changed (Update draws again) - the latest photo's or On this day's
-    bool PhotoChanged(PanelData d) => C.Face == "custom" && ((!ReferenceEquals(d.Photos, _latest.Snap) && (HasWidget("photo") || DetailIs("photo"))) ||
-        (!ReferenceEquals(d.Memories, _memory.Snap) && (HasWidget("memory") || DetailIs("memory"))));
+    bool PhotoChanged(PanelData d) => GalleryChanged(d) | (C.Face == "custom" && ((!ReferenceEquals(d.Photos, _latest.Snap) && (HasWidget("photo") || DetailIs("photo"))) ||
+        (!ReferenceEquals(d.Memories, _memory.Snap) && (HasWidget("memory") || DetailIs("memory")))));
 
-    PhotoWatcher.Snapshot SetData(PanelData d) => _set.Memory ? d.Memories : d.Photos;
+    PhotoWatcher.Snapshot SetData(PanelData d) => _set.Album ? d.Album : _set.Memory ? d.Memories : d.Photos;
 
     // once a frame, before the first photo is drawn: the snapshot taken, a new photo popped, the opened view kept on its photo
     void PhotoFrame(PanelData d)
     {
+        if (_delDone) { _delDone = false; DeleteFinished(); }      // Delete's answer, before the view picks its photo (WristGallery.cs)
+        DeleteTick();
         long s = _ui.BeginStamp;
         if (s == _phStamp) return;
         _phStamp = s;
@@ -133,6 +137,7 @@ public sealed partial class WristPanel
     {
         FromNewest(_latest);
         FromNewest(_memory);
+        GalleryReset();
     }
 
     static void FromNewest(PhotoSet s)
@@ -181,6 +186,7 @@ public sealed partial class WristPanel
     {
         foreach (var b in new[] { _latest.Bmps, _memory.Bmps })
             for (int i = 0; i < b.Length; i++) { b[i].bmp?.Dispose(); b[i] = default; }
+        GalleryDispose();
         TArtDispose();
     }
 
@@ -346,11 +352,13 @@ public sealed partial class WristPanel
         return r;
     }
 
-    // the stick in the opened view: a step a notch or so from rest, then one every three (~4 a second at full tilt); up the newer
+    // the stick in the opened view: a step a notch or so from rest, then one every three (~4 a second at full tilt); up the newer.
+    // The gallery's grid: it scrolls (WristGallery.cs)
     bool PhotoScroll(float n)
     {
         if (!(DetailIs("photo") || DetailIs("memory")) || _closing) return false;
-        using var set = UseSet(DetailIs("memory"));
+        if (_gal && _galGrid) { _ptr.Wheel += n; _dirty = true; return true; }
+        using var set = UseOpenSet();
         double now = Clock.Now;
         if (now - _phScrollAt > 0.35) _phAcc = 2 * MathF.Sign(n);
         _phScrollAt = now;
@@ -498,9 +506,10 @@ public sealed partial class WristPanel
     // left of the X; the photo as big as it fits, the words over its foot, an arrow at each side
     void PhotoDetail(RectangleF E, PanelData d)
     {
-        using var set = UseSet(_open?.Type);
+        using var set = UseOpenSet();
         PhotoFrame(d);
         if (Theme.Cyber) { CyberPhotoDetail(E, d); return; }
+        if (_gal && _galGrid) { GalleryModern(E); return; }         // the gallery's grid (WristGallery.cs)
         var p = PhotoShown();
         var now = Now;
         var words = Words(_phwOpen, p, now);
@@ -549,6 +558,8 @@ public sealed partial class WristPanel
         var nr = side ? new RectangleF(c.Right - 52, ay, 52, 52) : new RectangleF(box.Right - 64, ay, 52, 52);
         if (_phIndex < n - 1 && Press("wphprev", pr, PhPrev, null, false, true, 20, true)) PhotoStep(1);
         if (_phIndex > 0 && Press("wphnext", nr, PhNext, null, false, true, 20, true)) PhotoStep(-1);
+        PhotoActions(box, p);                       // Gallery, Delete at its top right (WristGallery.cs)
+        DeleteNoteModern(E);
     }
 
     // beside a photo standing up: the world (two lines), when, how long ago, the people
@@ -639,6 +650,7 @@ public sealed partial class WristPanel
     void CyberPhotoDetail(RectangleF E, PanelData d)
     {
         CyFrame();
+        if (_gal && _galGrid) { GalleryCyber(E); return; }
         var p = PhotoShown();
         var now = Now;
         var words = Words(_phwOpen, p, now);
@@ -714,6 +726,8 @@ public sealed partial class WristPanel
         }
         float k = PhotoPopK();
         if (k > 0) _p.Fill(box, Theme.WithAlpha(0xFFFFFFFF, 0.5f * k * k));
+        PhotoActions(box, p);
+        DeleteNoteModern(E);
     }
 
     // "+3 MORE", made once per count and language
@@ -806,17 +820,19 @@ public sealed partial class WristPanel
 
     void Photo95Detail(RectangleF win, PanelData d, WatchWidgets.Kind k)
     {
-        using var set = UseSet(k.Id);
+        using var set = UseOpenSet();
         PhotoFrame(d);
         if (Theme.Retro == RetroStyle.XP) { PhotoDetailXp(win, d); return; }        // Windows Picture and Fax Viewer (Skins/Xp)
         if (Theme.Retro == RetroStyle.Terminal) { TPhotoDetail(win, d); return; }   // in characters (Skins/Terminal)
-        var p = PhotoShown();
+        bool grid = _gal && _galGrid;                // the gallery's grid: Imaging's thumbnail view (WristGallery.cs)
+        var p = grid ? null : PhotoShown();
         var words = Words(_phwOpen, p, DateTime.Now);
         PhotoOpenShown = p?.Path;
-        PhotoEmptyShown = p == null;
+        if (!grid) PhotoEmptyShown = p == null;
         _p.Fill(win, Theme.W95Face);
         _p.Bevel(win, Painter.Edge.Window);
-        string title = p == null ? k.Title95 : PhotoCut(PhotoCaption(words, "Imaging - {0}"), win.Width - 6 - 44, Ui.F95, FontWeight.Bold, null, 1);
+        string title = grid ? PhotoCut(GalTitle("Imaging - {0}"), win.Width - 6 - 44, Ui.F95, FontWeight.Bold, null, 1)
+            : p == null ? k.Title95 : PhotoCut(PhotoCaption(words, "Imaging - {0}"), win.Width - 6 - 44, Ui.F95, FontWeight.Bold, null, 1);
         _ui.Caption95(new RectangleF(win.X + 3, win.Y + 3, win.Width - 6, 18), title);
         if (_ui.CaptionClose95("wd95x", win.Right - 5 - 16, win.Y + 5, true, 6)) { CloseDetail(); return; }
         // the menu bar (the window's own words: not menus that open here)
@@ -828,22 +844,34 @@ public sealed partial class WristPanel
             _p.Fill(new RectangleF(mx, my + 12, MenuKey(m), 1), Blk95);       // its access key, underlined
             mx += mw + 12;
         }
-        // the toolbar
+        // the toolbar: the arrows, Gallery and Delete, which one; Open in VR Gallery (its short name where the whole does not fit), Close
         float ty = win.Y + 40;
         _p.EtchedLine(win.X + 3, win.Right - 3, ty - 2);
         int n = PhotoCount;
-        if (_ui.GlyphButton95("wph95p", new RectangleF(win.X + 6, ty + 1, 26, 22), PhPrev95, _phIndex < n - 1)) PhotoStep(1);
-        if (_ui.GlyphButton95("wph95n", new RectangleF(win.X + 33, ty + 1, 26, 22), PhNext95, _phIndex > 0)) PhotoStep(-1);
+        if (_ui.GlyphButton95("wph95p", new RectangleF(win.X + 6, ty + 1, 26, 22), PhPrev95, !grid && _phIndex < n - 1)) PhotoStep(1);
+        if (_ui.GlyphButton95("wph95n", new RectangleF(win.X + 33, ty + 1, 26, 22), PhNext95, !grid && _phIndex > 0)) PhotoStep(-1);
+        ActionButtons95(win.X + 63, ty + 1, 26, 22, p);
+        float cx = win.X + 63 + 53 + 6;
         var close = new RectangleF(win.Right - 6 - 56, ty + 1, 56, 22);
-        float gw = MathF.Min(_ui.Width95(OpenGallery) + 16, close.X - 4 - (win.X + 66 + 50));
+        string cnt = grid ? (_ph is { Recent.Count: > 0 } a ? GalCountText(a.Recent.Count) : null) : p != null ? words.Count : null;
+        float room = close.X - 4 - (cx + (cnt != null ? MathF.Min(_ui.Width95(cnt), 60) + 6 : 0));
+        string gl = _ui.Width95(OpenGallery) + 16 <= room ? OpenGallery : Lang.Short(OpenGallery) ?? "VR Gallery";
+        bool glyph = _ui.Width95(gl) + 16 > room;            // (not even the short name: the button's picture alone)
+        float gw = glyph ? 26 : _ui.Width95(gl) + 16;
         var gal = new RectangleF(close.X - 4 - gw, ty + 1, gw, 22);
-        if (p != null) _ui.Text95(PhotoCut(words.Count, gal.X - 6 - (win.X + 66), Ui.F95, FontWeight.Normal, null, 1),
-            new RectangleF(win.X + 66, ty + 5, gal.X - 6 - (win.X + 66), 13), Blk95);
-        if (_ui.Button95("wphgal", gal, PhotoCut(OpenGallery, gw - 8, Ui.F95, FontWeight.Normal, null, 1), p != null)) PhotoOpen(p);
+        if (cnt != null) _ui.Text95(PhotoCut(cnt, gal.X - 6 - cx, Ui.F95, FontWeight.Normal, null, 1), new RectangleF(cx, ty + 5, gal.X - 6 - cx, 13), Blk95);
+        if (glyph ? _ui.GlyphButton95("wphgal", gal, OpenWin95, p != null) : _ui.Button95("wphgal", gal, gl, p != null)) PhotoOpen(p);
         if (_ui.Button95("wd95ok", close, "Close")) { CloseDetail(); return; }
-        // the picture, whole, on Imaging's grey
+        // the picture, whole, on Imaging's grey (the grid: its thumbnails)
         var st = new RectangleF(win.X + 3, win.Bottom - 3 - 18, win.Width - 6, 18);
         var view = new RectangleF(win.X + 4, ty + 27, win.Width - 8, st.Y - 2 - (ty + 27));
+        string ds = DeleteStatus(p);
+        if (grid)
+        {
+            GalGrid(view, 2);
+            _ui.Pane95(st, PhotoCut(Lang.T(ds ?? "Tap a photo to open it"), st.Width - 8, Ui.F95, FontWeight.Normal, null, 1));
+            return;
+        }
         _p.Fill(view, 0xFF808080);
         _p.Bevel(view, Painter.Edge.Sunken);
         var inner = RectangleF.Inflate(view, -6, -6);
@@ -858,7 +886,8 @@ public sealed partial class WristPanel
             else _p.Fill(pic, Wht95);
             PhotoFlash95(pic);
         }
-        // the status bar: when, the world, the people
+        // the status bar: when, the world, the people (Delete asking or answering: its words)
+        if (ds != null) { _ui.Pane95(st, PhotoCut(Lang.T(ds), st.Width - 8, Ui.F95, FontWeight.Normal, null, 1)); return; }
         if (p == null) { _ui.Pane95(st, ""); return; }
         float w1 = MathF.Ceiling(MathF.Min(_ui.Width95(words.When) + 10, st.Width * 0.34f)), w2 = MathF.Floor((st.Width - w1 - 4) * 0.5f);
         _ui.Pane95(new RectangleF(st.X, st.Y, w1, st.Height), PhotoCut(words.When, w1 - 8, Ui.F95, FontWeight.Normal, null, 1));

@@ -74,13 +74,15 @@ public sealed partial class WristPanel
 
     void PhotoDetailXp(RectangleF win, PanelData d)
     {
-        var p = PhotoShown();
+        bool grid = _gal && _galGrid;                // the gallery's grid: My Pictures' Thumbnails view (WristGallery.cs)
+        var p = grid ? null : PhotoShown();
         var words = Words(_phwOpen, p, DateTime.Now);
         PhotoOpenShown = p?.Path;
-        PhotoEmptyShown = p == null;
+        if (!grid) PhotoEmptyShown = p == null;
         _p.Fill(win, Theme.W95Face);
         _p.Bevel(win, Painter.Edge.Window);
-        string title = p == null ? "Windows Picture and Fax Viewer"
+        string title = grid ? PhotoCut(GalTitle(null), win.Width - 6 - 44, Ui.F95, FontWeight.Bold, null, 1)
+            : p == null ? "Windows Picture and Fax Viewer"
             : PhotoCut(PhotoCaption(words, "{0} - Windows Picture and Fax Viewer"), win.Width - 6 - 44, Ui.F95, FontWeight.Bold, null, 1);
         _ui.Caption95(new RectangleF(win.X + 3, win.Y + 3, win.Width - 6, 18), title);
         if (_ui.CaptionClose95("wd95x", win.Right - 5 - 16, win.Y + 5, true, 6)) { CloseDetail(); return; }
@@ -92,22 +94,36 @@ public sealed partial class WristPanel
         _p.Fill(new RectangleF(bar.X, bar.Y, bar.Width, 1), XpViewerBar);
         int n = PhotoCount;
         float bx = bar.X + 6, by = bar.Y + 3;
-        if (XpRound("wph95p", new RectangleF(bx, by, 24, 22), false, _phIndex < n - 1)) PhotoStep(1);
-        if (XpRound("wph95n", new RectangleF(bx + 26, by, 24, 22), true, _phIndex > 0)) PhotoStep(-1);
+        if (XpRound("wph95p", new RectangleF(bx, by, 24, 22), false, !grid && _phIndex < n - 1)) PhotoStep(1);
+        if (XpRound("wph95n", new RectangleF(bx + 26, by, 24, 22), true, !grid && _phIndex > 0)) PhotoStep(-1);
         _p.Fill(new RectangleF(bx + 56, by + 2, 1, 18), XpViewerBar);
+        // the viewer's own Delete (its red X), and the thumbnails' four squares for the gallery
+        if (XpGlyphTool("wphall", new RectangleF(bx + 61, by, 24, 22), Grid95, 0xFF316AC5, true, grid)) GalleryToggle(p);
+        if (XpGlyphTool("wphdel", new RectangleF(bx + 87, by, 24, 22), Del95, 0xFFD8432E, p != null && !DeleteBusy, DeleteArmed(p))) DeleteTap(p);
+        _p.Fill(new RectangleF(bx + 117, by + 2, 1, 18), XpViewerBar);
+        float cx = bx + 123;
         var close = new RectangleF(bar.Right - 6 - 56, by, 56, 22);
         // the gallery's button leaves the counter its room: its short form ("VR Gallery", as the 95 and Mac viewers say) where the
         // whole would take it (Magyar's "Megnyitás a VR Galleryben" left a cut "5")
-        float room = close.X - 6 - (bx + 62), need = p != null ? _ui.Width95(words.Count) + 12 : 0;
+        string cnt = grid ? (_ph is { Recent.Count: > 0 } a ? GalCountText(a.Recent.Count) : null) : p != null ? words.Count : null;
+        float room = close.X - 6 - cx, need = cnt != null ? MathF.Min(_ui.Width95(cnt), 70) + 12 : 0;
         string gl = OpenGallery;
-        if (_ui.Width95(gl) + 30 > room - need && Lang.Short(OpenGallery) is { } sh) gl = sh;
-        float gw = MathF.Min(_ui.Width95(gl) + 30, room);
+        if (_ui.Width95(gl) + 30 > room - need) gl = Lang.Short(OpenGallery) ?? "VR Gallery";
+        if (_ui.Width95(gl) + 30 > room - need) gl = "";            // (not even the short name: its picture alone)
+        float gw = gl.Length == 0 ? 26 : _ui.Width95(gl) + 30;
         var gal = new RectangleF(close.X - 6 - gw, by, gw, 22);
-        if (p != null) _ui.Text95(PhotoCut(words.Count, gal.X - 6 - (bx + 62), Ui.F95, FontWeight.Normal, null, 1), new RectangleF(bx + 62, by + 4, gal.X - 6 - (bx + 62), 13),
-            XpGrey);
+        if (cnt != null) _ui.Text95(PhotoCut(cnt, gal.X - 6 - cx, Ui.F95, FontWeight.Normal, null, 1), new RectangleF(cx, by + 4, gal.X - 6 - cx, 13), XpGrey);
         if (XpTool("wphgal", gal, gl, true, p != null)) PhotoOpen(p);
         if (_ui.Button95("wd95ok", close, "Close")) { CloseDetail(); return; }
         var view = new RectangleF(body.X + 8, body.Y + 8, body.Width - 16, bar.Y - 18 - (body.Y + 8));
+        float iy = bar.Y - 15, iw = body.Width - 16;
+        string ds = DeleteStatus(p);
+        if (grid)
+        {
+            GalGrid(new RectangleF(body.X + 4, body.Y + 4, body.Width - 8, iy - 3 - (body.Y + 4)), 2);
+            if (ds != null) _ui.Text95(PhotoCut(Lang.T(ds), iw, Ui.F95, FontWeight.Normal, null, 1), new RectangleF(body.X + 8, iy, iw, 13), 0xFFC00000);
+            return;
+        }
         if (p == null)
         {
             _ui.Text95(PhotoCut(NoPhotos, view.Width, Ui.F95, FontWeight.Normal, null, 1), view, XpGrey, false, TextAlignment.Center);
@@ -121,8 +137,14 @@ public sealed partial class WristPanel
         if (bmp != null) _p.ImagePart(bmp, pic, new RectangleF(0, 0, p.TW, p.TH));
         else _p.Fill(pic, 0xFFF1EFE2);
         PhotoFlash95(pic);
+        // Delete asking or answering: its words in the line under the photo
+        if (ds != null)
+        {
+            _ui.Text95(PhotoCut(Lang.T(ds), iw, Ui.F95, FontWeight.Normal, null, 1), new RectangleF(body.X + 8, iy, iw, 13), _delNoteBad || DeleteArmed(p) ? 0xFFC00000 : 0xFF000000);
+            return;
+        }
         // when at the right; the world and the people in what is left
-        float iy = bar.Y - 15, iw = body.Width - 16, ww = MathF.Min(_ui.Width95(words.When), 100);
+        float ww = MathF.Min(_ui.Width95(words.When), 100);
         _ui.Text95(PhotoCut(words.When, 100, Ui.F95, FontWeight.Normal, null, 1), new RectangleF(body.Right - 8 - ww - 1, iy, ww + 2, 13), XpGrey, false,
             TextAlignment.Trailing);
         float lw = iw - ww - 12;
@@ -131,6 +153,17 @@ public sealed partial class WristPanel
         if (where != null) _ui.Text95(where, new RectangleF(body.X + 8, iy, wl + 2, 13), 0xFF000000);
         string people = pr > 30 ? PhotoPeople(p, pr, Ui.F95, FontWeight.Normal, 1) : null;
         if (people != null) _ui.Text95(people, new RectangleF(px, iy, pr, 13), XpGrey);
+    }
+
+    // a toolbar button with only its picture (Delete's red X, the thumbnails' four squares): flat, XP's hot button under the pointer;
+    // down: held in (the grid shown, Delete asking)
+    bool XpGlyphTool(string id, RectangleF r, string[] glyph, uint ink, bool enabled, bool down)
+    {
+        bool click = _ui.Clickable(id, r, out bool hover, out bool held) && enabled;
+        if ((hover || held || down) && enabled) Theme.RetroSkin.ButtonFace(_p, r, false, held || down, false, true);
+        float o = (held || down) && enabled ? 1 : 0;
+        _p.Pixels(glyph, MathF.Floor(r.X + (r.Width - 7) / 2) + o, MathF.Floor(r.Y + (r.Height - 7) / 2) + o, enabled ? ink : 0xFFACA899);
+        return click;
     }
 
     // a toolbar button of the viewer: flat; under the pointer XP's hot button, pressed its sunken one

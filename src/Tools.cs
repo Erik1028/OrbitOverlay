@@ -616,6 +616,8 @@ static partial class Tools
             NotesViewTools.Run(wrist, data, cfg, gpu, dir, tag);              // the notifications opened, on made-up ones
             if (tag == "") PhotoViewTools.WatcherChecks(wrist, data, cfg, gpu, dir);     // the photo watcher on a folder of made-up photos
             PhotoViewTools.Run(wrist, data, cfg, gpu, dir, tag);              // the latest photo opened, on made-up photos
+            if (tag == "") GalleryViewTools.AlbumChecks(dir);                  // the gallery's album on a folder of made-up photos, the bin's checks
+            GalleryViewTools.Run(wrist, data, cfg, gpu, dir, tag);            // the photo view's gallery and Delete, on made-up photos
             if (tag == "") WeatherViewTools.DataChecks(wrist, data, cfg, dir);     // the weather's data: parser, cache, stale, no place, Hexpad's
             WeatherViewTools.Run(wrist, data, cfg, gpu, dir, tag);            // the weather widget and opened, on a made-up forecast
             FolderViewTools.Run(wrist, data, cfg, gpu, dir, tag);             // the folder: opened, its widgets live, one's view and back
@@ -821,6 +823,7 @@ static partial class Tools
         CyberShots();
         BackdropsRun(cfg, painter, gpu, dir);              // theater's backdrop in every style, backdrops_preview.png (ToolsBackdrops.cs)
         PhotoViewTools.PreviewSheet(dir);       // the latest photo in every style, side by side (photo_preview.png)
+        GalleryViewTools.PreviewSheet(dir);     // the gallery's grid and Delete in every style (gallery_preview.png)
         WeatherViewTools.Sheets(dir, painter, gpu);        // weather_preview.png: every style's weather side by side
         FolderViewTools.Sheet(dir);                        // folder_preview.png: every style's folder closed and open
         FolderViewTools.EditorChecks(view, ui, surf, ptr, painter, gpu, cfg, wrist, data, dir);     // into a folder and out of it in the editor
