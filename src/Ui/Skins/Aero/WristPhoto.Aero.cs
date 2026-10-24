@@ -62,6 +62,12 @@ public sealed partial class WristPanel
 
     void PhotoDetailAero(RectangleF win, PanelData d)
     {
+        PhotoAeroBody(win, d);
+        GalPeople95(win);                           // a photo's people to pick from (WristGallery.cs)
+    }
+
+    void PhotoAeroBody(RectangleF win, PanelData d)
+    {
         using var set = UseOpenSet();
         PhotoFrame(d);
         bool grid = _gal && _galGrid;                // the gallery's grid: the folder's thumbnails (WristGallery.cs)
@@ -110,11 +116,23 @@ public sealed partial class WristPanel
         int n = PhotoCount;
         float cx = MathF.Floor(bar.X + bar.Width / 2), cy = MathF.Floor(bar.Y + bar.Height / 2);
         if (OrbAero("wphall", bar.X + 22, cy, Grid95, true)) GalleryToggle(p);
-        if (DelAero("wphdel", new RectangleF(bar.Right - 34, bar.Y + 3, 28, 24), p != null && !DeleteBusy, DeleteArmed(p))) DeleteTap(p);
+        if (grid)
+        {
+            if (HeartAero("wgfav", new RectangleF(bar.Right - 34, bar.Y + 3, 28, 24))) GalFilter(!_galFav, _galWorld, _galPerson, null);
+        }
+        else if (DelAero("wphdel", new RectangleF(bar.Right - 34, bar.Y + 3, 28, 24), p != null && !DeleteBusy, DeleteArmed(p))) DeleteTap(p);
         if (grid)
         {
             if (TextAero("wgdays", new RectangleF(bar.X + 42, bar.Y + 4, WAero(Lang.T("Days"), 11) + 18, bar.Height - 8), "Days", C.GalleryDays)) GalSetDays(!C.GalleryDays);
-            if (_ph is { Recent.Count: > 0 } a)
+            if (GalFilterText() is { } ft)
+            {
+                // the filter in the count's place: tapped - all again
+                float fx = bar.X + 42 + WAero(Lang.T("Days"), 11) + 18 + 10, fw = bar.Right - 40 - fx;      // (between Days and the heart)
+                var fr = new RectangleF(fx, bar.Y + 4, fw, bar.Height - 8);
+                bool click = TextAero("wgclear", fr, PhotoCut(ft, fw - 8, 11, FontWeight.Normal, Ae.Font), true);
+                if (click) GalFilter(_galFav, null, null, null);
+            }
+            else if (_ph is { Recent.Count: > 0 } a)
                 _p.Text(GalCountText(a.Recent.Count), new RectangleF(cx - 80, bar.Y, 160, bar.Height), 0xFFE8F0FB, 11, FontWeight.Normal, TextAlignment.Center,
                     ParagraphAlignment.Center, Ae.Font);
         }
@@ -162,11 +180,18 @@ public sealed partial class WristPanel
             string wc = PhotoCut(where, lw, 11, FontWeight.Normal, Ae.Font);
             float wl = WAero(wc, 11);
             _p.Text(wc, new RectangleF(view.X, iy, wl + 4, 14), InkAero, 11, FontWeight.Normal, TextAlignment.Leading, ParagraphAlignment.Center, Ae.Font);
+            GalTapWorld("wphworld", new RectangleF(view.X, iy, wl + 4, 15), p, InkAero);
             if (people != null && lw - wl - 12 > 30)
+            {
                 _p.Text(people, new RectangleF(view.X + wl + 12, iy, lw - wl - 12, 14), SubAero, 11, FontWeight.Normal, TextAlignment.Leading, ParagraphAlignment.Center, Ae.Font);
+                GalTapPeople("wphpeople", new RectangleF(view.X + wl + 12, iy, MathF.Min(lw - wl - 12, WAero(people, 11) + 4), 15), p, SubAero);
+            }
         }
         else if (people != null)
+        {
             _p.Text(people, new RectangleF(view.X, iy, lw, 14), SubAero, 11, FontWeight.Normal, TextAlignment.Leading, ParagraphAlignment.Center, Ae.Font);
+            GalTapPeople("wphpeople", new RectangleF(view.X, iy, MathF.Min(lw, WAero(people, 11) + 4), 15), p, SubAero);
+        }
     }
 
     // a word on the control bar that toggles (the gallery's Days): flat, the bar's glass glow under the pointer and while on
@@ -181,6 +206,21 @@ public sealed partial class WristPanel
             _p.Smooth(false);
         }
         _p.Text(label, r, 0xFFE8F0FB, 11, FontWeight.Normal, TextAlignment.Center, ParagraphAlignment.Center, Ae.Font);
+        return click;
+    }
+
+    // the grid's Favourites on the control bar: flat, a heart (red while on), the glass glow under the pointer and while on
+    bool HeartAero(string id, RectangleF r)
+    {
+        bool click = _ui.Clickable(id, r, out bool hover, out bool held);
+        if (hover || held || _galFav)
+        {
+            _p.Smooth(true);
+            _p.FillRound(r, Theme.WithAlpha(0xFFFFFFFF, _galFav ? 0.26f : held ? 0.2f : 0.14f), 3);
+            _p.StrokeRound(new RectangleF(r.X + 0.5f, r.Y + 0.5f, r.Width - 1, r.Height - 1), Theme.WithAlpha(0xFFFFFFFF, 0.5f), 1, 3);
+            _p.Smooth(false);
+        }
+        _p.Pixels(Heart95, MathF.Floor(r.X + (r.Width - 7) / 2), MathF.Floor(r.Y + (r.Height - 6) / 2), _galFav ? 0xFFF05A3C : 0xFFE8F0FB);
         return click;
     }
 

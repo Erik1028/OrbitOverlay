@@ -46,6 +46,8 @@ public sealed class PhotoWatcher : IPhotoSource, IDisposable
         public DateTime Seen;                    // when it came in
         public int Years;                        // On this day's: how many years ago (0: the latest photo's)
         public bool OtherDay;                    // On this day's: of the nearest day that had photos, not of this very date
+        public bool Favorite;                    // the gallery's: VR Gallery's favourite (Sys/VrGalleryData.cs)
+        public int Rating;                       // ... its rating (0: none, 1-5)
         public Photo Copy() => (Photo)MemberwiseClone();
     }
 

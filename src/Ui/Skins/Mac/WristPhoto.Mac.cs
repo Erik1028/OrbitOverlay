@@ -19,6 +19,12 @@ public sealed partial class WristPanel
 
     void PhotoMacDetail(RectangleF win, PanelData d)
     {
+        PhotoMacBody(win, d);
+        GalPeople95(win);                           // a photo's people to pick from (WristGallery.cs)
+    }
+
+    void PhotoMacBody(RectangleF win, PanelData d)
+    {
         using var set = UseOpenSet();
         PhotoFrame(d);
         var m = Mac;
@@ -62,7 +68,18 @@ public sealed partial class WristPanel
         float iy = well.Bottom + 3;
         string ds = DeleteStatus(p);
         if (ds != null) _ui.Text95(PhotoCut(Lang.T(ds), c.Width, Ui.F95, FontWeight.Normal, null, 1), new RectangleF(c.X, iy, c.Width, 13), MacBlack, _delNoteBad || DeleteArmed(p));
-        if (grid) { GalGrid(well, 2); return; }
+        if (grid)
+        {
+            GalGrid(well, 2);
+            if (ds == null && GalFilterText() is { } ft)
+            {
+                string fc = PhotoCut(ft, c.Width, Ui.F95, FontWeight.Normal, null, 1);
+                var fr = new RectangleF(c.X, iy, MathF.Min(c.Width, _ui.Width95(fc) + 2), 14);
+                _ui.Text95(fc, fr, MacBlack);
+                if (GalTapLine("wgclear", fr, MacBlack)) GalFilter(_galFav, null, null, null);
+            }
+            return;
+        }
         m.Well(_p, well);
         var inner = RectangleF.Inflate(well, -5, -5);
         if (p == null)
@@ -84,8 +101,13 @@ public sealed partial class WristPanel
         string where = p.World != null ? PhotoCut(p.World, lw, Ui.F95, FontWeight.Bold, null, 1) : null;
         float wl = where != null ? _ui.Width95(where, true) : 0;
         if (where != null) _ui.Text95(where, new RectangleF(c.X, iy, wl + 2, 13), MacBlack, true);
+        GalTapWorld("wphworld", new RectangleF(c.X, iy, wl + 2, 14), p, MacBlack);
         float pr = lw - (where != null ? wl + 10 : 0);
         string people = pr > 30 ? PhotoPeople(p, pr, Ui.F95, FontWeight.Normal, 1) : null;
-        if (people != null) _ui.Text95(people, new RectangleF(c.X + (where != null ? wl + 10 : 0), iy, pr, 13), MacBlack);
+        if (people != null)
+        {
+            _ui.Text95(people, new RectangleF(c.X + (where != null ? wl + 10 : 0), iy, pr, 13), MacBlack);
+            GalTapPeople("wphpeople", new RectangleF(c.X + (where != null ? wl + 10 : 0), iy, MathF.Min(pr, _ui.Width95(people) + 2), 14), p, MacBlack);
+        }
     }
 }

@@ -100,7 +100,7 @@ public sealed partial class WristPanel
     bool PhotoChanged(PanelData d) => GalleryChanged(d) | (C.Face == "custom" && ((!ReferenceEquals(d.Photos, _latest.Snap) && (HasWidget("photo") || DetailIs("photo"))) ||
         (!ReferenceEquals(d.Memories, _memory.Snap) && (HasWidget("memory") || DetailIs("memory")))));
 
-    PhotoWatcher.Snapshot SetData(PanelData d) => _set.Album ? d.Album : _set.Memory ? d.Memories : d.Photos;
+    PhotoWatcher.Snapshot SetData(PanelData d) => _set.Album ? GalView(d.Album) : _set.Memory ? d.Memories : d.Photos;
 
     // once a frame, before the first photo is drawn: the snapshot taken, a new photo popped, the opened view kept on its photo
     void PhotoFrame(PanelData d)
@@ -506,6 +506,12 @@ public sealed partial class WristPanel
     // left of the X; the photo as big as it fits, the words over its foot, an arrow at each side
     void PhotoDetail(RectangleF E, PanelData d)
     {
+        PhotoDetailBody(E, d);
+        GalPeopleSheet(E);                          // a photo's people to pick from, over it (WristGallery.cs)
+    }
+
+    void PhotoDetailBody(RectangleF E, PanelData d)
+    {
         using var set = UseOpenSet();
         PhotoFrame(d);
         if (Theme.Cyber) { CyberPhotoDetail(E, d); return; }
@@ -542,13 +548,24 @@ public sealed partial class WristPanel
         else
         {
             // the words over its foot: the world, when (and how long ago), the people
+            // (the world and the people are links: their photos in the gallery - WristGallery.cs)
             float x = box.X + 18, tw = box.Width - 36, by = box.Bottom - 16;
             string people = PhotoPeople(p, tw, SmallText);
-            if (people != null) { TextAt(people, x, by, tw + 2, 0xD9FFFFFF, SmallText, FontWeight.Normal); by -= 24; }
+            if (people != null)
+            {
+                TextAt(people, x, by, tw + 2, 0xD9FFFFFF, SmallText, FontWeight.Normal);
+                GalTapPeople("wphpeople", new RectangleF(x, by - 19, MathF.Min(tw, _p.MeasureWidth(people, SmallText, FontWeight.Normal)), 24), p, 0xD9FFFFFF);
+                by -= 24;
+            }
             float agw = _p.MeasureWidth(words.Ago, SmallText, FontWeight.Normal);
             TextAt(PhotoCut(words.When, tw - agw - 20, SmallText), x, by, tw + 2, 0xFFFFFFFF, SmallText, FontWeight.SemiBold);
             TextAt(words.Ago, box.Right - 18 - agw, by, agw + 4, 0xD9FFFFFF, SmallText, FontWeight.Normal);
-            if (p.World != null) TextAt(PhotoCut(p.World, tw, 24), x, by - 30, tw + 2, 0xFFFFFFFF, 24, FontWeight.SemiBold);
+            if (p.World != null)
+            {
+                string wn = PhotoCut(p.World, tw, 24);
+                TextAt(wn, x, by - 30, tw + 2, 0xFFFFFFFF, 24, FontWeight.SemiBold);
+                GalTapWorld("wphworld", new RectangleF(x, by - 30 - 25, MathF.Min(tw, _p.MeasureWidth(wn, 24, FontWeight.SemiBold)), 31), p, 0xFFFFFFFF);
+            }
         }
         // the arrows at its sides (the card's, beside a photo standing up): the one before (older), the one after (newer) - only where
         // there is one that way
@@ -575,11 +592,16 @@ public sealed partial class WristPanel
             var (l1, l2) = PhotoTwo(p.World, w, 22, FontWeight.SemiBold, null);
             TextAt(l1, x, y, w + 2, Bento.Text, 22, FontWeight.SemiBold);
             TextAt(l2, x, y + 28, w + 2, Bento.Text, 22, FontWeight.SemiBold);
+            GalTapWorld("wphworld", new RectangleF(x, y - 22, w, l2.Length > 0 ? 56 : 28), p, Bento.Text);
             y += 68;
         }
         TextAt(PhotoCut(words.When, w, SmallText), x, y, w + 2, Bento.Text, SmallText, FontWeight.SemiBold);
         TextAt(PhotoCut(words.Ago, w, SmallText, FontWeight.Normal), x, y + 24, w + 2, Sub, SmallText, FontWeight.Normal);
-        if (people != null) TextAt(people, x, y + 54, w + 2, Sub, SmallText, FontWeight.Normal);
+        if (people != null)
+        {
+            TextAt(people, x, y + 54, w + 2, Sub, SmallText, FontWeight.Normal);
+            GalTapPeople("wphpeople", new RectangleF(x, y + 35, MathF.Min(w, _p.MeasureWidth(people, SmallText, FontWeight.Normal)), 24), p, Sub);
+        }
     }
 
     // nothing yet: the camera, the words, where they come from
@@ -717,6 +739,7 @@ public sealed partial class WristPanel
             TextAt(l2, wp.X + 14, wp.Y + 74, wp.Width - 26, CyW, 18, FontWeight.Bold, TextAlignment.Leading, Theme.Display);
         }
         else CyMono(PhotoCut(Upper("Not known"), wp.Width - 28, CyNote, FontWeight.SemiBold, CyberHud.Mono), wp.X + 14, wp.Y + 56, wp.Width - 26, CyberHud.Faint);
+        GalTapWorld("wphworld", new RectangleF(wp.X + 10, wp.Y + 34, wp.Width - 20, wp.Height - 38), p, CyC);
         var pp = new RectangleF(col.X, wp.Bottom + 10, col.Width, c.Bottom - wp.Bottom - 10);
         CyPlate(pp, "People", p.Players.Length > 0 ? PhotoNum(p.Players.Length) : null, CyC);
         float ly = pp.Y + 50, lh = 20;
@@ -728,6 +751,13 @@ public sealed partial class WristPanel
             bool more = i == rows - 1 && p.Players.Length > rows;
             string s = more ? PhotoMore(p.Players.Length - i) : PhotoCut(p.Players[i], pp.Width - 28, CyNote, FontWeight.SemiBold, CyberHud.Mono);
             CyMono(s, pp.X + 14, ly + i * lh, pp.Width - 26, more ? CyG : CyW);
+            // a person: their photos; "+3 more": the picker (WristGallery.cs)
+            if (GalTapLine(Ui.Id("wphpr", i), new RectangleF(pp.X + 10, ly + i * lh - 15, pp.Width - 20, lh), CyC))
+            {
+                if (more) _galPeople = p;
+                else GalFilter(_galFav, null, p.Players[i], p.Path);
+                _dirty = true;
+            }
         }
         float k = PhotoPopK();
         if (k > 0) _p.Fill(box, Theme.WithAlpha(0xFFFFFFFF, 0.5f * k * k));
@@ -753,12 +783,17 @@ public sealed partial class WristPanel
         float agw = CyMonoW(ago);
         CyMono(ago, right, strip.Y + 26, agw + 2, CyG, CyNote, FontWeight.SemiBold, TextAlignment.Trailing);
         string world = p.World != null ? Upper(p.World) : Upper("World not known");
-        TextAt(PhotoCut(world, right - x - agw - 20, 20, FontWeight.Bold, Theme.Display), x, strip.Y + 27, right - x - agw - 18,
-            p.World != null ? CyW : CyberHud.Faint, 20, FontWeight.Bold, TextAlignment.Leading, Theme.Display);
+        string wcut = PhotoCut(world, right - x - agw - 20, 20, FontWeight.Bold, Theme.Display);
+        TextAt(wcut, x, strip.Y + 27, right - x - agw - 18, p.World != null ? CyW : CyberHud.Faint, 20, FontWeight.Bold, TextAlignment.Leading, Theme.Display);
+        GalTapWorld("wphworld", new RectangleF(x, strip.Y + 6, MathF.Min(right - x - agw - 20, _p.MeasureWidth(wcut, 20, FontWeight.Bold, Theme.Display)), 25), p, CyC);
         float sw = CyMonoW(words.Stamp), by = strip.Bottom - 12;
         CyMono(words.Stamp, x, by, sw + 2, CyC, CyNote, FontWeight.Bold);
         string people = PhotoPeople(p, right - x - sw - 22, SmallText);
-        if (people != null) TextAt(people, x + sw + 18, by + 1, right - x - sw - 16, CyG, SmallText, FontWeight.Normal);
+        if (people != null)
+        {
+            TextAt(people, x + sw + 18, by + 1, right - x - sw - 16, CyG, SmallText, FontWeight.Normal);
+            GalTapPeople("wphpeople", new RectangleF(x + sw + 18, by - 17, MathF.Min(right - x - sw - 18, _p.MeasureWidth(people, SmallText, FontWeight.Normal)), 22), p, CyC);
+        }
         _p.Stroke(RectangleF.Inflate(box, 0.6f, 0.6f), CyberHud.CyanDim, 1.25f);
         float k = PhotoPopK();
         PhotoCorners(RectangleF.Inflate(box, 6, 6), k > 0 ? Theme.Mix(CyY, CyC, k) : CyY, 16);
@@ -862,6 +897,12 @@ public sealed partial class WristPanel
 
     void Photo95Detail(RectangleF win, PanelData d, WatchWidgets.Kind k)
     {
+        Photo95Body(win, d, k);
+        GalPeople95(win);                           // a photo's people to pick from, a little window over it (WristGallery.cs)
+    }
+
+    void Photo95Body(RectangleF win, PanelData d, WatchWidgets.Kind k)
+    {
         using var set = UseOpenSet();
         PhotoFrame(d);
         if (Theme.Retro == RetroStyle.XP) { PhotoDetailXp(win, d); return; }        // Windows Picture and Fax Viewer (Skins/Xp)
@@ -918,7 +959,7 @@ public sealed partial class WristPanel
         if (grid)
         {
             GalGrid(view, 2);
-            _ui.Pane95(st, PhotoCut(Lang.T(ds ?? "Tap a photo to open it"), st.Width - 8, Ui.F95, FontWeight.Normal, null, 1));
+            GalStatus95(st, ds);
             return;
         }
         _p.Fill(view, 0xFF808080);
@@ -941,8 +982,10 @@ public sealed partial class WristPanel
         float w1 = MathF.Ceiling(MathF.Min(_ui.Width95(words.When) + 10, st.Width * 0.34f)), w2 = MathF.Floor((st.Width - w1 - 4) * 0.5f);
         _ui.Pane95(new RectangleF(st.X, st.Y, w1, st.Height), PhotoCut(words.When, w1 - 8, Ui.F95, FontWeight.Normal, null, 1));
         _ui.Pane95(new RectangleF(st.X + w1 + 2, st.Y, w2, st.Height), PhotoCut(p.World ?? Lang.T("World not known"), w2 - 8, Ui.F95, FontWeight.Normal, null, 1));
+        GalTapWorld("wphworld", new RectangleF(st.X + w1 + 2, st.Y, w2, st.Height), p, Blk95);
         float x3 = st.X + w1 + 2 + w2 + 2;
         _ui.Pane95(new RectangleF(x3, st.Y, st.Right - x3, st.Height), PhotoPeople(p, st.Right - x3 - 8, Ui.F95, FontWeight.Normal, 1, false) ?? "");
+        GalTapPeople("wphpeople", new RectangleF(x3, st.Y, st.Right - x3, st.Height), p, Blk95);
     }
 
     static readonly string[] PhPrev95 = { "...k", "..kk", ".kkk", "kkkk", ".kkk", "..kk", "...k" };

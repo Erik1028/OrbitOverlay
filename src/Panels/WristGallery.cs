@@ -20,7 +20,7 @@ namespace Orbit;
 // bitmaps (a few dozen) by their pixels.
 public sealed partial class WristPanel
 {
-    const string GridGlyph = "", DeleteGlyph = "";
+    const string GridGlyph = "", DeleteGlyph = "", HeartGlyph = "\uEB52", HeartLine = "\uEB51";
     const string GalleryWord = "Gallery", DeleteAsk = "Delete?", Moved = "Moved to the Recycle Bin";
     const float DelArmLen = 4, DelNoteLen = 3.5f;
 
@@ -64,6 +64,9 @@ public sealed partial class WristPanel
     void GalleryReset()
     {
         _gal = _galGrid = _galPicked = false;
+        _galFav = false;
+        _galWorld = _galPerson = null;
+        _galPeople = null;
         _galAnchor = null;
         _delArmed = null;
         FromNewest(_album);
@@ -106,7 +109,7 @@ public sealed partial class WristPanel
         if (_delDone) { _delDone = false; DeleteFinished(); ch = true; }
         if (GalleryOn)
         {
-            if (!ReferenceEquals(d.Album, _album.Snap)) ch = true;
+            if (!ReferenceEquals(GalView(d.Album), _album.Snap)) ch = true;
             int cv = (d.Album?.Source as IPhotoCells)?.CellVersion ?? 0;
             if (cv != _galCellsSeen) { _galCellsSeen = cv; ch |= _galGrid; }
         }
@@ -114,6 +117,188 @@ public sealed partial class WristPanel
         if (_delArmed != null && now - _delArmAt > DelArmLen) { _delArmed = null; ch = true; }
         if (_delNote != null && now - _delNoteAt > DelNoteLen) { _delNote = null; ch = true; }
         return ch;
+    }
+
+    // ---- the filters (Erik 10-24: "szűrni világra vagy emberre", VR Gallery's favourites): what the grid and the big view go through -
+    // a snapshot of the album's matching photos, made when the album or a filter changes (the album's thread fills in the world, the
+    // people and the favourites from VR Gallery's library) ----
+
+    bool _galFav;
+    string _galWorld, _galPerson;
+    PhotoWatcher.Snapshot _gvIn, _gvOut;
+    (bool, string, string) _gvKey;
+    PhotoWatcher.Photo _galPeople;          // whose people the picker shows (null: closed)
+
+    bool GalFiltered => _galFav || _galWorld != null || _galPerson != null;
+    public string GalleryFilterShown => _galWorld ?? _galPerson ?? (_galFav ? "favourites" : null);      // --snapshot
+    public bool GalleryPeopleShown => _galPeople != null;
+    public void GalleryNoteForTest() => _delNote = null;
+
+    PhotoWatcher.Snapshot GalView(PhotoWatcher.Snapshot all)
+    {
+        if (all == null || !GalFiltered) return all;
+        var key = (_galFav, _galWorld, _galPerson);
+        if (ReferenceEquals(all, _gvIn) && key == _gvKey) return _gvOut;
+        var s = new PhotoWatcher.Snapshot { Version = all.Version, Ready = all.Ready, FolderFound = all.FolderFound, Folder = all.Folder, Source = all.Source };
+        foreach (var p in all.Recent)
+        {
+            if (_galFav && !p.Favorite) continue;
+            if (_galWorld != null && p.World != _galWorld) continue;
+            if (_galPerson != null && !HasPerson(p, _galPerson)) continue;
+            s.Recent.Add(p);
+        }
+        (_gvIn, _gvKey, _gvOut) = (all, key, s);
+        return s;
+    }
+
+    static bool HasPerson(PhotoWatcher.Photo p, string name)
+    {
+        foreach (var n in p.Players) if (string.Equals(n, name, StringComparison.OrdinalIgnoreCase)) return true;
+        return false;
+    }
+
+    // a filter set (from the grid's heading, a photo's world or person): the grid, the photo it came from (or the one at the top) kept in view
+    void GalFilter(bool fav, string world, string person, string keep)
+    {
+        (_galFav, _galWorld, _galPerson) = (fav, world, person);
+        if (keep != null) _galAnchor = keep; else _galAnchorTop = _galTopPhoto;
+        _gal = _galGrid = true;
+        _galPicked = false;
+        _galPeople = null;
+        _delArmed = null;
+        _dirty = true;
+    }
+
+    // a photo's world, tapped: its photos
+    void GalTapWorld(string id, RectangleF r, PhotoWatcher.Photo p, uint line)
+    {
+        if (p?.World == null) return;
+        if (GalTapLine(id, r, line)) GalFilter(_galFav, p.World, null, p.Path);
+    }
+
+    // its people, tapped: one - their photos; more - the picker
+    void GalTapPeople(string id, RectangleF r, PhotoWatcher.Photo p, uint line)
+    {
+        if (p == null || p.Players.Length == 0) return;
+        if (!GalTapLine(id, r, line)) return;
+        if (p.Players.Length == 1) GalFilter(_galFav, null, p.Players[0], p.Path);
+        else { _galPeople = p; _dirty = true; }
+    }
+
+    // a line of text that is a link: underlined under the pointer
+    bool GalTapLine(string id, RectangleF r, uint line)
+    {
+        bool click = _ui.Clickable(id, r, out bool hover, out _) && !_ui.Inert;
+        if (hover && !_ui.Inert) _p.Fill(new RectangleF(r.X, r.Bottom - 2, r.Width, Theme.Classic ? 1 : 1.5f), line);
+        return click;
+    }
+
+    // modern / Cyber: the people as chips over the card - a tap shows their photos, a tap beside closes it
+    void GalPeopleSheet(RectangleF E)
+    {
+        var p = _galPeople;
+        if (p == null) return;
+        if (!(DetailIs("photo") || DetailIs("memory")) || _closing || p.Players.Length == 0) { _galPeople = null; return; }
+        bool cyber = Theme.Cyber;
+        if (_ui.Clickable("wpscrim", E, out _, out _) && !_ui.Inert) { _galPeople = null; _dirty = true; return; }
+        _p.Fill(E, 0xA6000000, CardRadius);
+        int n = Math.Min(p.Players.Length, 16);
+        float pw = E.Width - 96, inner = pw - 44, chH = 44, gap = 10;
+        // the chips' rows (measured each frame: a dozen names at most, the painter keeps their layouts)
+        int rows = 1;
+        float rx = 0;
+        for (int i = 0; i < n; i++)
+        {
+            float cw = MathF.Min(inner, _p.MeasureWidth(p.Players[i], 17, FontWeight.SemiBold) + 34);
+            if (rx > 0 && rx + cw > inner) { rows++; rx = 0; }
+            rx += cw + gap;
+        }
+        float ph = 22 + 34 + rows * (chH + gap) - gap + 22;
+        var panel = new RectangleF(E.X + 48, E.Y + MathF.Max(70, (E.Height - ph) / 2), pw, ph);
+        if (cyber) CyberHud.CardShape(_p, panel, CyberHud.Card2, CyC);
+        else
+        {
+            _p.Fill(panel, Bento.Card, CardRadius);
+            _p.Stroke(RectangleF.Inflate(panel, -0.6f, -0.6f), Bento.Edge, Bento.EdgeWidth, CardRadius - 0.6f);
+        }
+        _ui.Clickable("wppanel", panel, out _, out _);          // (a tap on the sheet itself does not close it)
+        string title = Lang.T("Show the photos with");
+        if (cyber) CyMono(Upper(title), panel.X + 22, panel.Y + 38, inner, CyY, CyNote, FontWeight.Bold);
+        else TextAt(PhotoCut(title, inner, 20), panel.X + 22, panel.Y + 40, inner + 2, Bento.Text, 20, FontWeight.SemiBold);
+        float x = panel.X + 22, y = panel.Y + 22 + 34;
+        for (int i = 0; i < n; i++)
+        {
+            float cw = MathF.Min(inner, _p.MeasureWidth(p.Players[i], 17, FontWeight.SemiBold) + 34);
+            if (x > panel.X + 22 && x + cw > panel.X + 22 + inner) { x = panel.X + 22; y += chH + gap; }
+            if (Press(Ui.Id("wpp", i), new RectangleF(x, y, cw, chH), null, p.Players[i], false, true, 18)) { GalFilter(_galFav, null, p.Players[i], p.Path); return; }
+            x += cw + gap;
+        }
+    }
+
+    // a retro style: the people in a little window of the style - its list, Cancel
+    Action<int, RectangleF, bool> _personRow;
+    void GalPeople95(RectangleF win)
+    {
+        var p = _galPeople;
+        if (p == null) return;
+        if (!(DetailIs("photo") || DetailIs("memory")) || _closing || p.Players.Length == 0) { _galPeople = null; return; }
+        _ui.Clickable("wpscrim", win, out _, out _);             // (the viewer under it takes no taps meanwhile)
+        int n = p.Players.Length, rows = Math.Min(n, 6);
+        float w = MathF.Min(win.Width - 40, 190), h = 3 + 18 + 6 + rows * 16 + 4 + 8 + 23 + 8;
+        var dlg = new RectangleF(MathF.Floor(win.X + (win.Width - w) / 2), MathF.Floor(win.Y + (win.Height - h) / 2), w, h);
+        _p.Fill(dlg, Theme.W95Face);
+        _p.Bevel(dlg, Painter.Edge.Window);
+        _ui.Caption95(new RectangleF(dlg.X + 3, dlg.Y + 3, dlg.Width - 6, 18), Theme.Retro == RetroStyle.Terminal ? "PEOPLE" : "People");
+        if (_ui.CaptionClose95("wpx", dlg.Right - 5 - 16, dlg.Y + 5, true, 6)) { _galPeople = null; _dirty = true; return; }
+        var lr = new RectangleF(dlg.X + 8, dlg.Y + 27, dlg.Width - 16, rows * 16 + 4);
+        int hit = _ui.List95("wplist", lr, n, -1, _personRow ??= PersonRow95);
+        if (_ui.Button95("wpcancel", new RectangleF(dlg.Right - 8 - 75, dlg.Bottom - 8 - 23, 75, 23), "Cancel")) { _galPeople = null; _dirty = true; return; }
+        if (hit >= 0 && hit < n) GalFilter(_galFav, null, p.Players[hit], p.Path);
+    }
+
+    void PersonRow95(int i, RectangleF r, bool sel)
+    {
+        var p = _galPeople;
+        if (p == null || i < 0 || i >= p.Players.Length) return;
+        _ui.Text95(PhotoCut(p.Players[i], r.Width - 6, Ui.F95, FontWeight.Normal, null, 1), new RectangleF(r.X + 3, r.Y + 1, r.Width - 6, 14), sel ? Wht95 : Blk95);
+    }
+
+    // what the filter shows, for a retro status line ("Showing: Quiet Meadow - tap to show all"); null: no world / person filter
+    string _galFiltText, _galFiltOf;
+    int _galFiltLang = -1;
+    string GalFilterText()
+    {
+        string f = _galWorld ?? _galPerson;
+        if (f == null) return null;
+        if (!ReferenceEquals(f, _galFiltOf) || _galFiltLang != Lang.Version) { (_galFiltOf, _galFiltLang) = (f, Lang.Version); _galFiltText = Lang.F("Showing: {0} - tap to show all", f); }
+        return _galFiltText;
+    }
+
+    // the grid's status line (a retro style): the filter, tapped - all again; else Delete's words or the hint
+    void GalStatus95(RectangleF st, string ds)
+    {
+        string f = GalFilterText();
+        if (f != null)
+        {
+            bool click = _ui.Clickable("wgclear", st, out _, out _) && !_ui.Inert;
+            _ui.Pane95(st, PhotoCut(f, st.Width - 8, Ui.F95, FontWeight.Normal, null, 1));
+            if (click) GalFilter(_galFav, null, null, null);
+            return;
+        }
+        _ui.Pane95(st, PhotoCut(Lang.T(ds ?? "Tap a photo to open it"), st.Width - 8, Ui.F95, FontWeight.Normal, null, 1));
+    }
+
+    static readonly string[] Heart95 = { ".kk.kk.", "kkkkkkk", "kkkkkkk", ".kkkkk.", "..kkk..", "...k...", "......." };
+
+    // a retro toolbar's Favourites toggle: held in while on, the heart red
+    bool HeartButton95(string id, RectangleF r)
+    {
+        bool click = _ui.Clickable(id, r, out bool hover, out bool held) && !_ui.Inert;
+        Theme.RetroSkin.ButtonFace(_p, r, false, held || _galFav, false, hover);
+        float o = held || _galFav ? 1 : 0;
+        _p.Pixels(Heart95, MathF.Floor(r.X + (r.Width - 7) / 2) + o, MathF.Floor(r.Y + (r.Height - 6) / 2) + o, _galFav ? 0xFFC00000 : Blk95);
+        if (click) GalFilter(!_galFav, _galWorld, _galPerson, null);
+        return click;
     }
 
     // ---- Delete ----
@@ -157,7 +342,7 @@ public sealed partial class WristPanel
     // ---- the grid's layout: All - one sheet of photos, square, almost no gap (VR Gallery's All, Erik 10-24: "mutathatná az all listát
     // folyamatosan mint a vrgallery"); Days - each day a heading and its rows. The months' first rows for the rail. Kept per snapshot and size ----
 
-    sealed class GalDay { public DateTime Day; public int First, Count; public float Y, End; }
+    sealed class GalDay { public DateTime Day; public int First, Count; public float Y, End; public string Worlds; }
 
     sealed class GalLayout
     {
@@ -195,7 +380,7 @@ public sealed partial class WristPanel
             while (j < n && PhotoWatcher.DayOf(list[j].Taken) == day) j++;
             int rows = (j - i + cols - 1) / cols;
             float end = y + headH + rows * (ch + gap);
-            L.Days.Add(new GalDay { Day = day, First = i, Count = j - i, Y = y, End = end });
+            L.Days.Add(new GalDay { Day = day, First = i, Count = j - i, Y = y, End = end, Worlds = WorldsOf(list, i, j) });
             y = end;
             i = j;
         }
@@ -212,6 +397,16 @@ public sealed partial class WristPanel
             L.Months.Add((my, d.Year, d.Month));
         }
         return L;
+    }
+
+    // a day's worlds for its heading ("Quiet Meadow, Aurora Overlook +2"; null: none known) - made with the layout
+    static string WorldsOf(List<PhotoWatcher.Photo> list, int i, int j)
+    {
+        List<string> w = null;
+        for (int k = i; k < j; k++)
+            if (list[k].World is { } x && (w == null || !w.Contains(x))) (w ??= new List<string>()).Add(x);
+        if (w == null) return null;
+        return w.Count <= 2 ? string.Join(", ", w) : w[0] + ", " + w[1] + " +" + (w.Count - 2).ToString(CultureInfo.InvariantCulture);
     }
 
     // where photo i's cell is in the layout (y of its row)
@@ -418,7 +613,7 @@ public sealed partial class WristPanel
             if (day.Y - scroll > viewH) break;
             if (day.End - scroll < 0) continue;
             float hy = top0 + day.Y - scroll;
-            if (days && hy + headH > top0 && hy < top0 + viewH) GalHeading(GalHead(day.Day, day.Count), left, hy, gw, headH, look);
+            if (days && hy + headH > top0 && hy < top0 + viewH) GalHeading(GalHead(day.Day, day.Count), day.Worlds, left, hy, gw, headH, look);
             int k0 = Math.Max(0, (int)((scroll - day.Y - headH) / (ch + gap)) * cols);         // (the rows above the view skipped whole)
             for (int k = k0; k < day.Count; k++)
             {
@@ -444,7 +639,7 @@ public sealed partial class WristPanel
                 float hy = top0 + MathF.Min(0, next - headH);
                 var band = new RectangleF(clip.X, hy - (retro ? 0 : 3), clip.Width, headH + (retro ? 0 : 3));
                 _p.Fill(band, retro ? sk.Window : Bento.Card);
-                GalHeading(GalHead(day.Day, day.Count), left, hy, gw, headH, look);
+                GalHeading(GalHead(day.Day, day.Count), day.Worlds, left, hy, gw, headH, look);
                 break;
             }
         _p.PopClip();
@@ -587,18 +782,57 @@ public sealed partial class WristPanel
         return s;
     }
 
-    void GalHeading(string text, float x, float y, float w, float h, int look)
+    // a day's heading, its worlds after it (VR Gallery's library: Sys/VrGalleryData.cs) in the style's quieter ink
+    void GalHeading(string text, string worlds, float x, float y, float w, float h, int look)
     {
-        if (look == 2) { _ui.Text95(PhotoCut(text, w, Ui.F95, FontWeight.Bold, null, 1), new RectangleF(x, y + 1, w, 13), Blk95, true); return; }
+        if (look == 2)
+        {
+            string t = PhotoCut(text, w, Ui.F95, FontWeight.Bold, null, 1);
+            _ui.Text95(t, new RectangleF(x, y + 1, w, 13), Blk95, true);
+            float tw2 = _ui.Width95(t, true) + 8;
+            if (worlds != null && w - tw2 > 30) _ui.Text95(PhotoCut(worlds, w - tw2, Ui.F95, FontWeight.Normal, null, 1), new RectangleF(x + tw2, y + 1, w - tw2, 13), Gry95);
+            return;
+        }
         if (look == 1)
         {
             string t = PhotoCut(Upper(text), w, CyNote, FontWeight.Bold, CyberHud.Mono);
             CyMono(t, x, y + h - 12, w, CyY, CyNote, FontWeight.Bold);
             float tw = MathF.Min(w, CyMonoW(t, CyNote, FontWeight.Bold));
+            if (worlds != null && w - tw - 14 > 40)
+            {
+                string ws = PhotoCut(Upper(worlds), w - tw - 14, CyNote, FontWeight.SemiBold, CyberHud.Mono);
+                CyMono(ws, x + tw + 14, y + h - 12, w - tw - 14, CyG, CyNote, FontWeight.SemiBold);
+                tw += 14 + CyMonoW(ws, CyNote, FontWeight.SemiBold);
+            }
             if (x + tw + 12 < x + w) _p.Fill(new RectangleF(x + tw + 10, y + h - 17, w - tw - 10, 1), CyberHud.Edge);
             return;
         }
-        TextAt(PhotoCut(text, w, SmallText), x, y + h - 10, w + 2, Bento.Text, SmallText, FontWeight.SemiBold);
+        string m = PhotoCut(text, w, SmallText);
+        TextAt(m, x, y + h - 10, w + 2, Bento.Text, SmallText, FontWeight.SemiBold);
+        float mw = _p.MeasureWidth(m, SmallText, FontWeight.SemiBold) + 12;
+        if (worlds != null && w - mw > 40) TextAt(PhotoCut(worlds, w - mw, SmallText, FontWeight.Normal), x + mw, y + h - 10, w - mw + 2, Sub, SmallText, FontWeight.Normal);
+    }
+
+    // a favourite's heart on its tile (VR Gallery's favourites); modern / Cyber: the world under the pointer along its foot
+    void GalTileMarks(RectangleF r, PhotoWatcher.Photo p, int look, bool hover)
+    {
+        if (look == 2)
+        {
+            if (p.Favorite) _p.Pixels(Heart95, r.Right - 10, r.Y + 3, 0xFFC00000);
+            return;
+        }
+        if (hover && p.World != null && r.Height >= 56)
+        {
+            var strip = new RectangleF(r.X, r.Bottom - 26, r.Width, 26);
+            _p.FillGradient(strip, 0x00000000, 0x80000000, 0xD9000000, 0, 90);
+            if (look == 1) CyMono(PhotoCut(Upper(p.World), r.Width - 12, CyNote - 2, FontWeight.SemiBold, CyberHud.Mono), r.X + 6, r.Bottom - 8, r.Width - 10, CyW,
+                CyNote - 2, FontWeight.SemiBold);
+            else TextAt(PhotoCut(p.World, r.Width - 12, 13, FontWeight.SemiBold), r.X + 6, r.Bottom - 8, r.Width - 10, 0xFFFFFFFF, 13, FontWeight.SemiBold);
+        }
+        if (!p.Favorite) return;
+        float cx = r.Right - 13, cy = r.Y + 13;
+        _p.Circle(cx, cy, 10, 0x8C000000);
+        _p.Icon(HeartGlyph, new RectangleF(cx - 10, cy - 9.5f, 20, 20), look == 1 ? CyY : 0xFFFF5D93, 12);
     }
 
     void GalCell(RectangleF r, PhotoWatcher.Photo p, IPhotoCells cells, int look, bool hover, bool pressed, bool current, float radius)
@@ -612,6 +846,7 @@ public sealed partial class WristPanel
             if (bmp != null) _p.ImagePart(bmp, f, PhotoCover(w, h, f));
             else _p.Fill(f, 0xFFD4D0C8);
             _p.Stroke(new RectangleF(r.X + 0.5f, r.Y + 0.5f, r.Width - 1, r.Height - 1), 0xFF808080, 1);
+            GalTileMarks(r, p, 2, hover);
             return;
         }
         // a picture that just came fades in (a fifth of a second)
@@ -627,6 +862,7 @@ public sealed partial class WristPanel
                 _p.ImagePart(bmp, r, PhotoCover(w, h, r));
                 if (fade < 1) _p.PopFade();
             }
+            GalTileMarks(r, p, 1, hover);
             _p.Stroke(RectangleF.Inflate(r, 0.5f, 0.5f), hover || current ? CyC : CyberHud.CyanDim, hover ? 1.5f : 1);
             if (hover) PhotoCorners(RectangleF.Inflate(r, 3, 3), CyY, 9);
             return;
@@ -640,6 +876,7 @@ public sealed partial class WristPanel
             if (fade < 1) _p.PopFade();
         }
         if (hover) _p.Fill(r, 0x26FFFFFF);
+        GalTileMarks(r, p, 0, hover);
         _p.PopRoundedClip();
         if (hover || current) _p.Stroke(RectangleF.Inflate(r, 1, 1), current && !hover ? Theme.WithAlpha(Bento.Accent, 0.7f) : Bento.Accent, 2.5f, radius + 1);
     }
@@ -667,7 +904,21 @@ public sealed partial class WristPanel
         var ra = new RectangleF(rd.X - 6 - wa, y, wa, 40);
         if (Press("wgall", ra, null, "All", !days, true, 18)) GalSetDays(false);
         if (Press("wgdays", rd, null, "Days", days, true, 18)) GalSetDays(true);
-        return ra.X;
+        var rf = new RectangleF(ra.X - 6 - 46, y - 3, 46, 46);
+        if (Press("wgfav", rf, _galFav ? HeartGlyph : HeartLine, null, _galFav, true, 18, true)) GalFilter(!_galFav, _galWorld, _galPerson, null);
+        return rf.X;
+    }
+
+    // the world / person shown (in the count's place): a chip, its X shows all again; false: none
+    bool GalFilterChip(float x, float right, float y)
+    {
+        string f = _galWorld ?? _galPerson;
+        if (f == null || right - x < 60) return f != null;
+        string icon = _galWorld != null ? "\uE909" : "\uE77B";             // the globe / a person
+        float w = MathF.Min(right - x, MathF.Ceiling(_p.MeasureWidth(f, 17, FontWeight.SemiBold) + 18 + 8 + 30 + 22));
+        var r = new RectangleF(x, y, w, 40);
+        if (Press("wgclear", r, icon, f, true, true, 16)) GalFilter(_galFav, null, null, null);
+        return true;
     }
 
     void GalleryModern(RectangleF E)
@@ -676,11 +927,9 @@ public sealed partial class WristPanel
         var s = _ph;
         var back = new RectangleF(E.Right - 22 - 46 - 12 - 46, E.Y + 14, 46, 46);
         float chips = GalViewChips(back.X - 14, E.Y + 17);
-        if (s is { Ready: true, Recent.Count: > 0 })
-        {
-            float nx = E.X + 24 + _p.MeasureWidth(Lang.T(GalleryWord), 24, FontWeight.SemiBold) + 12, room = chips - 12 - nx;
-            if (room > 40) TextAt(PhotoCut(GalCountText(s.Recent.Count), room, 20), nx, E.Y + 44, room + 2, Sub, 20, FontWeight.SemiBold);
-        }
+        float nx = E.X + 24 + _p.MeasureWidth(Lang.T(GalleryWord), 24, FontWeight.SemiBold) + 12, room = chips - 12 - nx;
+        if (!GalFilterChip(nx, chips - 12, E.Y + 17) && s is { Ready: true, Recent.Count: > 0 } && room > 40)
+            TextAt(PhotoCut(GalCountText(s.Recent.Count), room, 20), nx, E.Y + 44, room + 2, Sub, 20, FontWeight.SemiBold);
         if (Press("wphall", back, GridGlyph, null, true, true, 18, true)) GalleryToggle(null);
         GalGrid(new RectangleF(E.X + 20, E.Y + 74, E.Width - 34, E.Height - 74 - 14), 0);
         DeleteNoteModern(E);
@@ -692,11 +941,12 @@ public sealed partial class WristPanel
         var s = _ph;
         var back = new RectangleF(E.Right - 22 - 46 - 12 - 46, E.Y + 14, 46, 46);
         float chips = GalViewChips(back.X - 14, E.Y + 17);
-        if (s is { Ready: true, Recent.Count: > 0 })
+        float cx0 = E.X + 24 + CyberHud.TagWidth(_p, Upper(GalleryWord), 18) + 14;
+        if (!GalFilterChip(cx0, chips - 12, E.Y + 17) && s is { Ready: true, Recent.Count: > 0 })
         {
             string cnt = Upper(GalCountText(s.Recent.Count));
-            float x = E.X + 24 + CyberHud.TagWidth(_p, Upper(GalleryWord), 18) + 14, room = chips - 14 - x;
-            if (CyMonoW(cnt) <= room) CyMono(cnt, x, E.Y + 23 + (26 + CyberHud.CapH(_p, CyNote)) / 2, room, CyC);
+            float room = chips - 14 - cx0;
+            if (CyMonoW(cnt) <= room) CyMono(cnt, cx0, E.Y + 23 + (26 + CyberHud.CapH(_p, CyNote)) / 2, room, CyC);
         }
         if (Press("wphall", back, GridGlyph, null, true, true, 18, true)) GalleryToggle(null);
         GalGrid(new RectangleF(E.X + 20, E.Y + 74, E.Width - 34, E.Height - 74 - 14), 1);
@@ -757,6 +1007,7 @@ public sealed partial class WristPanel
         if (_ui.GlyphButton95("wphall", new RectangleF(x, y, w, h), Grid95, true)) GalleryToggle(p);
         bool can = p != null && !(_gal && _galGrid) && !DeleteBusy;
         var dr = new RectangleF(x + w + 1, y, w, h);
+        if (_gal && _galGrid) { HeartButton95("wgfav", dr); return; }        // (the grid: Favourites, VR Gallery's)
         if (DeleteArmed(p))
         {
             // asked: the button held down (the style's pushed face) with the glyph in red
@@ -792,7 +1043,10 @@ public sealed partial class WristPanel
         string cnt = n > 0 ? Upper(GalCountText(n)) : null;
         float cw = cnt != null ? TerminalSkin.W(cnt) : 0;
         if (cnt != null) TCapsR(cnt, c.Right, c.Y + 2, TerminalSkin.DIM);
-        TCaps(PhotoCut(GalTitle("> ls {0}"), c.Width - cw - 10, Ui.F95, FontWeight.Normal, null, 2), c.X, c.Y + 2, TerminalSkin.MID);
+        string grep = _galWorld ?? _galPerson;
+        string cmd = grep == null ? GalTitle("> ls {0}") : TName("", GalTitle("> ls {0}") + " | grep \"" + grep + "\"");
+        TCaps(PhotoCut(cmd, c.Width - cw - 10, Ui.F95, FontWeight.Normal, null, 2), c.X, c.Y + 2, grep != null ? TerminalSkin.HOT : TerminalSkin.MID);
+        if (grep != null && GalTapLine("wgclear", new RectangleF(c.X, c.Y, c.Width - cw - 10, 11), TerminalSkin.MID)) GalFilter(_galFav, null, null, null);
         var area = new RectangleF(c.X, c.Y + 13, c.Width, c.Height - 13);
         if (s == null || !s.Ready || n == 0)
         {

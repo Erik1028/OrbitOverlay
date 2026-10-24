@@ -109,7 +109,11 @@ public sealed partial class WristPanel
         _p.Fill(new RectangleF(bx + 56, by + 2, 1, 18), XpViewerBar);
         // the viewer's own Delete (its red X), and the thumbnails' four squares for the gallery
         if (XpGlyphTool("wphall", new RectangleF(bx + 61, by, 24, 22), Grid95, 0xFF316AC5, true, grid)) GalleryToggle(p);
-        if (XpGlyphTool("wphdel", new RectangleF(bx + 87, by, 24, 22), Del95, 0xFFD8432E, p != null && !DeleteBusy, DeleteArmed(p))) DeleteTap(p);
+        if (grid)
+        {
+            if (XpGlyphTool("wgfav", new RectangleF(bx + 87, by, 24, 22), Heart95, 0xFFD8432E, true, _galFav)) GalFilter(!_galFav, _galWorld, _galPerson, null);
+        }
+        else if (XpGlyphTool("wphdel", new RectangleF(bx + 87, by, 24, 22), Del95, 0xFFD8432E, p != null && !DeleteBusy, DeleteArmed(p))) DeleteTap(p);
         _p.Fill(new RectangleF(bx + 117, by + 2, 1, 18), XpViewerBar);
         float cx = bx + 123;
         var close = new RectangleF(bar.Right - 6 - 56, by, 56, 22);
@@ -132,6 +136,14 @@ public sealed partial class WristPanel
         {
             GalGrid(new RectangleF(body.X + 4, body.Y + 4, body.Width - 8, iy - 3 - (body.Y + 4)), 2);
             if (ds != null) _ui.Text95(PhotoCut(Lang.T(ds), iw, Ui.F95, FontWeight.Normal, null, 1), new RectangleF(body.X + 8, iy, iw, 13), 0xFFC00000);
+            else if (GalFilterText() is { } ft)
+            {
+                // the filter, a link (XP's blue): all again
+                string fc = PhotoCut(ft, iw, Ui.F95, FontWeight.Normal, null, 1);
+                var fr = new RectangleF(body.X + 8, iy, MathF.Min(iw, _ui.Width95(fc) + 2), 14);
+                _ui.Text95(fc, fr, 0xFF0066CC);
+                if (GalTapLine("wgclear", fr, 0xFF0066CC)) GalFilter(_galFav, null, null, null);
+            }
             return;
         }
         if (p == null)
@@ -161,8 +173,13 @@ public sealed partial class WristPanel
         string where = p.World != null ? PhotoCut(p.World, lw, Ui.F95, FontWeight.Normal, null, 1) : null;
         float wl = where != null ? _ui.Width95(where) : 0, px = body.X + 8 + (where != null ? wl + 12 : 0), pr = lw - (where != null ? wl + 12 : 0);
         if (where != null) _ui.Text95(where, new RectangleF(body.X + 8, iy, wl + 2, 13), 0xFF000000);
+        GalTapWorld("wphworld", new RectangleF(body.X + 8, iy, wl + 2, 14), p, 0xFF000000);
         string people = pr > 30 ? PhotoPeople(p, pr, Ui.F95, FontWeight.Normal, 1) : null;
-        if (people != null) _ui.Text95(people, new RectangleF(px, iy, pr, 13), XpGrey);
+        if (people != null)
+        {
+            _ui.Text95(people, new RectangleF(px, iy, pr, 13), XpGrey);
+            GalTapPeople("wphpeople", new RectangleF(px, iy, MathF.Min(pr, _ui.Width95(people) + 2), 14), p, XpGrey);
+        }
     }
 
     // a toolbar button with only its picture (Delete's red X, the thumbnails' four squares): flat, XP's hot button under the pointer;

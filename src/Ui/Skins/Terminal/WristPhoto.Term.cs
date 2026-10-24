@@ -174,7 +174,8 @@ public sealed partial class WristPanel
         }
         if (TKey("wphall", Key(0), "[F3]", grid, true, "ALL")) GalleryToggle(p);
         bool asking = DeleteArmed(p);
-        if (TKey("wphdel", Key(1), "[F4]", asking, p != null && !DeleteBusy, asking ? "SURE?" : "DEL")) DeleteTap(p);
+        if (grid) { if (TKey("wgfav", Key(1), "[F4]", _galFav, true, "FAV")) GalFilter(!_galFav, _galWorld, _galPerson, null); }       // (the grid: VR Gallery's favourites)
+        else if (TKey("wphdel", Key(1), "[F4]", asking, p != null && !DeleteBusy, asking ? "SURE?" : "DEL")) DeleteTap(p);
         if (TKey("wphgal", Key(2), "[F5]", false, p != null, "GALLERY")) PhotoOpen(p);
         string ds = DeleteStatus(p);
         if (grid)
@@ -209,9 +210,16 @@ public sealed partial class WristPanel
         string when = PhotoCut(Upper(words.When), c.Width / 2, Ui.F95, FontWeight.Normal, null, 2);
         float ww = T.W(when);
         TCaps(when, c.X, y1, T.INK);
-        if (p.World != null) TCaps(PhotoCut(Upper(p.World), c.Width - ww - 12, Ui.F95, FontWeight.Normal, null, 2), c.X + ww + 12, y1, T.HOT);
+        if (p.World != null)
+        {
+            // (the world and the people are links: their photos - WristGallery.cs)
+            string wn = PhotoCut(Upper(p.World), c.Width - ww - 12, Ui.F95, FontWeight.Normal, null, 2);
+            TCaps(wn, c.X + ww + 12, y1, T.HOT);
+            GalTapWorld("wphworld", new RectangleF(c.X + ww + 12, y1 - 2, T.W(wn), 11), p, T.HOT);
+        }
         if (ds != null) { TCaps(PhotoCut(Upper(ds), c.Width, Ui.F95, FontWeight.Normal, null, 2), c.X, y2, T.HOT); return; }
         string people = PhotoPeople(p, c.Width, Ui.F95, FontWeight.Normal, 2);
         TCaps(people ?? PhotoCut(Upper("Nobody known"), c.Width, Ui.F95, FontWeight.Normal, null, 2), c.X, y2, people != null ? T.MID : T.DIM);
+        if (people != null) GalTapPeople("wphpeople", new RectangleF(c.X, y2 - 2, T.W(people), 11), p, T.MID);
     }
 }

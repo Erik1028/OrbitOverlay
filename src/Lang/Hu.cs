@@ -867,6 +867,10 @@ static class Hu
         // the photo view's gallery and Delete (WristGallery.cs, Sys/PhotoAlbum.cs)
         ("Gallery", "Galéria"),
         ("Days", "Napok"),
+        ("Show the photos with", "Fotók, amiken rajta van"),
+        ("Showing: {0} - tap to show all", "Csak: {0} – koppints az összeshez"),
+        ("PEOPLE", "EMBEREK"),
+        ("FAV", "KEDV"),
         ("DAYS", "NAPOK"),
         ("Delete?", "Törlöd?"),
         ("Deleting...", "Törlés..."),

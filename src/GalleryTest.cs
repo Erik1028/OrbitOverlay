@@ -93,7 +93,7 @@ static class GalleryViewTools
                 s.Recent.Add(new PhotoWatcher.Photo
                 {
                     Path = @"C:\made-up\VRChat\" + taken.ToString("yyyy-MM") + @"\" + name, Name = name, Taken = taken, Width = tall ? 1080 : 1920,
-                    Height = tall ? 1920 : 1080, World = world, Players = people, Thumb = px, TW = w, TH = h, Seen = now,
+                    Height = tall ? 1920 : 1080, World = world, Players = people, Thumb = px, TW = w, TH = h, Seen = now, Favorite = k % 4 == 1,
                 });
             }
         (_album, _albumOf) = (s, latest);
@@ -119,6 +119,7 @@ static class GalleryViewTools
             wcfg.Page = 0;
             wrist.OnOpenPhoto = _ => { };
             Checks(wrist, data, wcfg, tag);
+            FilterChecks(wrist, data, wcfg, gpu, dir, tag);
             Pictures(wrist, data, wcfg, gpu, dir, tag);
         }
         catch (Exception e) { Log.Error("gallery view" + tag + ": " + e); }
@@ -223,6 +224,94 @@ static class GalleryViewTools
                  $"a refusal said why and stayed {refused} (want True); opened again: the latest photo's view {fresh} (want True), its Delete too " +
                  $"{latestDel} (want True); no album yet: the grid waits {waits} (want True)");
     }
+
+    // The filters (VR Gallery's favourites, a photo's world, its people): Favourites shows only those; a photo's world tapped - its photos;
+    // its people tapped - the picker, a name in it - their photos; the filter's chip (a retro style: its status line) - all again
+    static void FilterChecks(WristPanel wrist, PanelData data, WristConfig wcfg, Gpu gpu, string dir, string tag)
+    {
+        bool classic = Theme.Classic;
+        var snap = PhotoFake.Snap(5);
+        var album = Album(snap);
+        data.Photos = snap;
+        data.Album = album;
+        wrist.OnDeletePhoto = (p, done) => done(null);
+        wcfg.Widgets = new List<WatchWidget> { new() { Type = "photo", X = 0, Y = 2, W = 2, H = 1 } };
+        int favs = album.Recent.FindAll(p => p.Favorite).Count;
+        wrist.Settle();
+        wrist.OpenForTest("photo");
+        wrist.GalleryNoteForTest();                     // (the Delete checks' "Moved to the Recycle Bin": a retro status line says it a while)
+        Draw2(wrist, data);
+        TapId(wrist, data, "wphall");
+        // Favourites: only those
+        bool favTap = TapId(wrist, data, "wgfav");
+        Draw2(wrist, data);
+        bool favOnly = favTap && wrist.GalleryFilterShown == "favourites";
+        Settle(wrist, data);
+        string favPic = Path.Combine(dir, $"wrist_gallery_fav{tag}.png");
+        wrist.Surf.SavePng(gpu, favPic);
+        TapCell(wrist, data, 0);
+        Draw2(wrist, data);
+        var first = album.Recent.Find(p => p.Path == wrist.LastGalleryPick);
+        bool favPicked = first != null && first.Favorite;
+        TapId(wrist, data, "wphall");
+        TapId(wrist, data, "wgfav");                    // (off again)
+        Draw2(wrist, data);
+        bool favOff = wrist.GalleryFilterShown == null;
+        // a photo with a world and people (Lantern Harbor at Dusk, five people): its world tapped - only that world's photos
+        int at = album.Recent.FindIndex(p => p.World == PhotoFake.Meta[0].world && p.Players.Length > 1);
+        string world = PhotoFake.Meta[0].world;
+        int inWorld = album.Recent.FindAll(p => p.World == world).Count;
+        // (opened through the grid: scroll it there - the cell's slot is its place among the drawn ones)
+        TapCell(wrist, data, 0);
+        Draw2(wrist, data);
+        for (int g = 0; g < 80 && wrist.GalleryOpenShown != album.Recent[at].Path; g++)
+        {
+            var pn = wrist.ControlPoint(data, classic ? "wph95p" : "wphprev");
+            if (pn is not { } pp) break;
+            Tap(wrist, data, pp);
+        }
+        bool onIt = wrist.GalleryOpenShown == album.Recent[at].Path;
+        Settle(wrist, data);
+        bool worldTap = TapId(wrist, data, "wphworld");
+        Draw2(wrist, data);
+        bool worldOnly = worldTap && wrist.GalleryFilterShown == world && wrist.GalleryGridShown;
+        Settle(wrist, data);
+        string worldPic = Path.Combine(dir, $"wrist_gallery_world{tag}.png");
+        wrist.Surf.SavePng(gpu, worldPic);
+        // the filter's chip / status line: all again
+        bool clearTap = TapId(wrist, data, "wgclear");
+        Draw2(wrist, data);
+        bool cleared = clearTap && wrist.GalleryFilterShown == null;
+        // the people: the picker, a name in it
+        TapCell(wrist, data, 0);
+        Draw2(wrist, data);
+        for (int g = 0; g < 80 && wrist.GalleryOpenShown != album.Recent[at].Path; g++)
+        {
+            var pn = wrist.ControlPoint(data, classic ? "wph95p" : "wphprev");
+            if (pn is not { } pp) break;
+            Tap(wrist, data, pp);
+        }
+        Settle(wrist, data);
+        bool peopleTap = TapId(wrist, data, "wphpeople");
+        Draw2(wrist, data);
+        bool picker = peopleTap && wrist.GalleryPeopleShown;
+        Settle(wrist, data);
+        string pickPic = Path.Combine(dir, $"wrist_gallery_people{tag}.png");
+        wrist.Surf.SavePng(gpu, pickPic);
+        string person = album.Recent[at].Players[1];
+        bool nameTap = TapId(wrist, data, classic ? "wplist/1" : "wpp1");
+        Draw2(wrist, data);
+        bool personOnly = nameTap && wrist.GalleryFilterShown == person && !wrist.GalleryPeopleShown && wrist.GalleryGridShown;
+        wrist.CloseForTest();
+        Log.Info($"gallery filters{tag}: Favourites showed only those {favOnly} (want True), a photo of them is one {favPicked} (want True), off again " +
+                 $"{favOff} (want True); on the photo {onIt} (want True), its world tapped - only its photos {worldOnly} (want True), the chip showed all " +
+                 $"again {cleared} (want True); its people tapped - the picker {picker} (want True), a name in it - their photos {personOnly} (want True)" +
+                 $" ({favs} favourites, {inWorld} in that world)");
+        FilterPreview.RemoveAll(x => x.tag == tag);
+        FilterPreview.Add((tag, worldPic, pickPic));
+    }
+
+    public static readonly List<(string tag, string world, string people)> FilterPreview = new();
 
     static void Pictures(WristPanel wrist, PanelData data, WristConfig wcfg, Gpu gpu, string dir, string tag)
     {
@@ -336,6 +425,24 @@ static class GalleryViewTools
         }
         string path = Path.Combine(dir, "gallery_preview.png");
         sheet.Save(path, ImageFormat.Png);
+        if (FilterPreview.Count > 0)
+        {
+            using var s2 = new Bitmap(2 * W + 3 * Gap, FilterPreview.Count * (H + Label + Gap) + Gap);
+            using (var g = Graphics.FromImage(s2))
+            {
+                g.Clear(Color.FromArgb(255, 32, 34, 40));
+                using var font = new Font("Segoe UI", 12, FontStyle.Bold, GraphicsUnit.Pixel);
+                for (int i = 0; i < FilterPreview.Count; i++)
+                {
+                    var (t, w1, p1) = FilterPreview[i];
+                    float y = Gap + i * (H + Label + Gap);
+                    g.DrawString($"{(t.Length == 0 ? "modern" : t[1..])}: a photo's world (its photos), its people (the picker)", font, Brushes.White, Gap, y + 4);
+                    using (var a = new Bitmap(w1)) g.DrawImage(a, Gap, y + Label, W, H);
+                    using (var b = new Bitmap(p1)) g.DrawImage(b, 2 * Gap + W, y + Label, W, H);
+                }
+            }
+            s2.Save(Path.Combine(dir, "gallery_filters.png"), ImageFormat.Png);
+        }
         Log.Info($"gallery view: the styles' grids and Delete side by side: {path}");
     }
 

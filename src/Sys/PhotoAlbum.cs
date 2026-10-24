@@ -15,7 +15,9 @@ namespace Orbit;
 // thumbnail cache, the one Explorer shows: made once, then had in a moment - else the PNG decoded from its file (streamed: a 4K photo
 // is 8-40 MB, never a byte[] of it); at most KeepCells kept, the ones asked for last loaded first (scrolled past: dropped). A photo
 // opened big: its 640 x 400 thumbnail the same way, and VRCX's metadata - its iTXt chunk sits before the picture data, so only the
-// file's head is read. Closed: the thread asleep, every picture let go (the list kept for the next open).
+// file's head is read. Closed: the thread asleep, every picture let go (the list kept for the next open). VR Gallery's library (read
+// only, Sys/VrGalleryData.cs) fills in what each photo's own file does not say: the world (it knows it from VRChat's log too), the people,
+// favourite and rating - read when the gallery opens and again when its database changes.
 public sealed class PhotoAlbum : IPhotoSource, IPhotoCells, IDisposable
 {
     public const int CellW = 192, CellH = 108, KeepCells = 72, MaxThumbs = 4, ThumbW = 640, ThumbH = 400;
@@ -113,6 +115,40 @@ public sealed class PhotoAlbum : IPhotoSource, IPhotoCells, IDisposable
     string _root;
     bool _found, _listed;
     double _nextLook;
+    Dictionary<string, VrGalleryData.Info> _vrg;          // VR Gallery's library by file name (null: none)
+    string _vrgPath;
+    DateTime _vrgAt;
+    public VrGalleryData.Settings Vrg { get; private set; }   // its settings (null: not installed): the panel's Send, the slideshow
+
+    // VR Gallery's library, again when its file changed; true: it did
+    bool LoadVrg(bool forced)
+    {
+        string db = VrGalleryData.DbPath();
+        DateTime at = db != null && File.Exists(db) ? File.GetLastWriteTimeUtc(db) : default;
+        if (!forced && db == _vrgPath && at == _vrgAt) return false;
+        (_vrgPath, _vrgAt) = (db, at);
+        Vrg = VrGalleryData.ReadSettings();
+        if (db == null) { bool had = _vrg != null; _vrg = null; return had; }
+        try
+        {
+            _vrg = VrGalleryData.Read(db, Vrg?.Self ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+            Log.Info($"album: VR Gallery's library - {_vrg.Count} photo(s)");
+        }
+        catch (Exception e) { Log.Info("album: VR Gallery's library not read: " + e.Message); _vrg = null; }
+        return true;
+    }
+
+    // what VR Gallery knows of a photo its file did not say (its own metadata, read for the big view, comes first)
+    PhotoWatcher.Photo WithVrg(PhotoWatcher.Photo p)
+    {
+        if (_vrg == null || !_vrg.TryGetValue(p.Name, out var v)) return p;
+        if (p.Favorite == v.Favorite && p.Rating == v.Rating && (p.World != null || v.World == null) && (p.Players.Length > 0 || v.Players.Length == 0)) return p;
+        var n = p.Copy();
+        n.World ??= v.World;
+        if (n.Players.Length == 0) n.Players = v.Players;
+        (n.Favorite, n.Rating) = (v.Favorite, v.Rating);
+        return n;
+    }
 
     void Run()
     {
@@ -176,7 +212,8 @@ public sealed class PhotoAlbum : IPhotoSource, IPhotoCells, IDisposable
         if (same)
             foreach (var d in dirs)
                 if (!_dirTimes.TryGetValue(d, out var t) || t != Directory.GetLastWriteTimeUtc(d)) { same = false; break; }
-        if (same) return false;
+        bool vrg = LoadVrg(!_listed || forced);
+        if (same && !vrg) return false;
         _found = found;
         _dirTimes.Clear();
         var all = new List<(string path, DateTime taken)>();
@@ -192,8 +229,11 @@ public sealed class PhotoAlbum : IPhotoSource, IPhotoCells, IDisposable
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var (path, taken) in all)
         {
-            if (!_byPath.TryGetValue(path, out var p)) { p = PhotoWatcher.Named(path, taken); _byPath[path] = p; changed = true; }
-            _list.Add(p);
+            if (!_byPath.TryGetValue(path, out var p)) { p = PhotoWatcher.Named(path, taken); changed = true; }
+            var q = WithVrg(p);
+            if (!ReferenceEquals(q, p)) changed = true;
+            _byPath[path] = q;
+            _list.Add(q);
             seen.Add(path);
         }
         if (_byPath.Count != seen.Count)
@@ -264,8 +304,8 @@ public sealed class PhotoAlbum : IPhotoSource, IPhotoCells, IDisposable
         if (p.Thumb != null) return false;
         var n = p.Copy();
         var (world, players) = ReadHeadMeta(p.Path);
-        n.World = world;
-        n.Players = players ?? Array.Empty<string>();
+        n.World = world ?? p.World;                          // (VR Gallery's, where the file says nothing)
+        if (players is { Length: > 0 }) n.Players = players;
         var (px, tw, th) = Picture(p.Path, ThumbW, ThumbH);
         if (px == null) { _failed.Add(p.Path); Log.Info("album: " + p.Name + " could not be read as a picture"); }
         else (n.Thumb, n.TW, n.TH) = (px, tw, th);
