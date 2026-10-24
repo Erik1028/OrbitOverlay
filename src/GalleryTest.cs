@@ -399,6 +399,39 @@ static class GalleryViewTools
             wrist.Surf.SavePng(gpu, zoomPic);
             foreach (var id in zoomOff) offTaps &= TapId(wrist, data, id);
             bool whole = offTaps && !wrist.GalleryZoomShown;
+            // a step while zoomed in (XP, 7, the Mac): the zoom's button pressed, the stick steps on, the button let go in the frame after
+            // the step - the new photo is whole before the toolbar is drawn, so the button zooms it (the toolbar was drawn zoomed for a
+            // frame: XP's Zoom In greyed, 7's and the Mac's magnifier in - the tap did nothing)
+            string stepLine = "";
+            if (style is RetroStyle.XP or RetroStyle.Aero or RetroStyle.Mac)
+            {
+                string zid = style == RetroStyle.XP ? "wphzin" : "wphzoom";
+                bool zin = TapId(wrist, data, zid) && wrist.GalleryZoomShown;
+                string from = wrist.PhotoOpenShown;
+                bool stepZoom = false;
+                if (zin && wrist.ControlPoint(data, zid) is { } zp)
+                {
+                    wrist.PointerMove(Hand.Left, zp); wrist.Draw(data);
+                    wrist.PointerButton(Hand.Left, PtrButton.Primary, true, zp); wrist.Draw(data);
+                    wrist.PointerScroll(Hand.Left, -1, zp);                 // (the stick, a notch: the one before)
+                    wrist.PointerButton(Hand.Left, PtrButton.Primary, false, zp); wrist.Draw(data);
+                    wrist.PointerLeave(Hand.Left); wrist.Draw(data);
+                    stepZoom = wrist.PhotoOpenShown != from && wrist.GalleryZoomShown && hiAsked == wrist.PhotoOpenShown;
+                }
+                stepLine = $", after a step its button zoomed the new one {stepZoom} (want True)";
+            }
+            // the slideshow, then the photo's world (its link stays live while it plays): the grid of that world's photos, the slideshow
+            // ended (it went on under the grid, a redraw every frame, and a photo picked there stepped on)
+            string gridLine = "";
+            if (hasShow)
+            {
+                wrist.GalleryNoteForTest();             // (Send's "Sent to Discord" gone: in XP, 7 and the Mac it holds the line the world is in)
+                bool play2 = TapId(wrist, data, "wphplay") && wrist.GalleryShowing;
+                bool worldTap = TapId(wrist, data, "wphworld");
+                Draw2(wrist, data);
+                bool ended = play2 && worldTap && wrist.GalleryGridShown && !wrist.GalleryShowing;
+                gridLine = $"; a world tapped while it played - its grid, the slideshow ended {ended} (want True)";
+            }
             string toolLine = "";
             if (style == RetroStyle.Win95)
             {
@@ -407,7 +440,7 @@ static class GalleryViewTools
             }
             wrist.CloseForTest();
             Log.Info($"gallery view{tag}: Send on the newest {shown} (want True), it asked first {asks} (want True), then handed it over {handed} (want True), " +
-                     $"none on an older one {notOlder} (want True); {showLine}zoomed in {zoomed} (want True), whole again {whole} (want True){toolLine}");
+                     $"none on an older one {notOlder} (want True); {showLine}zoomed in {zoomed} (want True), whole again {whole} (want True){stepLine}{toolLine}{gridLine}");
             ActionsPreview.RemoveAll(x => x.tag == tag);
             ActionsPreview.Add((tag, sendPic, showPic, zoomPic));
         }

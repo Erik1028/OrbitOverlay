@@ -117,7 +117,7 @@ public sealed partial class WristPanel
             if (cv != _galCellsSeen) { _galCellsSeen = cv; ch |= _galGrid; }
         }
         double now = Clock.Now;
-        if (_galShow && (_open == null || _closing || !(DetailIs("photo") || DetailIs("memory")))) _galShow = false;     // (closed while it played: it ends)
+        if (_galShow && (_open == null || _closing || !(DetailIs("photo") || DetailIs("memory")) || (_gal && _galGrid))) _galShow = false;     // (closed while it played, or the grid over it: it ends)
         if (_galShow && now - _galShowAt >= SlideSeconds) ch = true;           // the slideshow's next slide
         if (!ReferenceEquals(Hi, _hiSeen)) { _hiSeen = Hi; ch |= _galZoom; }   // the zoom's sharp copy came
         if (_sendDone || (_sendArmed != null && now - _sendArmAt > DelArmLen)) ch = true;
@@ -173,6 +173,7 @@ public sealed partial class WristPanel
         _galPicked = false;
         _galPeople = null;
         _delArmed = null;
+        if (_galShow) ShowStop();                   // (the grid over the slideshow: it ends - it went on under it, a redraw every frame)
         _dirty = true;
     }
 
@@ -189,7 +190,15 @@ public sealed partial class WristPanel
         if (p == null || p.Players.Length == 0) return;
         if (!GalTapLine(id, r, line)) return;
         if (p.Players.Length == 1) GalFilter(_galFav, null, p.Players[0], p.Path);
-        else { _galPeople = p; _dirty = true; }
+        else GalPeopleOpen(p);
+    }
+
+    // the picker opened over the view: the slideshow ends (its photo's people are picked from)
+    void GalPeopleOpen(PhotoWatcher.Photo p)
+    {
+        _galPeople = p;
+        if (_galShow) ShowStop();
+        _dirty = true;
     }
 
     // a line of text that is a link: underlined under the pointer
@@ -1050,7 +1059,8 @@ public sealed partial class WristPanel
     }
 
     // ---- the slideshow (VR Gallery's Play): from the photo shown, the next older one every SlideSeconds (VR Gallery's own setting),
-    // each fading in; Stop, a tap on the photo, an arrow or the stick end it, as the last photo does. The retro viewers have theirs (Erik
+    // each fading in; Stop, a tap on the photo, an arrow or the stick end it, as the last photo does and the grid or the people's picker
+    // opened over it (a world's or a person's photos). The retro viewers have theirs (Erik
     // 10-24, "mehet mind"): XP's Start Slide Show, 7's big blue Play (Pause while it plays), the Mac's projection screen - held in while
     // it plays, a slide cutting in; 95 Imaging had none, the Terminal has no key for one (its keys are full) ----
 
@@ -1121,7 +1131,11 @@ public sealed partial class WristPanel
     // there, or whole again
     void PhotoZoomInput(RectangleF box, PhotoWatcher.Photo p, string id, bool tapZooms)
     {
-        if (_zoomPath != p.Path) { _galZoom = false; _zoomPath = p.Path; }
+        if (_zoomPath != p.Path)
+        {
+            if (_galZoom) _dirty = true;            // (a retro viewer's zoom buttons were drawn zoomed this frame: once more)
+            (_galZoom, _zoomPath) = (false, p.Path);
+        }
         bool tap = _ui.Clickable(id, box, out _, out bool held) && !_ui.Inert;
         var m = _ui.Mouse;
         if (held && !_zoomHeld) (_zoomHeld, _zoomDrag, _zoomPress, _zoomFrom) = (true, false, m, _zoomAt);

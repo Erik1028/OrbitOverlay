@@ -103,7 +103,8 @@ public sealed partial class WristPanel
     PhotoWatcher.Snapshot SetData(PanelData d) => _set.Album ? GalView(d.Album) : _set.Memory ? d.Memories : d.Photos;
 
     // once a frame, before the first photo is drawn: the snapshot taken, a new photo popped, the opened view kept on its photo - and
-    // its slideshow's next slide when due (here, so every style's viewer has it)
+    // its slideshow's next slide when due (here, so every style's viewer has it); zoomed in on another photo than the one it shows
+    // now (a step, a new one followed) - whole, before XP's, 7's and the Mac's zoom buttons are drawn (they read it before the photo)
     void PhotoFrame(PanelData d)
     {
         if (_delDone) { _delDone = false; DeleteFinished(); }      // Delete's answer, before the view picks its photo (WristGallery.cs)
@@ -116,6 +117,7 @@ public sealed partial class WristPanel
         if (!ReferenceEquals(snap, _ph)) PhotoTake(snap);
         if (Clock.Now - _phPopAt < PopLen) _ui.Animating = true;
         if (_galShow && ReferenceEquals(_set, OpenSet)) ShowTick();     // (WristGallery.cs)
+        if (_galZoom && ReferenceEquals(_set, OpenSet) && _phPath != _zoomPath) _galZoom = false;
     }
 
     void PhotoTake(PhotoWatcher.Snapshot s)
@@ -761,7 +763,7 @@ public sealed partial class WristPanel
             // a person: their photos; "+3 more": the picker (WristGallery.cs)
             if (GalTapLine(Ui.Id("wphpr", i), new RectangleF(pp.X + 10, ly + i * lh - 15, pp.Width - 20, lh), CyC))
             {
-                if (more) _galPeople = p;
+                if (more) GalPeopleOpen(p);
                 else GalFilter(_galFav, null, p.Players[i], p.Path);
                 _dirty = true;
             }
