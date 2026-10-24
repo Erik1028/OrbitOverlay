@@ -310,6 +310,7 @@ public sealed partial class WristPanel
             case "recap": CyberRecap(r, w, d, id); return true;
             case "light": CyberLight(r, w, d, id); return true;
             case "rgb": CyberRgb(r, w, d, id); return true;
+            case "slimevr": CyberSlime(r, w, d, id); return true;     // (WristSlimeVr.cs)
         }
         return false;
     }
