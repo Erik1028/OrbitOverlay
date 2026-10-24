@@ -198,6 +198,9 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
     public void Run()
     {
         Native.timeBeginPeriod(1);
+        // (10-24) the GC without blocking full collections - a background one instead (a little more memory, no 30-40 ms pause in a
+        // frame: Erik's log had a 41 ms frame with nothing else in it, the system's memory 70-87 % used beside VRChat)
+        System.Runtime.GCSettings.LatencyMode = System.Runtime.GCLatencyMode.SustainedLowLatency;
         NoPowerThrottling();
         ApplyGpuPriority();
         // the loop needs ~0.2 ms a frame but should get it on time even when VRChat keeps every core busy
@@ -697,8 +700,11 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             Spikes.Piece("rest: gpu priority", rp);
             Perf(6, ref t);
             Spikes.Mark(Spikes.Rest);
+            long gp = System.Diagnostics.Stopwatch.GetTimestamp();
             GpuProbeIssue();
+            Spikes.Piece("gpu: flush", gp); gp = System.Diagnostics.Stopwatch.GetTimestamp();      // (it may wait while the game fills the GPU)
             PerfFrame(now);
+            Spikes.Piece("the perf log", gp);
             Spikes.Mark(Spikes.PerfLog);
         }
 

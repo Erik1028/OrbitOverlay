@@ -148,15 +148,26 @@ public sealed class LumosLink : ILampControl, IDisposable
     {
         if (kept == _keyKept) return;
         _keyKept = kept;
-        var key = TapoAccount.Unprotect(kept);
-        var old = _direct;
-        _direct = key == null ? null : new TapoDirect(key);
-        if (old != null) _replaced.Enqueue(old);        // (not disposed here: the thread may be in a call with it)
-        Log.Info("lights: " + (key != null ? "straight to the bulb (the Tapo key kept)" : kept != null ? "the kept Tapo key is not this Windows user's: through Lumos" : "through Lumos"));
+        _keyNew = true;                     // made on the thread (DPAPI and the bulb's HTTP client took 36-38 ms of a frame at a start)
         _said = LinkStatus.Off;
         _due = DateTime.MinValue;
         Start();
         _wake.Set();
+    }
+
+    volatile bool _keyNew;
+
+    // on the thread, before a step: the key kept turned into the bulb's link (or none: through Lumos)
+    void TakeKey()
+    {
+        if (!_keyNew) return;
+        _keyNew = false;
+        string kept = _keyKept;
+        var key = TapoAccount.Unprotect(kept);
+        var old = _direct;
+        _direct = key == null ? null : new TapoDirect(key);
+        if (old != null) _replaced.Enqueue(old);        // (let go below, where no call is in flight)
+        Log.Info("lights: " + (key != null ? "straight to the bulb (the Tapo key kept)" : kept != null ? "the kept Tapo key is not this Windows user's: through Lumos" : "through Lumos"));
     }
 
     // --snapshot: no thread; the state as given, and a command only changes it here
@@ -234,6 +245,7 @@ public sealed class LumosLink : ILampControl, IDisposable
 
     void Step()
     {
+        TakeKey();
         // the bulb's links a new key replaced: their HttpClient and connection go here, where no call is in flight (each call takes
         // _direct anew, so the one a call had when the key changed is done with by the next step)
         while (_replaced.TryDequeue(out var gone)) gone.Dispose();

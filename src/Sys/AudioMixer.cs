@@ -168,7 +168,7 @@ public sealed class AudioMixer : IDisposable
             }
             bool notified = _dev.TakeNotified();
             if (!PerApp && !wanted) return;
-            bool enumNow = now >= _nextEnum;
+            bool enumNow = now >= _nextEnum && _dev.SessionsDue(now);
             if (enumNow)
             {
                 _nextEnum = now + 1;
@@ -446,6 +446,7 @@ public interface IMixerDevice : IDisposable
     bool TakeNotified();                // someone else changed the master since the last call (the device's callback)
     List<MixerSession> Sessions { get; }
     void Enumerate();                   // the sessions that started / ended
+    bool SessionsDue(double now) => true;           // worth asking for the list now (Core Audio's: only when an app started playing)
     void Read(bool peaks);              // their levels, mutes and states now (and meters)
     bool Write(MixerSession s, float level, bool mute);
     MixerIdentity Identify(MixerSession s);         // which app: its key, name and icons (they may come a moment later)
@@ -662,6 +663,14 @@ static class CoreAudio
         [PreserveSig] int GetAudioSessionControl(IntPtr guid, int flags, out IntPtr control);
         [PreserveSig] int GetSimpleAudioVolume(IntPtr guid, int flags, out IntPtr volume);
         [PreserveSig] int GetSessionEnumerator(out IAudioSessionEnumerator sessions);
+        [PreserveSig] int RegisterSessionNotification(IAudioSessionNotification notify);
+        [PreserveSig] int UnregisterSessionNotification(IAudioSessionNotification notify);
+    }
+
+    [ComImport, Guid("641DD20B-4D41-49CC-ABA3-174B9477BB08"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    internal interface IAudioSessionNotification
+    {
+        [PreserveSig] int OnSessionCreated(IntPtr session);     // (IntPtr: no wrapper made - the list is asked for anew)
     }
 
     [ComImport, Guid("E2F5BB11-0570-40CA-ACDD-3AA01277DEE8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
@@ -729,6 +738,23 @@ sealed class CoreAudioDevice : IMixerDevice
     readonly Dictionary<object, MixerSession> _byCom = new(ReferenceEqualityComparer.Instance);
     readonly Dictionary<string, MixerSession> _byId = new();
 
+    // A new session (an app that starts playing) comes as a callback: the session list is asked for only then - once at the start, and
+    // as a safety net once a minute (every 5 s if Windows takes no callback). Each GetSessionEnumerator keeps ~3 KB of native memory in
+    // Windows' audio client for good (measured 10-24, --leaktest audioenum: +40 MB in 90 s at 160 calls a second, none back after a
+    // GC); asked once a second it was most of OrbitOverlay's slow growth through a VR session (Erik's: 250 -> 544 MB in 1 h 43 min).
+    // Ended sessions need no list: Read sees their state go to expired.
+    SessionNotify _sn;
+    double _enumAt;
+
+    [ComVisible(true), ClassInterface(ClassInterfaceType.None)]
+    sealed class SessionNotify : CoreAudio.IAudioSessionNotification
+    {
+        public int Created;
+        public int OnSessionCreated(IntPtr session) { Interlocked.Exchange(ref Created, 1); return 0; }
+    }
+
+    public bool SessionsDue(double now) => (_sn != null && Interlocked.Exchange(ref _sn.Created, 0) != 0) || now >= _enumAt;
+
     // the endpoint's change callback: on an audio thread - it only raises the flag (someone else's change, not Orbit's)
     [ComVisible(true), ClassInterface(ClassInterfaceType.None)]
     sealed class Callback : CoreAudio.IAudioEndpointVolumeCallback
@@ -747,6 +773,37 @@ sealed class CoreAudioDevice : IMixerDevice
     }
 
     public bool TakeNotified() => _cb != null && Interlocked.Exchange(ref _cb.Notified, 0) != 0;
+
+    // --leaktest audioenum / audiofollow: one of the two calls, as the mixer makes it, for each tick
+    internal static Action LeakProbe(bool sessions)
+    {
+        var en = (CoreAudio.IMMDeviceEnumerator)CoreAudio.NewEnumerator();
+        en.GetDefaultAudioEndpoint(eRender, eConsole, out var dev);
+        var mid = typeof(CoreAudio.IAudioSessionManager2).GUID;
+        dev.Activate(ref mid, CLSCTX_ALL, IntPtr.Zero, out object m);
+        var mgr = (CoreAudio.IAudioSessionManager2)m;
+        int calls = 0;
+        return () =>
+        {
+            for (int k = 0; k < 2; k++, calls++)
+            {
+                if (sessions)
+                {
+                    if (mgr.GetSessionEnumerator(out var list) == 0 && list != null)
+                    {
+                        list.GetCount(out int n);
+                        for (int i = 0; i < n; i++) if (list.GetSession(i, out object o) == 0 && o != null) Marshal.ReleaseComObject(o);
+                        Marshal.ReleaseComObject(list);
+                    }
+                }
+                else if (en.GetDefaultAudioEndpoint(eRender, eConsole, out var d) == 0 && d != null)
+                {
+                    d.GetId(out string _);
+                    Marshal.ReleaseComObject(d);
+                }
+            }
+        };
+    }
 
     public bool Follow()
     {
@@ -893,9 +950,19 @@ sealed class CoreAudioDevice : IMixerDevice
             }
             for (int i = Sessions.Count - 1; i >= 0; i--)
                 if (!Sessions[i].Mark) Drop(i);
+            if (_sn == null)
+            {
+                var sn = new SessionNotify();
+                try { if (_mgr.RegisterSessionNotification(sn) == 0) _sn = sn; }
+                catch (Exception e) { Warn("session notifications: " + e.Message); }
+            }
         }
         catch (Exception e) { Warn(e.Message); }
-        finally { if (list != null) Marshal.ReleaseComObject(list); }
+        finally
+        {
+            if (list != null) Marshal.ReleaseComObject(list);
+            _enumAt = Clock.Now + (_sn != null ? 60 : 5);
+        }
     }
 
     public void Read(bool peaks)
@@ -986,6 +1053,9 @@ sealed class CoreAudioDevice : IMixerDevice
         if (_cb != null && _vol != null) { try { _vol.UnregisterControlChangeNotify(_cb); } catch { } }
         _cb = null;
         ReleaseMeter();
+        if (_sn != null && _mgr != null) { try { _mgr.UnregisterSessionNotification(_sn); } catch { } }
+        _sn = null;
+        _enumAt = 0;
         if (_mgr != null) { try { Marshal.ReleaseComObject(_mgr); } catch { } _mgr = null; }
         if (_vol != null) { try { Marshal.ReleaseComObject(_vol); } catch { } _vol = null; }
         if (_dev != null) { try { Marshal.ReleaseComObject(_dev); } catch { } _dev = null; }

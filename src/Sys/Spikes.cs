@@ -17,7 +17,7 @@ public static class Spikes
     {
         "vr", "cursor", "laser rays", "laser pointer (mouse / panel)", "laser beam / grab", "extras + block", "watch", "watch draw",
         "watch send", "keyboard", "settings + panels", "desktops", "dashboard + osc", "app (photos, friends, temps, avatar...)",
-        "audio mixer", "window + config save", "the perf log (every 10 s)",
+        "audio mixer", "window + config save", "gpu flush + perf log",
     };
     static bool _on;                                 // between Begin and End (the loop runs without VR too: nothing is kept then)
     static readonly long[] _frame = new long[Count], _worst = new long[Count];

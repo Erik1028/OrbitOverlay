@@ -239,6 +239,7 @@ static class TapoSafetyTools
             first = Wait(() => l.State.Ready);
             d1 = l.DirectForTest;
             l.SetKey(TapoAccount.Protect(key));             // (the same key protected again: another kept text, so a change)
+            Wait(() => l.DirectForTest != d1);              // (10-24: the new link is made on the light's own thread)
             d2 = l.DirectForTest;
             l.Watched = false; l.Watched = true;
             swapped = d2 != d1 && Wait(() => d1.Disposed) && Wait(() => l.State.Ready);

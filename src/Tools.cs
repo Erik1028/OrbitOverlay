@@ -306,7 +306,7 @@ static partial class Tools
         var wcfg = cfg.Data.Wrist;
         string face0 = wcfg.Face;
         var panelView = new SettingsView(host) { OnClose = () => { }, Tab = SettingsView.TabGeneral };
-        if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "tabs") return TabsOnly(view, ui, surf, ptr, painter, gpu, wrist, kb, data, dir);   // ToolsTabs.cs
+        if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "tabs") return TabsOnly(view, ui, surf, ptr, painter, gpu, wrist, kb, data, cfg, dir);   // ToolsTabs.cs
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "undo") return UndoOnly(view, ui, surf, ptr, painter, gpu, cfg, wrist, data, dir);   // UndoTest.cs
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "virtual") return VirtualOnly(host, view, ui, surf, ptr, painter, gpu, cfg, dir);   // VirtualMonitorsTest.cs
         if (Environment.GetEnvironmentVariable("ORBIT_SNAP_ONLY") == "anim_cyber") return CyberAnimShot.Run(wrist, data, cfg, gpu, dir, kb, view, ui, surf, ptr, painter);
@@ -2988,20 +2988,53 @@ static partial class Tools
 
     // Runs one background component alone and logs the process's private memory every 10 s,
     // then forces a full GC: growth that a GC gives back = garbage / RCWs, growth that stays = a leak.
+    // (10-24: the components that run all through a VR session - Erik's private bytes grew 1-3 MB a minute, the managed heap did not)
     public static int LeakTest(string what, int seconds)
     {
         static long Priv() { using var p = System.Diagnostics.Process.GetCurrentProcess(); return p.PrivateMemorySize64; }
+        Action tick = null;                  // what the main loop does for it, 90 times a second
+        Gpu gpu = null;
         IDisposable comp = what switch
         {
-            "gpu" => new GpuStats(),
+            "gpu" => new GpuStats { Active = true },
             "media" => new MediaInfo { Active = true },
+            "room" => new RoomWatcher { Active = true },
+            "photos" => new PhotoWatcher { Active = true },
             _ => null,
         };
+        if (what == "mixer")
+        {
+            var mx = new AudioMixer();
+            comp = mx;
+            tick = () => mx.Pump(Clock.Now, true);
+        }
+        else if (what is "audioenum" or "audiofollow")
+        {
+            // the mixer's two once-a-second Core Audio calls alone, 20 times a second: the session list (GetSessionEnumerator) or the
+            // default device (GetDefaultAudioEndpoint + GetId) - which one keeps native memory (10-24)
+            tick = CoreAudioDevice.LeakProbe(what == "audioenum");
+        }
+        else if (what == "eyes")
+        {
+            var ey = new EyeGaze();
+            comp = ey;
+            tick = () => ey.Update(Clock.Now, true);
+        }
+        else if (what == "capture")
+        {
+            // the first monitor captured as the panels do (a frame polled 90 times a second, its copy kept)
+            gpu = new Gpu(0);
+            var dev = MonitorCapture.CreateWinRtDevice(gpu);
+            var cap = new MonitorCapture(gpu, dev, Monitors.Enumerate()[0]);
+            comp = cap;
+            tick = () => cap.Poll();
+        }
         long start = Priv();
         Log.Info($"leaktest {what}: start private {start / 1024} KB");
         for (int t = 10; t <= seconds; t += 10)
         {
-            Thread.Sleep(10000);
+            var until = DateTime.UtcNow.AddSeconds(10);
+            while (DateTime.UtcNow < until) { tick?.Invoke(); Thread.Sleep(tick == null ? 200 : 11); }
             Log.Info($"leaktest {what}: {t,3} s  private {Priv() / 1024} KB  (+{(Priv() - start) / 1024} KB)  GCs {GC.CollectionCount(0)}");
         }
         GC.Collect();
@@ -3015,6 +3048,7 @@ static partial class Tools
             Log.Info($"leaktest media: {mi.Reads} reads, has={snap.has} playing={snap.playing} title='{snap.title}' art={(snap.art != null ? "yes" : "no")}");
         }
         comp?.Dispose();
+        gpu?.Dispose();
         return 0;
     }
 

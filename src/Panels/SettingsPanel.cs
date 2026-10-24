@@ -115,9 +115,7 @@ public sealed class SettingsPanel : IPointerTarget, IDisposable
             AnimWake.Take();             // the previews' asks (the watch, the keyboard) are their own panels', not this one's
             _view.Vis = _vis;
             _view.Closing = !_open;
-            s0 = System.Diagnostics.Stopwatch.GetTimestamp();
             DrawFrame(_ptr);
-            Spikes.Piece("settings: page drawn", s0);
             s0 = System.Diagnostics.Stopwatch.GetTimestamp();
             Ov.SetTexture(Surf.Tex);
             Spikes.Piece("settings: texture to SteamVR", s0);
@@ -135,16 +133,21 @@ public sealed class SettingsPanel : IPointerTarget, IDisposable
 
     void DrawFrame(PointerState ptr)
     {
+        long s0 = System.Diagnostics.Stopwatch.GetTimestamp();
         if (Theme.Classic)
         {
             // the 95 property sheet at 1995 size, every pixel 2 x 2 (its window frame is part of it)
             _view.Render95(_ui, ptr, Surf.Bitmap, TW / SettingsView.W95W, 0, 0, 0x00000000);
+            Spikes.Piece("settings: page drawn (95)", s0);
             return;
         }
         _ui.Begin(ptr, Scale);
         _p.Begin(Surf.Bitmap, 0x00000000, Scale);
         DrawBody(_p, _ui, _view);
+        Spikes.Piece("settings: page drawn", s0);
+        s0 = System.Diagnostics.Stopwatch.GetTimestamp();
         _p.End();
+        Spikes.Piece("settings: D2D flush", s0);         // (10-24: 15-18 ms in VR while the page draws in 1-2 ms - the GPU's wait?)
         _ui.End();
     }
 
