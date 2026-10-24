@@ -324,6 +324,17 @@ public sealed class VrOverlay : IDisposable
         return LocalRaycast.Intersect(world, w, c, _msW, _msH, origin, dir, out dist, out uv, out point, out normal, clampToEdge: true);
     }
 
+    // where uv (top-left origin) of this overlay is in the world now (LocalRaycast.PointAt)
+    public bool PointLocal(VrSession vr, Vector2 uv, out Vector3 point)
+    {
+        point = default;
+        if (_msW <= 0 || _msH <= 0 || !TryWorld(vr, out var world)) return false;
+        float w = _width > 0 ? _width : 1f;
+        float c = _curv > 0 ? _curv : 0f;
+        point = LocalRaycast.PointAt(world, w, c, _msW, _msH, uv);
+        return true;
+    }
+
     // Verified by --selftest; kept switchable in case a runtime reports top-left UVs.
     public static bool UvFlipV = true;
 

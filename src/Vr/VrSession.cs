@@ -59,6 +59,55 @@ public sealed class VrSession : IDisposable
     // (Sys/EyeGaze.cs), else the head's forward - gaze focus, smart capture, the watch's glance and the dim go by it
     public Vector3 Gaze = -Vector3.UnitZ, GazeOrigin;
     public bool EyesValid;
+    // the eye cursor's ray (Vr/Laser.cs EyeTick): the last new reading, unsmoothed, on the head of its own time (HeadAt); EyeRayNew: a
+    // new reading this frame; EyeRate: Virtual Desktop's readings a second
+    public Vector3 EyeRay = -Vector3.UnitZ;
+    public bool EyeRayNew;
+    public int EyeRate;
+
+    // ---- the head's poses of the last ~0.7 s, each with the moment it is for (Erik 10-24: "az eye tracking kurzor pontosságán még
+    // lehetne javítani"): an eye reading is tens of ms old, the head pose of the frame is predicted ahead - the look put on that head
+    // ran ahead of every head turn. HeadAt gives the head of any moment in between (slerp / lerp of the two around it). ----
+    const int HeadKeep = 64;
+    readonly double[] _headAt = new double[HeadKeep];
+    readonly Quaternion[] _headQ = new Quaternion[HeadKeep];
+    readonly Vector3[] _headP = new Vector3[HeadKeep];
+    int _headN, _headI;
+
+    // the head as it is (or is predicted) at 'at' (Clock seconds)
+    public void NoteHead(double at, in Matrix4x4 m)
+    {
+        var q = Quaternion.Normalize(Quaternion.CreateFromRotationMatrix(m));
+        if (!float.IsFinite(q.W) || !float.IsFinite(m.M41)) return;
+        if (_headN > 0 && at <= _headAt[_headI]) { _headQ[_headI] = q; _headP[_headI] = m.Translation; return; }    // (the same moment again)
+        _headI = (_headI + 1) % HeadKeep;
+        _headAt[_headI] = at;
+        _headQ[_headI] = q;
+        _headP[_headI] = m.Translation;
+        if (_headN < HeadKeep) _headN++;
+    }
+
+    // the head at moment t: between the two poses around it; newer than all: the newest, older than all: the oldest, none: Hmd
+    public Matrix4x4 HeadAt(double t)
+    {
+        if (_headN == 0) return Hmd;
+        int i = _headI;
+        if (t >= _headAt[i]) return HeadPose(i, i, 0);
+        for (int k = 1; k < _headN; k++)
+        {
+            int j = (i + HeadKeep - 1) % HeadKeep;
+            if (t >= _headAt[j]) return HeadPose(j, i, (float)((t - _headAt[j]) / Math.Max(1e-6, _headAt[i] - _headAt[j])));
+            i = j;
+        }
+        return HeadPose(i, i, 0);
+    }
+
+    Matrix4x4 HeadPose(int a, int b, float f)
+    {
+        var m = Matrix4x4.CreateFromQuaternion(a == b ? _headQ[a] : Quaternion.Slerp(_headQ[a], _headQ[b], f));
+        m.Translation = a == b ? _headP[a] : Vector3.Lerp(_headP[a], _headP[b], f);
+        return m;
+    }
     readonly ulong[] _handSource = new ulong[2];
     readonly VRActiveActionSet_t[] _handSets = new VRActiveActionSet_t[2];
     bool _perHandFailed;
@@ -149,6 +198,7 @@ public sealed class VrSession : IDisposable
         }
         catch (Exception ex) { Log.Warn("IdentifyApplication: " + ex.Message); }
         SetupInput(actionManifestPath);
+        _headN = 0;
         Connected = true;
         Log.Info($"SteamVR connected: adapter {adapter}, {DisplayHz:0.#} Hz, input: {InputStatus}");
         return true;
@@ -221,6 +271,7 @@ public sealed class VrSession : IDisposable
         Sys.GetTimeSinceLastVsync(ref secs, ref frame);
         float predict = Math.Max(0, 1f / DisplayHz - secs) + _vsyncToPhotons;
         _predict = predict;
+        double posedFor = Clock.Now + predict;          // (the moment these poses are predicted for: HeadAt)
         Sys.GetDeviceToAbsoluteTrackingPose(ETrackingUniverseOrigin.TrackingUniverseStanding, predict, _poses);
         for (int i = 0; i < _poses.Length; i++)
         {
@@ -228,6 +279,7 @@ public sealed class VrSession : IDisposable
             DeviceConnected[i] = _poses[i].bDeviceIsConnected;
             if (DeviceValid[i]) Device[i] = MathUtil.FromHmd(_poses[i].mDeviceToAbsoluteTracking);
         }
+        if (DeviceValid[0]) NoteHead(posedFor, Device[0]);
         UpdateWorn();
         _idleTick = Idle ? _idleTick + 1 : 0;
         bool readInput = !Idle || _idleTick % 3 == 1;
@@ -332,6 +384,7 @@ public sealed class VrSession : IDisposable
     {
         if (!Connected) return;
         Connected = false;
+        _headN = 0;
         try { if (acknowledgeQuit) Sys.AcknowledgeQuit_Exiting(); } catch { }
         try { OpenVR.Shutdown(); } catch { }
         Sys = null; Ov = null; Comp = null; _in = null;

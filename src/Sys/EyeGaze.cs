@@ -14,14 +14,34 @@ namespace Orbit;
 // What it gives: the look's direction in the world (both eyes averaged), Valid while the eyes are tracked; a blink holds the last
 // look for a moment (Hold) before it lets go, then everything goes by the head again (VrSession.Gaze). The map is looked for while VR
 // is connected, again every few seconds when it is not there (the streamer not running, "Forward tracking data" off).
+//
+// New readings only (Erik 10-24: "az eye tracking kurzor pontosságán még lehetne javítani"): the map has no time stamp and Virtual
+// Desktop writes it at its own rate, so a read that finds the same poses as the last one is not a new look - Fresh says when it is,
+// SampleAt when it was first seen. The smoothing runs on new readings only (a repeated one looked like a pause, then a jump), and a
+// stream that stops counts as lost after Hold like a blink. Shut eyes (EyesClosed, both past BlinkAt) are no look either, nor the
+// moment after they open (BlinkTail): whatever the tracker says through the lids went straight into the cursor.
+// (The --eyetest of 10-24: 72 new readings a second, a write every 11.5 ms mostly - some 90 Hz frames get none -, both eyes valid and
+// sure all the time, the raw look's step from reading to reading 0.34 deg RMS.)
 public sealed class EyeGaze : IDisposable
 {
     public const string MapName = "VirtualDesktop.BodyState";
-    public const double Hold = 0.25;                // seconds a blink keeps the last look
+    public const double Hold = 0.25;                // seconds a blink (or a stream that stopped) keeps the last look
     // the look smoothed like the laser (a One Euro filter on its direction): resting eyes tremble and the tracker is noisy - filtered at
-    // ~1.5 Hz; a saccade (hundreds of degrees a second) opens it up so the look jumps with the eyes, not after them
+    // ~2.5 Hz; a saccade (hundreds of degrees a second) opens it up so the look jumps with the eyes, not after them (gaze focus, the
+    // watch's glance, the dim; the eye cursor takes the raw look - Vr/EyeSpot.cs)
     public const float MinCutoff = 2.5f, Beta = 0.1f;   // Hz, Hz per degree a second (Erik 10-19 "more sensitive": was 1.5 / 0.06)
     public const float MinConfidence = 0.3f;
+    // seconds a reading is older than the head pose SteamVR gives for its frame (the Quest's cameras, the tracker, Virtual Desktop's
+    // stream): the look goes on the head of then (VrSession.HeadAt) - put on the head SteamVR predicts it ran ahead of a head turn and
+    // slid back (~2 deg at 30 deg/s). EyeLag logs the measured value.
+    public const double Latency = 0.040;
+    public const float BlinkAt = 0.7f;              // EyesClosed on both eyes from here: shut
+    public const double BlinkTail = 0.04;           // seconds after they open that are skipped too
+    const int EyesClosedL = 12, EyesClosedR = 13;   // the VD module's Expressions enum (EyesLookDown is 14 / 15), read from its metadata 10-24
+    // ... unless the reading looks further down than 25 deg in the head: the --eyetest of 10-24 (Erik in VR) had EyesClosed 0.81-1.00 on
+    // both eyes while the eyes looked 32-38 deg down (the lids follow the look) - as shut as its blink (1.00 / 1.00, the look thrown 13 deg
+    // up for that reading); the taskbar must not count as a blink
+    const float BlinkDownY = -0.4226f;              // sin -25 deg
 
     [StructLayout(LayoutKind.Sequential)]
     public struct Pose { public Quaternion Orientation; public Vector3 Position; }
@@ -55,6 +75,18 @@ public sealed class EyeGaze : IDisposable
     public Vector3 HeadOrigin { get; private set; }                     // between the eyes, relative to the head
     public float Confidence { get; private set; }
     public FaceState Last;                           // (the probe: what was read last)
+    public bool Fresh { get; private set; }         // this frame's read was a new look
+    public bool NewReading { get; private set; }    // ... a new reading at all (shut eyes, an unsure one too: the probe's rate)
+    public double SampleAt { get; private set; }    // when the last new look was first seen (Clock)
+    public Vector3 RawDir { get; private set; } = -Vector3.UnitZ;       // the last new look, unsmoothed, relative to the head
+    public int PerSec { get; private set; }         // new readings a second (Virtual Desktop's own rate)
+
+    Pose _pl, _pr;                                   // the last reading, to see a new one
+    float _cl, _cr;
+    byte _vbl, _vbr;
+    bool _have;
+    int _count;
+    double _countAt, _closedAt = -10;
 
     // --snapshot: a made-up look instead of the map
     public Func<(bool valid, Vector3 dir)> Fake;
@@ -62,11 +94,14 @@ public sealed class EyeGaze : IDisposable
     // a frame: read the map (opened when it appears); now: Clock.Now
     public void Update(double now, bool wanted)
     {
+        Fresh = NewReading = false;
         if (Fake != null)
         {
             var (v, d) = Fake();
             Valid = v;
-            if (v) HeadDir = Vector3.Normalize(d);
+            Fresh = v;
+            SampleAt = now;
+            if (v) HeadDir = RawDir = Vector3.Normalize(d);
             return;
         }
         if (!wanted) { Close(); Valid = false; return; }
@@ -82,21 +117,45 @@ public sealed class EyeGaze : IDisposable
         Feed(s, now);
     }
 
-    // one reading (the map's, or the checks' made-up one): the look, or a blink's hold
+    // one read (the map's, or the checks' made-up one): a new look, or the last one held (the same reading again, a blink, the stream
+    // stopped) until Hold
     public void Feed(in FaceState s, double now)
     {
         Last = s;
-        if (Take(s, out var dir, out var origin, out float conf))
+        Fresh = false;
+        NewReading = !_have || !Same(s);
+        if (NewReading)
         {
-            dir = Smooth(dir, now);
-            HeadDir = dir;
-            HeadOrigin = origin;
-            Confidence = conf;
-            _lastGood = now;
-            Valid = true;
+            _have = true;
+            _pl = s.LeftEyePose; _pr = s.RightEyePose;
+            _cl = s.LeftEyeConfidence; _cr = s.RightEyeConfidence;
+            _vbl = s.LeftEyeIsValid; _vbr = s.RightEyeIsValid;
+            _count++;
+            bool look = Take(s, out var dir, out var origin, out float conf);
+            if (look && Closed(s) && dir.Y > BlinkDownY) _closedAt = now;      // a blink (shut lids looking far down: a look)
+            else if (look && now - _closedAt >= BlinkTail)
+            {
+                RawDir = dir;
+                HeadDir = Smooth(dir, now);
+                HeadOrigin = origin;
+                Confidence = conf;
+                _lastGood = SampleAt = now;
+                Fresh = true;
+            }
         }
-        else Valid = now - _lastGood < Hold;        // a blink: the last look a moment longer
+        if (now - _countAt >= 1) { PerSec = _count; _count = 0; _countAt = now; }
+        Valid = now - _lastGood < Hold;             // a blink: the last look a moment longer
     }
+
+    // the same reading as the last one: Virtual Desktop has not written a new one since (exact: a new one always differs somewhere)
+    bool Same(in FaceState s) =>
+        s.LeftEyePose.Orientation == _pl.Orientation && s.LeftEyePose.Position == _pl.Position &&
+        s.RightEyePose.Orientation == _pr.Orientation && s.RightEyePose.Position == _pr.Position &&
+        s.LeftEyeConfidence == _cl && s.RightEyeConfidence == _cr && s.LeftEyeIsValid == _vbl && s.RightEyeIsValid == _vbr;
+
+    // both eyes shut (a blink): what the tracker says then is not a look
+    static unsafe bool Closed(in FaceState s) =>
+        s.ExpressionWeights[EyesClosedL] >= BlinkAt && s.ExpressionWeights[EyesClosedR] >= BlinkAt;
 
     Vector3 _smooth;
     double _smoothAt = -1;
@@ -144,9 +203,10 @@ public sealed class EyeGaze : IDisposable
         return true;
     }
 
-    // the look in the world, from where the head is now
+    // the look in the world, from where the head is (the head of the reading's time: VrSession.HeadAt)
     public Vector3 WorldDir(in Matrix4x4 hmd) => Vector3.Normalize(Vector3.TransformNormal(HeadDir, hmd));
     public Vector3 WorldOrigin(in Matrix4x4 hmd) => Vector3.Transform(HeadOrigin, hmd);
+    public Vector3 RawWorldDir(in Matrix4x4 hmd) => Vector3.Normalize(Vector3.TransformNormal(RawDir, hmd));
 
     bool Open()
     {
@@ -167,6 +227,7 @@ public sealed class EyeGaze : IDisposable
     void Close()
     {
         if (_view != null) Log.Info("eyes: Virtual Desktop's eye tracking gone");
+        PerSec = 0;
         _view?.Dispose(); _view = null;
         _map?.Dispose(); _map = null;
     }

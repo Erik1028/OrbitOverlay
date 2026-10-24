@@ -640,14 +640,16 @@ static class GazeFocusTools
         finally { Motion.Level = motion0; }
         WarpChecks(gpu, dir, Want);
         EyeCursorChecks(gpu, dir, Want);
+        EyeSpotChecks(Want);
         Log.Info($"focus: {(problems == 0 ? "every check as wanted" : $"{problems} checks NOT as wanted")}");
         return problems;
     }
 
     // The eye cursor's smoothing (Vr/EyeSpot.cs, Erik 10-19), on the made-up row at 90 fps: the eyes on the middle monitor trembling 0.3 deg
-    // - the spot stays; the look moving 2.5 deg in a second (reading) - followed to within the dead zone; a look at the right monitor -
-    // part way at 0.035 s, there by 0.08 s; the hand turned 2 deg - tuned: a small look away moves nothing, the beam turned 2 deg with
-    // the hand; the trigger held - a look at the left monitor moves nothing
+    // - the spot on the look's middle, still; the look moving 2.5 deg in a second (reading) - followed to within 0.25 deg once it rests;
+    // a look at the right monitor - part way at 0.035 s, there by 0.08 s; the hand turned 2 deg - tuned: a small look away (1.2 deg, under a
+    // saccade) moves nothing, the beam turned 2 deg with the hand; the trigger held - a look at the left monitor moves nothing.
+    // (10-24: the spot is a fixation's mean - no dead zone left short; a reading a frame here, every one a new one)
     static void EyeCursorChecks(Gpu gpu, string dir, Action<string, bool> Want)
     {
         var r = new Rig(gpu, dir, 3, on: false);
@@ -678,15 +680,19 @@ static class GazeFocusTools
             bool seen = Look(Vector3.Normalize(lookDir), out var at);
             es.Step(at, seen, eye, h, held, clock, dt);
         }
-        // 1. still eyes, trembling
+        // 1. still eyes, trembling: after a second the spot on the look's middle, and still for the last half second
         var rng = new Random(7);
-        float tremble = 0;
+        int tremMoves = 0;
+        var tremPrev = es.Spot(clock);
         for (int i = 0; i < 90; i++)
         {
             var axis = Vector3.Normalize(new Vector3((float)rng.NextDouble() - 0.5f, (float)rng.NextDouble() - 0.5f, (float)rng.NextDouble() - 0.5f));
             Frame(Vector3.Transform(midDir, Quaternion.CreateFromAxisAngle(axis, (float)rng.NextDouble() * 0.3f * MathF.PI / 180)), hand);
-            tremble = MathF.Max(tremble, Vector3.Distance(es.Spot(clock), mid) * 1000);
+            var sp = es.Spot(clock);
+            if (i >= 45 && Vector3.Distance(sp, tremPrev) > 1e-5f) tremMoves++;
+            tremPrev = sp;
         }
+        float tremble = Deg(es.Spot(clock) - eye, mid - eye);
         // 2. reading: 2.5 deg to the right in a second, then 0.5 s still
         for (int i = 1; i <= 90; i++) Frame(Vector3.Transform(midDir, Yaw(2.5f * i / 90)), hand);
         for (int i = 0; i < 45; i++) Frame(Vector3.Transform(midDir, Yaw(2.5f)), hand);
@@ -700,11 +706,11 @@ static class GazeFocusTools
         float partWay = Vector3.Distance(es.Spot(clock), before) / Math.Max(1e-6f, Vector3.Distance(right, before));
         for (int i = 0; i < 5; i++) Frame(rightDir, hand);                  // ~0.089 s
         float there = Vector3.Distance(es.Spot(clock), right) * 1000;
-        // 4. the hand turns 2 deg: tuned - a small look away (2 deg) moves nothing, the beam turned with the hand
+        // 4. the hand turns 2 deg: tuned - a small look away (1.2 deg: 2 can be a saccade now) moves nothing, the beam turned with the hand
         var hand2 = Vector3.Transform(hand, Yaw(2));
         Frame(rightDir, hand2);
         var spot = es.Spot(clock);
-        for (int i = 0; i < 45; i++) Frame(Vector3.Transform(rightDir, Yaw(-2)), hand2);
+        for (int i = 0; i < 45; i++) Frame(Vector3.Transform(rightDir, Yaw(-1.2f)), hand2);
         float tunedMove = Vector3.Distance(es.Spot(clock), spot) * 1000;
         float beamTurn = Deg(es.Beam(origin, hand2, clock), es.Beam(origin, Vector3.Transform(hand2, Yaw(-2)), clock));
         float handTurn = Deg(hand2, Vector3.Transform(hand2, Yaw(-2)));       // (a 2 deg turn about the vertical: less on a hand pointing down)
@@ -713,13 +719,170 @@ static class GazeFocusTools
         spot = es.Spot(clock);
         for (int i = 0; i < 20; i++) Frame(leftDir, hand2, held: true);
         float heldMove = Vector3.Distance(es.Spot(clock), spot) * 1000;
-        Want($"eye cursor: trembling eyes move the spot {tremble:0.00} mm (want under 0.5); reading 2.5 deg: {behind:0.00} deg behind the look " +
-             $"(want under {EyeSpot.Dead * 180 / MathF.PI + 0.15f:0.00}); a look at the right monitor: {partWay * 100:0}% there after 0.033 s (want 30-99), " +
-             $"{there:0.00} mm off after 0.089 s (want under 1); the hand turned 2 deg: tuned {es.Tuned} (want True), a small look away moves it " +
-             $"{tunedMove:0.00} mm (want under 0.5), the beam turned {beamTurn:0.00} deg with the hand's {handTurn:0.00} (want within 0.15); held: a look at the left monitor moves it {heldMove:0.00} mm (want under 0.5)",
-            tremble < 0.5f && behind < EyeSpot.Dead * 180 / MathF.PI + 0.15f && partWay > 0.3f && partWay < 0.99f && there < 1 && es.Tuned
+        Want($"eye cursor: trembling eyes - the spot {tremble:0.000} deg off the look's middle after 1 s (want under 0.10), {tremMoves} moves in the last " +
+             $"0.5 s (want 2 at most); reading 2.5 deg: {behind:0.00} deg behind the look (want under 0.25); a look at the right monitor: " +
+             $"{partWay * 100:0}% there after 0.033 s (want 30-99), {there:0.00} mm off after 0.089 s (want under 1); the hand turned 2 deg: tuned {es.Tuned} " +
+             $"(want True), a small look away moves it {tunedMove:0.00} mm (want under 0.5), the beam turned {beamTurn:0.00} deg with the hand's " +
+             $"{handTurn:0.00} (want within 0.15); held: a look at the left monitor moves it {heldMove:0.00} mm (want under 0.5)",
+            tremble < 0.10f && tremMoves <= 2 && behind < 0.25f && partWay > 0.3f && partWay < 0.99f && there < 1 && es.Tuned
             && tunedMove < 0.5f && MathF.Abs(beamTurn - handTurn) < 0.15f && heldMove < 0.5f);
         foreach (var p in r.Panels) p.Dispose();
+    }
+
+    // The eye cursor's fixation filter with a tracker's noise (Vr/EyeSpot.cs, Erik 10-24: "az eye tracking kurzor pontosságán még lehetne
+    // javítani"), CPU only - no GPU, no overlay, no SteamVR (--eyechecks; also with the focus checks): a made-up flat panel 0.78 m wide,
+    // 1920 x 1080, 0.8 m ahead of the eye; readings at 72 a second into 90 fps frames, Gaussian noise of 0.5 deg an axis. The wants are
+    // the sim's (fixsim3.py) with a margin: at rest 2 minutes - the RMS, the cursor's moves, its jumps; saccades of 4 and 2 deg - the median
+    // of 15 a moment after landing; a slow move without noise - how far behind once it rests; Carry. Then the readings (EyeGaze.Feed):
+    // a repeated one is no new look, a blink's are none and are held until Hold, the moment after it skipped; and the head of a moment
+    // (VrSession.HeadAt).
+    public static int EyeSpotChecks(Action<string, bool> Want)
+    {
+        int problems = 0;
+        void Check(string line, bool ok) { if (!ok) problems++; Want(line, ok); }
+        var world = Matrix4x4.CreateTranslation(0, 0, -0.8f);
+        const float W = 0.78f, TexW = 1920, TexH = 1080, Dt = 1 / 90f, Rate = 72, Sigma = 0.5f;
+        var eye = Vector3.Zero;
+        static float Rad(float deg) => deg * MathF.PI / 180;
+        static Vector3 DirOf(float yaw, float pitch) =>
+            Vector3.Normalize(new Vector3(MathF.Sin(Rad(yaw)) * MathF.Cos(Rad(pitch)), MathF.Sin(Rad(pitch)), -MathF.Cos(Rad(yaw)) * MathF.Cos(Rad(pitch))));
+        bool On(float yaw, float pitch, out Vector3 at) => LocalRaycast.Intersect(world, W, 0, TexW, TexH, eye, DirOf(yaw, pitch), out _, out _, out at, out _);
+        float Off(Vector3 p, Vector3 q) => EyeSpot.Angle(Vector3.Normalize(p - eye), Vector3.Normalize(q - eye)) * 180 / MathF.PI;
+        static float Gauss(Random r) => (float)(Math.Sqrt(-2 * Math.Log(1 - r.NextDouble())) * Math.Cos(2 * Math.PI * r.NextDouble()));
+        var es = new EyeSpot();
+        double clock = 0, next = 0;
+        void Begin(float yaw, float pitch)
+        {
+            es = new EyeSpot();
+            clock = next = 0;
+            On(yaw, pitch, out var p0);
+            es.Start(p0, -Vector3.UnitZ);
+        }
+        // a frame: the clock on, the reading due in it (the latest, as EyeTick takes it) - truth(t) the look's yaw / pitch at the reading's time
+        void Frame(Func<double, (float yaw, float pitch)> truth, float sigma, Random rng)
+        {
+            clock += Dt;
+            bool fresh = false, seen = false;
+            Vector3 at = default;
+            while (next <= clock)
+            {
+                var (y, p) = truth(next);
+                next += 1 / Rate;
+                fresh = true;
+                seen = On(y + (rng == null ? 0 : Gauss(rng) * sigma), p + (rng == null ? 0 : Gauss(rng) * sigma), out at);
+            }
+            if (fresh) es.Step(at, seen, eye, es.HandRef, false, clock, Dt);
+        }
+
+        // 1. two minutes at rest
+        On(0, 0, out var rest);
+        Begin(0, 0);
+        var rng = new Random(11);
+        double err2 = 0;
+        int frames = 0, moves = 0, jumps = 0;
+        var prev = es.Spot(clock);
+        for (int i = 0; i < 120 * 90; i++)
+        {
+            Frame(_ => (0, 0), Sigma, rng);
+            var sp = es.Spot(clock);
+            if (i >= 90)
+            {
+                float e = Off(sp, rest);
+                err2 += e * e;
+                frames++;
+                if (Vector3.Distance(sp, prev) >= 0.5f * W / TexW) moves++;
+                if (Off(sp, prev) > 0.5f) jumps++;
+            }
+            prev = sp;
+        }
+        float rms = (float)Math.Sqrt(err2 / Math.Max(1, frames)), movesPerS = moves / (frames / 90f), jumpsPerMin = jumps / (frames / 90f / 60);
+        float noiseDeg = es.Noise * 180 / MathF.PI;
+
+        // 2. saccades: 1 s at rest, then the look elsewhere at once - how far off a moment after landing (the median of 15)
+        float Saccade(float size, float afterMs, int seed)
+        {
+            var errs = new float[15];
+            for (int k = 0; k < errs.Length; k++)
+            {
+                var r = new Random(seed + k);
+                Begin(0, 0);
+                On(size, 0, out var target);
+                while (clock < 1 + afterMs / 1000) Frame(t => t < 1 ? (0, 0) : (size, 0), Sigma, r);
+                errs[k] = Off(es.Spot(clock), target);
+            }
+            Array.Sort(errs);
+            return errs[errs.Length / 2];
+        }
+        float sac4 = Saccade(4, 100, 100), sac2 = Saccade(2, 70, 200);
+
+        // 3. a slow move without noise: 0.5 s still, 2.5 deg in a second, 0.5 s still - how far behind
+        Begin(0, 0);
+        while (clock < 2) Frame(t => (t < 0.5 ? 0 : MathF.Min(2.5f, 2.5f * (float)(t - 0.5)), 0), 0, null);
+        On(2.5f, 0, out var slowEnd);
+        float slowBehind = Off(es.Spot(clock), slowEnd);
+
+        // 4. Carry: the whole spot moved with its screen
+        var carryD = new Vector3(0.01f, -0.02f, 0.005f);
+        var before = es.Spot(clock);
+        es.Carry(carryD);
+        float carryErr = Vector3.Distance(es.Spot(clock) - before, carryD);
+
+        Check($"eye spot: 2 min at rest, noise 0.5 deg an axis - {rms:0.000} deg RMS (want under 0.13), {movesPerS:0.00} moves of half a pixel a second " +
+              $"(want under 2.5), {jumpsPerMin:0.0} jumps over 0.5 deg a minute (want under 3.5), the noise learned {noiseDeg:0.00} deg (want 0.6-0.8); " +
+              $"a 4 deg saccade {sac4:0.00} deg off 100 ms after landing (want under 0.35), 2 deg {sac2:0.00} off at 70 ms (want under 0.55), the medians " +
+              $"of 15; a slow move without noise {slowBehind:0.00} deg behind once it rests (want under 0.25); Carry moved the spot {carryErr * 1000:0.000} mm " +
+              $"off the screen's move (want under 0.01)",
+            rms < 0.13f && movesPerS < 2.5f && jumpsPerMin < 3.5f && noiseDeg > 0.6f && noiseDeg < 0.8f && sac4 < 0.35f && sac2 < 0.55f
+            && slowBehind < 0.25f && carryErr < 1e-5f);
+
+        // 5. the readings: new ones only, blinks
+        {
+            static unsafe EyeGaze.FaceState Face(float yawDeg, bool shut, float pitchDeg = 0)
+            {
+                var o = Quaternion.CreateFromAxisAngle(Vector3.UnitY, -yawDeg * MathF.PI / 180) * Quaternion.CreateFromAxisAngle(Vector3.UnitX, pitchDeg * MathF.PI / 180);
+                var s = new EyeGaze.FaceState { LeftEyeIsValid = 1, RightEyeIsValid = 1, LeftEyeConfidence = 1, RightEyeConfidence = 1 };
+                s.LeftEyePose = new EyeGaze.Pose { Orientation = o, Position = new Vector3(-0.032f, 0, 0) };
+                s.RightEyePose = new EyeGaze.Pose { Orientation = o, Position = new Vector3(0.032f, 0, 0) };
+                if (shut) { s.ExpressionWeights[12] = 1; s.ExpressionWeights[13] = 1; }
+                return s;
+            }
+            var g = new EyeGaze();
+            g.Feed(Face(5, false), 0);
+            bool first = g.Fresh && g.Valid && g.SampleAt == 0;
+            g.Feed(Face(5, false), 0.05);
+            bool repeat = !g.Fresh && g.Valid && g.SampleAt == 0;
+            g.Feed(Face(7, true), 0.1);
+            bool shutNot = !g.Fresh && g.Valid && MathF.Abs(MathF.Atan2(g.RawDir.X, -g.RawDir.Z) * 180 / MathF.PI - 5) < 0.01f;
+            g.Feed(Face(8, true), 0.3);
+            bool shutLost = !g.Fresh && !g.Valid;
+            g.Feed(Face(9, false), 0.33);
+            bool tail = !g.Fresh;
+            g.Feed(Face(10, false), 0.35);
+            bool back = g.Fresh && g.Valid && MathF.Abs(MathF.Atan2(g.RawDir.X, -g.RawDir.Z) * 180 / MathF.PI - 10) < 0.01f;
+            g.Feed(Face(0, true, -35), 0.4);                // (the lids as shut looking 35 deg down - the taskbar: a look)
+            bool down = g.Fresh && MathF.Asin(g.RawDir.Y) * 180 / MathF.PI < -34;
+            Check($"eye readings: a new one fresh {first} (want True); the same again not new, still valid {repeat} (want True); eyes shut - no new " +
+                  $"look, the last held {shutNot} (want True), lost after Hold {shutLost} (want True); 30 ms after they open skipped {tail} (want True), " +
+                  $"50 ms after a new look {back} (want True); shut lids looking 35 deg down a look {down} (want True)",
+                first && repeat && shutNot && shutLost && tail && back && down);
+        }
+
+        // 6. the head of a moment (VrSession.HeadAt)
+        {
+            var vr = new VrSession();
+            vr.Device[0] = Matrix4x4.CreateTranslation(1, 2, 3);
+            bool noneHmd = vr.HeadAt(5) == vr.Hmd;
+            static float YawOf(in Matrix4x4 m) { var f = MathUtil.Forward(m); return MathF.Atan2(f.X, -f.Z) * 180 / MathF.PI; }
+            vr.NoteHead(10.00, Matrix4x4.CreateRotationY(0) * Matrix4x4.CreateTranslation(0, 1.6f, 0));
+            vr.NoteHead(10.01, Matrix4x4.CreateRotationY(-10 * MathF.PI / 180) * Matrix4x4.CreateTranslation(0.01f, 1.6f, 0));
+            var mid = vr.HeadAt(10.005);
+            float midYaw = YawOf(mid), oldYaw = YawOf(vr.HeadAt(9)), newYaw = YawOf(vr.HeadAt(11));
+            bool midAt = MathF.Abs(mid.Translation.X - 0.005f) < 1e-5f;
+            Check($"eye head: no poses - the headset's {noneHmd} (want True); poses at 0 and 10 deg 10 ms apart - {midYaw:0.00} deg in the middle " +
+                  $"(want 5.00, placed between {midAt}), {oldYaw:0.00} before them (want 0.00), {newYaw:0.00} after (want 10.00)",
+                noneHmd && MathF.Abs(midYaw - 5) < 0.05f && midAt && MathF.Abs(oldYaw) < 0.05f && MathF.Abs(newYaw - 10) < 0.05f);
+        }
+        return problems;
     }
 
     // The eye warp's geometry (Vr/Laser.cs, Erik 10-18): the controller at the hip points at the middle monitor, the eyes at the right

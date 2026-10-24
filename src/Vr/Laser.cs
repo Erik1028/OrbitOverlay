@@ -92,7 +92,8 @@ public sealed class Laser : IDisposable
 
     // ---- the eye cursor (Erik 10-19: "not only on a click - a cursor that moves with the eye tracking, smoothed") ----
     // The Windows cursor goes where your eyes are, smoothed (Vr/EyeSpot.cs): the eyes' tremble moves nothing, a small move of the look
-    // (reading along a line) is followed softly, a look elsewhere glides there. The trigger clicks there.
+    // (reading along a line) is followed softly, a look elsewhere glides there. The trigger clicks there. (10-24: the spot is the mean of
+    // the fixation's readings, one for both hands - EyeTick)
     public static bool EyeFollow;                    // Eye cursor "Follow", eye tracking on (OrbitApp, every frame)
     // eye tracking only (Erik 10-19): the cursor is the eyes alone - the ray goes from the eyes to the smoothed spot, no beam, no dot, the
     // hand never fine-tunes. The hand says on / off: on while it is held towards the screens and not on another panel (the keyboard, the
@@ -111,8 +112,35 @@ public sealed class Laser : IDisposable
     public Vector2 HandPx => _handPx;
     Vector3 _handO, _handD;                          // the hand's own ray this frame (the beam's again once the eye cursor lets go)
     bool _eyeOn;
-    EyeSpot _eye;                                    // the spot and its smoothing (Vr/EyeSpot.cs)
     public bool EyeCursorOn => _eyeOn;
+
+    // ---- one spot for both hands (Erik 10-24: "az eye tracking kurzor pontosságán még lehetne javítani") ----
+    // Each hand had a spot of its own, started on a different frame: with both lasers on they parted by up to the dead zone, and the
+    // trigger of the hand that did not own the mouse clicked up to 12 px off the cursor you saw. Now EyeTick moves the one spot once a
+    // frame, from each new eye reading (Vr/EyeSpot.cs); the hands only say on / off. It lives while the eyes are on the screens (EyeAway).
+    // The spot is a point in the room: a screen that moves under it (gaze focus growing the monitor you looked at - 8 deg in 0.3 s right
+    // when you click after looking over -, theater, a grab) slid its content under the cursor. So the pixel it is on is kept (_carry*)
+    // and the spot moved with it, frame by frame.
+    static EyeSpot _spot;
+    static bool _spotLive, _gazeSeen;
+    static double _spotClock, _spotSeenAt = -10;
+    static Vector3 _gazeAt;                          // where the smoothed look is on a screen this frame (on / off goes by it)
+    static IPointerTarget _carryOn;
+    static Vector2 _carryUv;
+    static Vector3 _carryAt;
+    public static float SpotNoiseDeg => _spot.Noise * 180 / MathF.PI;     // (the eye lag's log line)
+
+    // ---- the eye cursor's press (Erik 10-24): at the glide's end, held 0.25 s, a double click on one pixel ----
+    // A press during the glide clicked part way; a saccade while the trigger was down broke the freeze and the mouse moved with the
+    // button held - Windows took a drag (text selected, an icon moved); two clicks by the eyes seldom fell within Windows' 4 px of a
+    // double click. The press goes where the glide is going, its point holds EyePressHold whatever the eyes do (a drag follows them after
+    // that), and a press within the double-click time and EyeDoubleAngle of the last one on the same screen takes that one's pixel.
+    public const float EyePressHold = 0.25f, EyeDoubleAngle = 0.75f * MathF.PI / 180;
+    static readonly double DoubleClick = System.Windows.Forms.SystemInformation.DoubleClickTime / 1000.0;
+    IPointerTarget _eyePressOn;
+    double _eyePressAt = -10;
+    Vector2 _eyePressPx;
+    Vector3 _eyePressPoint;
 
     // ---- a window pulled out of a monitor (OrbitApp.PopOut.cs, Erik 10-18) ----
     // While the trigger drags a window on a monitor and the beam leaves it into the air (PopAngle past its edge), the app makes the window a
@@ -190,7 +218,7 @@ public sealed class Laser : IDisposable
         {
             // eye tracking only: from the eyes to the spot (Vr/EyeSpot.cs smooths it)
             _rawO = vr.GazeOrigin;
-            var to = _eye.Spot(_clock) - _rawO;
+            var to = _spot.Spot(_spotClock) - _rawO;
             _rawD = to.LengthSquared() > 1e-8f ? Vector3.Normalize(to) : vr.Gaze;
         }
         else _rawD = _warped ? Vector3.Normalize(Vector3.TransformNormal(_warpLocal, hs.Aim)) : handDir;
@@ -351,7 +379,9 @@ public sealed class Laser : IDisposable
             var px = bestUv * _hover.TextureSize;
             if (_freezeTarget == _hover && _clock < _freezeUntil)
             {
-                if (MathF.Acos(Math.Clamp(Vector3.Dot(d, _freezeDir), -1f, 1f)) < FreezeAngle) { px = _freezePx; bestPoint = _freezePoint; }
+                // (the eye cursor: the press point holds EyePressHold whatever the eyes do - a saccade made it a drag)
+                bool eyeHold = _eyeOn && _press == _hover && _clock - _eyePressAt < EyePressHold;
+                if (eyeHold || MathF.Acos(Math.Clamp(Vector3.Dot(d, _freezeDir), -1f, 1f)) < FreezeAngle) { px = _freezePx; bestPoint = _freezePoint; }
                 else _freezeUntil = 0;
             }
             _lastPx = px;
@@ -363,8 +393,10 @@ public sealed class Laser : IDisposable
             }
             else if (hs.ClickPressed)
             {
+                if (_eyeOn) EyePress(vr, ref px, ref bestPoint);     // (the glide's end, a double click's pixel)
                 // hold the cursor still for a moment so the click lands where it was aimed
                 _freezeTarget = _hover; _freezePx = px; _freezePoint = bestPoint; _freezeDir = d; _freezeUntil = _clock + 0.3;
+                if (_eyeOn && (bestPoint - o).LengthSquared() > 1e-8f) _freezeDir = Vector3.Normalize(bestPoint - o);     // (the press point's)
                 _press = _hover;
                 _hover.PointerButton(_hand, PtrButton.Primary, true, px);
                 if (haptics) vr.Haptic(_hand, 0.35f);
@@ -444,11 +476,47 @@ public sealed class Laser : IDisposable
 
     Vector3 _lastPoint;
 
+    // the eye cursor's press (EyePressHold, EyeDoubleAngle): px / point where the press goes
+    void EyePress(VrSession vr, ref Vector2 px, ref Vector3 point)
+    {
+        // gliding to a look elsewhere: where it is going, not part way (on this screen: a glide to another one keeps its point)
+        if (_spot.Gliding(_spotClock) && _hover.Overlay != null)
+        {
+            var to = _spot.Anchor - _rawO;
+            if (to.LengthSquared() > 1e-8f && _hover.Overlay.ProjectLocal(vr, _rawO, Vector3.Normalize(to), out _, out var uv, out var pt, out _)
+                && Vector3.DistanceSquared(pt, _spot.Anchor) < 0.0001f * to.LengthSquared())
+            {
+                px = uv * _hover.TextureSize;
+                point = pt;
+            }
+        }
+        // a second press soon after, near the first on the same screen: its pixel (a double click)
+        if (_hover == _eyePressOn && _clock - _eyePressAt < DoubleClick)
+        {
+            Vector3 a = _eyePressPoint - _rawO, b = point - _rawO;
+            if (a.LengthSquared() > 1e-8f && b.LengthSquared() > 1e-8f && EyeSpot.Angle(Vector3.Normalize(a), Vector3.Normalize(b)) < EyeDoubleAngle)
+            {
+                px = _eyePressPx;
+                point = _eyePressPoint;
+            }
+        }
+        _eyePressOn = _hover;
+        _eyePressAt = _clock;
+        _eyePressPx = px;
+        _eyePressPoint = point;
+        _lastPx = px;
+        _lastPoint = point;
+    }
+
     // the press on a monitor: your eyes on another spot of a monitor / window, far enough from the laser's point - the beam turns there
+    // (to the eye cursor's spot - the fixation's mean - while it lives, else to the smoothed look)
     bool TryWarp(VrSession vr, IReadOnlyList<IPointerTarget> targets, Vector3 laserPoint, in Matrix4x4 aim)
     {
         if (!EyeWarp || _hover == null || !_hover.WarpTarget) return false;
-        if (!GazeSpot(vr, targets, out var at) || !WarpLocal(laserPoint, vr.GazeOrigin, at, aim, out var local)) return false;
+        Vector3 at;
+        if (_spotLive && _gazeSeen) at = _spot.Anchor;
+        else if (!GazeSpot(vr, targets, vr.GazeOrigin, vr.Gaze, out at, out _)) return false;
+        if (!WarpLocal(laserPoint, vr.GazeOrigin, at, aim, out var local)) return false;
         _warpLocal = local;
         _warped = true;
         _filter.Reset();
@@ -470,10 +538,12 @@ public sealed class Laser : IDisposable
         return true;
     }
 
-    // the spot your eyes are on: the nearest monitor / window along the look
-    static bool GazeSpot(VrSession vr, IReadOnlyList<IPointerTarget> targets, out Vector3 at)
+    // the spot your eyes are on: the nearest monitor / window along the look from o along d (the smoothed look, or a new reading - EyeTick);
+    // on: that screen
+    static bool GazeSpot(VrSession vr, IReadOnlyList<IPointerTarget> targets, Vector3 o, Vector3 d, out Vector3 at, out IPointerTarget on)
     {
         at = default;
+        on = null;
         if (!vr.EyesValid) return false;
         float nearest = float.MaxValue;
         bool screen = false;
@@ -481,11 +551,12 @@ public sealed class Laser : IDisposable
         {
             var t = targets[i];
             if (t == null || !t.Interactive || t.Overlay == null) continue;
-            if (t.Overlay.RaycastLocal(vr, vr.GazeOrigin, vr.Gaze, out float dist, out _, out var pt, out _) && dist < nearest && dist < 8f)
+            if (t.Overlay.RaycastLocal(vr, o, d, out float dist, out _, out var pt, out _) && dist < nearest && dist < 8f)
             {
                 nearest = dist;
                 at = pt;
                 screen = t.WarpTarget;           // (the settings, the keyboard, a bar in front of a monitor: not a screen)
+                on = screen ? t : null;
             }
         }
         if (screen || nearest < float.MaxValue) return screen;
@@ -497,18 +568,58 @@ public sealed class Laser : IDisposable
         {
             var t = targets[i];
             if (t == null || !t.WarpTarget || !t.Interactive || t.Overlay == null) continue;
-            if (!t.Overlay.ProjectLocal(vr, vr.GazeOrigin, vr.Gaze, out _, out _, out var pt, out _)) continue;
-            var to = pt - vr.GazeOrigin;
+            if (!t.Overlay.ProjectLocal(vr, o, d, out _, out _, out var pt, out _)) continue;
+            var to = pt - o;
             if (to.LengthSquared() < 1e-6f) continue;
-            float ang = EyeSpot.Angle(vr.Gaze, Vector3.Normalize(to));
+            float ang = EyeSpot.Angle(d, Vector3.Normalize(to));
             if (ang < best)
             {
                 best = ang;
                 at = pt;
+                on = t;
                 snapped = true;
             }
         }
         return snapped;
+    }
+
+    // ---- the eye cursor's spot, once a frame for both hands (OrbitApp, after EyeFollow / EyeWarp are set; before the lasers) ----
+    // on / off goes by the smoothed look (_gazeSeen, as before); the spot moves from each new reading only (vr.EyeRay: unsmoothed, on the
+    // head of its own time), and is carried with the screen under it. Costs at most two GazeSpot, one ProjectLocal, one PointLocal a
+    // frame (each hand made a GazeSpot of its own before); allocates nothing.
+    public static void EyeTick(VrSession vr, IReadOnlyList<IPointerTarget> targets, float dt)
+    {
+        _spotClock += dt;
+        if (!(EyeFollow || EyeWarp)) { _gazeSeen = _spotLive = false; _carryOn = null; return; }
+        if (_spotLive && _spotClock - _spotSeenAt > EyeAway) { _spotLive = false; _carryOn = null; }     // (off the screens: a new start)
+        if (!vr.EyesValid) { _gazeSeen = false; return; }          // (a long blink: the fixation kept until EyeAway)
+        _gazeSeen = GazeSpot(vr, targets, vr.GazeOrigin, vr.Gaze, out _gazeAt, out _);
+        // the screen under the spot moved (gaze focus, theater, a grab): the spot with the pixel it is on
+        if (_spotLive && _carryOn != null)
+        {
+            bool still = false;
+            for (int i = 0; i < targets.Count; i++) if (targets[i] == _carryOn) { still = true; break; }
+            if (still && _carryOn.Overlay != null && _carryOn.Overlay.PointLocal(vr, _carryUv, out var p))
+            {
+                var moved = p - _carryAt;
+                if (moved.LengthSquared() > 1e-12f) { _spot.Carry(moved); _carryAt = p; }
+            }
+            else _carryOn = null;
+        }
+        if (!vr.EyeRayNew || !GazeSpot(vr, targets, vr.GazeOrigin, vr.EyeRay, out var at, out var on)) return;
+        if (!_spotLive) { _spot.Start(at, Vector3.UnitZ); _spotLive = true; }
+        else _spot.Step(at, true, vr.GazeOrigin, _spot.HandRef, false, _spotClock, dt);     // the eyes alone (the hand never fine-tunes)
+        _spotSeenAt = _spotClock;
+        // the pixel the spot is on now - on this reading's screen if it is there (one stray reading on another screen: the carry keeps its own)
+        var toSpot = _spot.Anchor - vr.GazeOrigin;
+        if (on?.Overlay != null && toSpot.LengthSquared() > 1e-8f
+            && on.Overlay.ProjectLocal(vr, vr.GazeOrigin, Vector3.Normalize(toSpot), out _, out var uv, out var pt, out _)
+            && Vector3.DistanceSquared(pt, _spot.Anchor) < 0.0001f * toSpot.LengthSquared())       // (within ~0.6 deg)
+        {
+            _carryOn = on;
+            _carryUv = uv;
+            _carryAt = pt;
+        }
     }
 
     // what the hand's own ray is on: 1 a monitor / window, 2 another panel (the keyboard, the watch, the settings, a bar), 0 nothing
@@ -536,13 +647,14 @@ public sealed class Laser : IDisposable
     // the eye cursor, a frame: on / off, where its spot is (EyeFollow)
     void FollowEyes(VrSession vr, IReadOnlyList<IPointerTarget> targets, Vector3 hand, bool held, float dt)
     {
-        bool seen = GazeSpot(vr, targets, out var look);
+        bool seen = _gazeSeen;                           // (EyeTick looked this frame; the spot is moved there too)
+        var look = _gazeAt;
         int on = HandOn(vr, targets, _handO, hand, out _handScreen, out _handPx);
         if (!_eyeOn)
         {
             if (!seen || on == 2 || (held && _press != null)) return;
             _eyeOn = true;                               // the eyes on a screen: the cursor where they are
-            _eye.Start(look, hand);
+            if (!_spotLive) { _spot.Start(look, hand); _spotLive = true; _spotSeenAt = _spotClock; }
             _eyeSeenAt = _clock;
             _eyeLostAt = -1;
             _offWantSince = -1;
@@ -579,7 +691,6 @@ public sealed class Laser : IDisposable
         }
         else _offWantSince = -1;
         if (_clock >= _eyeDiagNext) { _eyeDiagNext = _clock + 3; EyeDiag(vr, targets, "following"); }
-        _eye.Step(look, seen, vr.GazeOrigin, _eye.HandRef, false, _clock, dt);     // the eyes alone (the hand never fine-tunes)
     }
 
     // ---- why the eye cursor does what it does (Erik 10-19 "még nem jó"): a log line on each change and every 3 s while it follows ----
@@ -651,7 +762,10 @@ public sealed class Laser : IDisposable
         }
         Log.Info($"eye cursor ({_hand}): {what} | eyes {(vr.EyesValid ? "tracked" : "NOT tracked")}, in the head {Yaw(g):0} deg {Pitch(g):0} deg, " +
                  $"head {Yaw(f):0} deg {Pitch(f):0} deg | the look hits {hit}{(nearest < float.MaxValue ? $" at {hitUv.X:0.00},{hitUv.Y:0.00}" : "")}" +
-                 $" | the cursor on {(_hover != null ? Name(_hover) + $" at {_lastPx.X:0},{_lastPx.Y:0} px" : "nothing")}");
+                 $" | the cursor on {(_hover != null ? Name(_hover) + $" at {_lastPx.X:0},{_lastPx.Y:0} px" : "nothing")}" +
+                 $" | spot {(_spotLive ? "live" : "waiting")}: noise {_spot.Noise * 180 / MathF.PI:0.00} deg, a saccade past {_spot.BreakAt * 180 / MathF.PI:0.00} deg, " +
+                 $"{_spot.FixN} readings in the fixation{(_carryOn != null ? ", carried with its screen" : "")}; Virtual Desktop {vr.EyeRate} readings a second, " +
+                 $"the head {EyeGaze.Latency * 1000:0} ms back");
     }
 
     static string Name(IPointerTarget t) => t is DesktopPanel dp ? dp.Mon.Name + (dp.Focus != null ? " (focus drawn)" : "") : t.GetType().Name;
@@ -800,6 +914,8 @@ public sealed class Laser : IDisposable
     public void Forget(IPointerTarget t)
     {
         if (t != null && (_hover == t || _press == t || _pressSecondary == t || _grab == t)) Reset();
+        if (t != null && t == _carryOn) _carryOn = null;
+        if (t != null && t == _eyePressOn) _eyePressOn = null;
     }
 
     public void Reset()
