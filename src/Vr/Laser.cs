@@ -128,6 +128,10 @@ public sealed class Laser : IDisposable
     static IPointerTarget _carryOn;
     static Vector2 _carryUv;
     static Vector3 _carryAt;
+    // ... and a reading is ~40 ms old: what its screen moved since is added to it (EyeCarry, 10-24 review - the readings fell behind the
+    // carried spot while the monitor grew, and a new fixation started where the content had been)
+    static readonly EyeCarry _carryLog = new();
+    static IPointerTarget _carryLogOn;              // the screen those moves are of
     public static float SpotNoiseDeg => _spot.Noise * 180 / MathF.PI;     // (the eye lag's log line)
 
     // ---- the eye cursor's press (Erik 10-24): at the glide's end, held 0.25 s, a double click on one pixel ----
@@ -135,12 +139,18 @@ public sealed class Laser : IDisposable
     // button held - Windows took a drag (text selected, an icon moved); two clicks by the eyes seldom fell within Windows' 4 px of a
     // double click. The press goes where the glide is going, its point holds EyePressHold whatever the eyes do (a drag follows them after
     // that), and a press within the double-click time and EyeDoubleAngle of the last one on the same screen takes that one's pixel.
+    // (10-24 review: only in the same fixation - EyeSpot.FixId. 0.75 deg is 28-50 px, more than a row in Explorer or a menu: a click on
+    // the next row within 0.5 s went to the first one's pixel and Windows opened the first. A look at the next row is a new fixation, a
+    // double click on one thing stays in one. The last press is either hand's, like the spot: a double click with both hands works too.
+    // The hold stays the hand's own.)
     public const float EyePressHold = 0.25f, EyeDoubleAngle = 0.75f * MathF.PI / 180;
     static readonly double DoubleClick = System.Windows.Forms.SystemInformation.DoubleClickTime / 1000.0;
-    IPointerTarget _eyePressOn;
-    double _eyePressAt = -10;
-    Vector2 _eyePressPx;
-    Vector3 _eyePressPoint;
+    static IPointerTarget _eyePressOn;
+    static double _eyePressAt = -10;                 // (_spotClock)
+    static Vector2 _eyePressPx;
+    static Vector3 _eyePressPoint;
+    static int _eyePressFix;
+    double _eyeHeldAt = -10;                         // this hand's last eye press (_clock): its point held EyePressHold
 
     // ---- a window pulled out of a monitor (OrbitApp.PopOut.cs, Erik 10-18) ----
     // While the trigger drags a window on a monitor and the beam leaves it into the air (PopAngle past its edge), the app makes the window a
@@ -339,7 +349,10 @@ public sealed class Laser : IDisposable
         // point held on the edge. A window dragged to the top of a monitor reaches the very top (snap to full screen), and
         // the beam leaving the panel no longer lets the other hand take the mouse in the middle of the drag. Only another
         // monitor takes the drag over (a window dragged across screens): the button stays down in Windows, the cursor follows.
-        if (_press != null && best != _press && best != null && best.TakesDragFrom(_press, _hand))
+        // (Not during the eye cursor's EyePressHold, 10-24 review: the eyes moving on to the next monitor while the trigger was still
+        // down took the press there - the button never clicked, a file or a title bar was dragged across. The capture below holds it.)
+        if (_press != null && best != _press && best != null && best.TakesDragFrom(_press, _hand)
+            && !(_eyeOn && _clock - _eyeHeldAt < EyePressHold))
         {
             best.AdoptDrag(_press, _hand);
             if (_pressSecondary == _press) _pressSecondary = best;
@@ -380,7 +393,7 @@ public sealed class Laser : IDisposable
             if (_freezeTarget == _hover && _clock < _freezeUntil)
             {
                 // (the eye cursor: the press point holds EyePressHold whatever the eyes do - a saccade made it a drag)
-                bool eyeHold = _eyeOn && _press == _hover && _clock - _eyePressAt < EyePressHold;
+                bool eyeHold = _eyeOn && _press == _hover && _clock - _eyeHeldAt < EyePressHold;
                 if (eyeHold || MathF.Acos(Math.Clamp(Vector3.Dot(d, _freezeDir), -1f, 1f)) < FreezeAngle) { px = _freezePx; bestPoint = _freezePoint; }
                 else _freezeUntil = 0;
             }
@@ -490,8 +503,8 @@ public sealed class Laser : IDisposable
                 point = pt;
             }
         }
-        // a second press soon after, near the first on the same screen: its pixel (a double click)
-        if (_hover == _eyePressOn && _clock - _eyePressAt < DoubleClick)
+        // a second press soon after, in the same fixation and near the first on the same screen: its pixel (a double click)
+        if (_hover == _eyePressOn && _spot.FixId == _eyePressFix && _spotClock - _eyePressAt < DoubleClick)
         {
             Vector3 a = _eyePressPoint - _rawO, b = point - _rawO;
             if (a.LengthSquared() > 1e-8f && b.LengthSquared() > 1e-8f && EyeSpot.Angle(Vector3.Normalize(a), Vector3.Normalize(b)) < EyeDoubleAngle)
@@ -501,9 +514,11 @@ public sealed class Laser : IDisposable
             }
         }
         _eyePressOn = _hover;
-        _eyePressAt = _clock;
+        _eyePressAt = _spotClock;
         _eyePressPx = px;
         _eyePressPoint = point;
+        _eyePressFix = _spot.FixId;
+        _eyeHeldAt = _clock;
         _lastPx = px;
         _lastPoint = point;
     }
@@ -585,12 +600,13 @@ public sealed class Laser : IDisposable
 
     // ---- the eye cursor's spot, once a frame for both hands (OrbitApp, after EyeFollow / EyeWarp are set; before the lasers) ----
     // on / off goes by the smoothed look (_gazeSeen, as before); the spot moves from each new reading only (vr.EyeRay: unsmoothed, on the
-    // head of its own time), and is carried with the screen under it. Costs at most two GazeSpot, one ProjectLocal, one PointLocal a
+    // head of its own time), and is carried with the screen under it (each reading too, by what the screen moved while it was on its way:
+    // EyeCarry). Costs at most two GazeSpot, one ProjectLocal, one PointLocal a
     // frame (each hand made a GazeSpot of its own before); allocates nothing.
     public static void EyeTick(VrSession vr, IReadOnlyList<IPointerTarget> targets, float dt)
     {
         _spotClock += dt;
-        if (!(EyeFollow || EyeWarp)) { _gazeSeen = _spotLive = false; _carryOn = null; return; }
+        if (!(EyeFollow || EyeWarp)) { _gazeSeen = _spotLive = false; _carryOn = _carryLogOn = null; return; }
         if (_spotLive && _spotClock - _spotSeenAt > EyeAway) { _spotLive = false; _carryOn = null; }     // (off the screens: a new start)
         if (!vr.EyesValid) { _gazeSeen = false; return; }          // (a long blink: the fixation kept until EyeAway)
         _gazeSeen = GazeSpot(vr, targets, vr.GazeOrigin, vr.Gaze, out _gazeAt, out _);
@@ -602,13 +618,24 @@ public sealed class Laser : IDisposable
             if (still && _carryOn.Overlay != null && _carryOn.Overlay.PointLocal(vr, _carryUv, out var p))
             {
                 var moved = p - _carryAt;
-                if (moved.LengthSquared() > 1e-12f) { _spot.Carry(moved); _carryAt = p; }
+                if (moved.LengthSquared() > 1e-12f)
+                {
+                    _spot.Carry(moved);
+                    _carryAt = p;
+                    if (_carryLogOn != _carryOn) { _carryLogOn = _carryOn; _carryLog.Clear(); }
+                    _carryLog.Note(_spotClock, moved);
+                }
             }
             else _carryOn = null;
         }
         if (!vr.EyeRayNew || !GazeSpot(vr, targets, vr.GazeOrigin, vr.EyeRay, out var at, out var on)) return;
         if (!_spotLive) { _spot.Start(at, Vector3.UnitZ); _spotLive = true; }
-        else _spot.Step(at, true, vr.GazeOrigin, _spot.HandRef, false, _spotClock, dt);     // the eyes alone (the hand never fine-tunes)
+        else
+        {
+            // (a new reading is seen the frame it comes - EyeGaze.Fresh -, its look EyeGaze.Latency old: where that pixel is now)
+            if (on != null && on == _carryLogOn) at += _carryLog.Since(_spotClock - EyeGaze.Latency);
+            _spot.Step(at, true, vr.GazeOrigin, _spot.HandRef, false, _spotClock, dt);     // the eyes alone (the hand never fine-tunes)
+        }
         _spotSeenAt = _spotClock;
         // the pixel the spot is on now - on this reading's screen if it is there (one stray reading on another screen: the carry keeps its own)
         var toSpot = _spot.Anchor - vr.GazeOrigin;
@@ -915,6 +942,7 @@ public sealed class Laser : IDisposable
     {
         if (t != null && (_hover == t || _press == t || _pressSecondary == t || _grab == t)) Reset();
         if (t != null && t == _carryOn) _carryOn = null;
+        if (t != null && t == _carryLogOn) _carryLogOn = null;
         if (t != null && t == _eyePressOn) _eyePressOn = null;
     }
 

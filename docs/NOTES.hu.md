@@ -238,6 +238,11 @@ dotnet publish -c Release -o dist
   egyszer), a képernyővel együtt mozog (fókusz-nagyítás, mozi, fogás: ugyanazon a pixelen marad); a nyomás a siklás végére megy,
   0,25 s-ig tart (a késői szakkád nem lesz húzás), dupla kattintás ugyanarra a pixelre (0,75°-on és a dupla-katt időn belül).
   Ellenőrzés: `--eyechecks` (csak CPU) és a fókusz-ellenőrzések.
+  10-24 átnézés után: az olvasás ~40 ms-os késését a képernyő azóta megtett mozgásával pótolja (`EyeCarry` – nagyításkor 1,4° helyett
+  0,07° a pixeltől); dupla kattintás csak ugyanabban a fixációban (`EyeSpot.FixId` – a szomszéd sorra nézés nem dupla katt az elsőn);
+  a 0,25 s-os tartás alatt a nyomást másik monitor sem veszi át; Erik zajához (0,17°/tengely) alacsonyabb küszöbök (NoiseMin 0,2°,
+  DriftMin 0,3°: 0,3°-os átnézés 400 ms-nál 0,18° → 0,12° eltérés), a zajt csak 20+ olvasásos fixációban tanulja
+  (görgetett szöveg követése után 0,43° helyett 0,24°).
 - **Ablak leválasztása** a monitorról (`OrbitApp.PopOut.cs`), **barát-rezgés** (RoomEventCard).
 - **Cyber óra**: minden ránézésre boot (20 s-on belül gyorsabb, 0,44 s; 0,4 s alatti szemrebbenésre nincs), és csak akkor
   indul, amikor az óra már 55 %-ban látszik (addig üres) – 2 %-nál indult, és a csukló fordítása alatt lefutott.
@@ -288,11 +293,14 @@ részenként + a leglassabb darab) Erik élő VR-menetében mutatta meg a tüsk�
   0,84 → 0,13 ms, beállítások csak változásra (`LiveSig`), belépés a mozi módba 23 → 1,5 ms, 0 B/képkocka a mozi módban.
 - **Szemkövetés** (`Sys/EyeGaze.cs`): a Virtual Desktop „VirtualDesktop.BodyState” megosztott memóriája (FaceState, 360 B,
   a VRCFT VD-modul elrendezése), csak olvasva; One Euro simítás (10-19 óta 2,5 Hz / 0,1 – fókusz, óra, halványítás), pislogáskor
-  0,25 s tartás. 10-24: csak az új olvasások számítanak (a VD 72/s-t ír, a térkép időbélyeg nélküli), a fej az olvasás idejéből
+  tartás (1,5 / 0,25 s, lent). 10-24: csak az új olvasások számítanak (a VD 72/s-t ír, a térkép időbélyeg nélküli), a fej az olvasás idejéből
   (`VrSession.HeadAt`, 40 ms-mal korábbi – a fej fordításakor a kurzor nem fut előre), pislogás-kapu: EyesClosed 12/13 mindkét
   szemen ≥ 0,7 (25°-nál lejjebb nézve nem – a szemhéj követi a nézést) + 40 ms utána; a szemkurzor saját szűrője a fixáció átlaga a
   térben (`Vr/EyeSpot.cs`: szakkád 2,2 × zaj, kis szakkád 3 olvasás átlaga, lassú mozgás, 0,12° hiszterézis, a zajt tanulja);
-  `Sys/EyeLag.cs` naplózza a valódi késést (5 percenként). `VrSession.Gaze`
+  `Sys/EyeLag.cs` naplózza a valódi késést (5 percenként). Átnézés után: csukott szem és akadozó adatfolyam 1,5 s-ig tartja az
+  utolsó nézést (`HoldShut`; csak a követő „nem követett” jelzése után 0,25 s) – különben 0,25 s pihentetés / nevetés után a fej vette
+  át a fókuszt és a kéz a kurzort; a szemhéj-kapu 0,35 s után csak a 3°-nál nagyobbat ugró olvasást dobja (hunyorítás, álmos szemhéj
+  nem fagyasztja a kurzort); a fej-gyűrű a nem jósolt fejpózt tárolja (a jóslás túllövése fordulat végén ~0,6° volt). `VrSession.Gaze`
   / `EyesValid` / `GazeOrigin`: fókusz mód (szemmel 10 % + 0,2 s), SmartFps (<6° teljes, <35° 30 fps), óra csak rápillantásra
   (15° be / 28° ki), a nem nézett monitor halványítása (0,35 s után, 0,6). `--eyetest` = 8 s olvasó próba. Élőben ellenőrizve
   10-18 22:02 (Quest Pro, VD).

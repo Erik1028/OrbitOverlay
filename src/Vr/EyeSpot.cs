@@ -20,6 +20,10 @@ namespace Orbit;
 // The sim (fixsim3.py, white noise 0.3-0.8 deg an axis, 72 readings a second): 0.06-0.16 deg RMS (2-5 px) at rest, the cursor moving
 // 0.3-3.7 times a second, nothing left short; 2-4 deg saccades within 0.25 deg in 50-120 ms (the old spot 150-690 ms, never at 0.5 deg
 // of noise); after a slow move 0.12-0.2 deg behind (the old one 0.35); false moves over 0.5 deg 0-2.2 a minute.
+// (10-24 review: Erik's tracker is quieter than that - 0.17 deg an axis by the --eyetest -, the noise sat on its floor and a look 0.3-0.45
+// deg over (the next toolbar icon) crept there in Hyst hops for up to a second: the floors lower (NoiseMin, DriftMin). And the noise is
+// learned only in a fixation of LearnN readings: following moving content (text scrolled by the stick) restarts the fixation every
+// 0.1-0.2 s, and the following itself was learned as noise - every limit up for ~3 s after.)
 //  - the hand fine-tunes on top, one to one (Beam): once it has turned past Tune the spot stays where the hand put it until a look
 //    elsewhere; while held (the trigger or the grip: a click, a drag) and while the eyes are off the screens it stays as well.
 public struct EyeSpot
@@ -28,11 +32,11 @@ public struct EyeSpot
     public const float BreakK = 2.2f, BreakMin = 1.5f * Deg, BreakMax = 3f * Deg;   // one noise reading is past 2.2 x RMS ~0.8 % of the time
     public const float ConfirmK = 1.8f, ConfirmMin = 1f * Deg;      // two landed readings agree ~80 %, two mid-saccade ones (4 deg apart) not
     public const float ShiftK = 1.7f;                               // a 3-reading mean (RMS noise / sqrt 3) past 1.7 x noise: ~3 sigma
-    public const float DriftK = 1.0f, DriftMin = 0.5f * Deg, DriftMax = 1.2f * Deg, RecentA = 0.15f;
+    public const float DriftK = 1.0f, DriftMin = 0.3f * Deg, DriftMax = 1.2f * Deg, RecentA = 0.15f;      // (DriftMin was 0.5 deg)
     public const float SoftK = 0.5f;
-    public const int SoftN = 8, MaxN = 40, SettleN = 8;             // (40 readings: ~0.5 s)
+    public const int SoftN = 8, MaxN = 40, SettleN = 8, LearnN = 20;    // (40 readings: ~0.5 s)
     public const float Hyst = 0.12f * Deg;                          // ~4 px
-    public const float NoiseStart = 0.7f * Deg, NoiseMin = 0.3f * Deg, NoiseMax = 1.5f * Deg, NoiseA = 0.005f;     // (~200 readings)
+    public const float NoiseStart = 0.7f * Deg, NoiseMin = 0.2f * Deg, NoiseMax = 1.5f * Deg, NoiseA = 0.005f;     // (~200 readings; NoiseMin was 0.3)
     public const float Tune = 1.2f * Deg, Glide = 0.035f;
 
     public Vector3 Anchor, GlideFrom, HandRef;
@@ -40,6 +44,7 @@ public struct EyeSpot
     public bool Tuned;
     public Vector3 Fix, Recent, Cand;               // the fixation's mean, the last ~7 readings' mean, a reading far off (a saccade's?)
     public int FixN;
+    public int FixId;                               // a new one each fixation (Start, NewFix; not a Hyst hop): Laser.EyePress's double click
     public float Noise;                             // radians, the readings' radial RMS round the fixation
     Vector3 _r0, _r1, _r2;                          // the last 3 readings
     int _ringN, _ringI;
@@ -52,6 +57,7 @@ public struct EyeSpot
     {
         Anchor = GlideFrom = Fix = Recent = look;
         FixN = 1;
+        FixId++;
         _ringN = 0;
         _hasCand = false;
         GlideAt = -10;
@@ -83,7 +89,7 @@ public struct EyeSpot
             var m3 = (_r0 + _r1 + _r2) / 3;
             if (Ang(Dir(m3, eye), Dir(Fix, eye)) > ShiftK * Noise) { NewFix(m3, 3, hand, clock); return; }
         }
-        if (FixN >= SettleN) Noise = Math.Clamp(MathF.Sqrt(MathF.Max(0, Noise * Noise + (a * a - Noise * Noise) * NoiseA)), NoiseMin, NoiseMax);
+        if (FixN >= LearnN) Noise = Math.Clamp(MathF.Sqrt(MathF.Max(0, Noise * Noise + (a * a - Noise * Noise) * NoiseA)), NoiseMin, NoiseMax);
         FixN = Math.Min(FixN + 1, MaxN);
         Fix += (look - Fix) / FixN;
         Recent += (look - Recent) * RecentA;
@@ -100,6 +106,7 @@ public struct EyeSpot
         GlideAt = clock;
         Anchor = Fix = Recent = p;
         FixN = n;
+        FixId++;
         _hasCand = false;
         _ringN = 0;
         HandRef = hand;
@@ -161,5 +168,43 @@ public struct EyeSpot
             return Quaternion.CreateFromAxisAngle(Vector3.Normalize(axis), MathF.PI);
         }
         return Quaternion.CreateFromAxisAngle(Vector3.Normalize(Vector3.Cross(a, b)), MathF.Acos(d));
+    }
+}
+
+// The last moves of the screen under the eye cursor's spot (Laser.EyeTick carries the spot with them): when, and their sum so far. A
+// reading is EyeGaze.Latency old - the eyes were on the pixel where it was then -, so what the screen moved since (Since) is added to it.
+// (10-24 review: while gaze focus grew a monitor - the pixel 4-8 deg in 0.3 s - the readings fell 0.8-1.8 deg behind the carried spot, a
+// new fixation started where the content had been and the cursor jumped back; the review's sim with this: 0.06 deg all the way.)
+// Fixed arrays, nothing allocated after the start.
+public sealed class EyeCarry
+{
+    public const int Keep = 16;                     // (16 frames: 0.13-0.18 s, the readings' lag ~0.04)
+    readonly double[] _at = new double[Keep];
+    readonly Vector3[] _sum = new Vector3[Keep];
+    int _n, _i;
+    Vector3 _total;
+
+    public void Clear() { _n = 0; _total = Vector3.Zero; }
+
+    // the screen moved by d at 'at' (the spot's clock)
+    public void Note(double at, Vector3 d)
+    {
+        _total += d;
+        _i = (_i + 1) % Keep;
+        _at[_i] = at;
+        _sum[_i] = _total;
+        if (_n < Keep) _n++;
+    }
+
+    // what the screen moved after t
+    public Vector3 Since(double t)
+    {
+        int i = _i;
+        for (int k = 0; k < _n; k++)
+        {
+            if (_at[i] <= t) return _total - _sum[i];
+            i = (i + Keep - 1) % Keep;
+        }
+        return _n < Keep ? _total : _total - _sum[(i + 1) % Keep];     // (every one kept is newer: all since the start / since the oldest)
     }
 }

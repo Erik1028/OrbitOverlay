@@ -30,6 +30,8 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
     readonly AllocWatch _allocWatch = new();         // what allocates, by type and thread: the perf log's "alloc:" line (Sys/AllocWatch.cs)
     readonly EyeGaze _eyes = new();                  // Virtual Desktop's eye tracking (Sys/EyeGaze.cs)
     readonly EyeLag _eyeLag = new();                 // how far its readings lag behind the head (logged only; Sys/EyeLag.cs)
+    Matrix4x4 _eyeHead = Matrix4x4.Identity;         // the head of the last reading's time (worked out once a reading)
+    double _eyeHeadFor = double.NaN;
     readonly MixtapeLink _mixtape = new();           // Mixtape's Remote API: the Mixtape widget (Sys/MixtapeLink.cs)
     readonly MediaInfo _media = new();
     readonly AudioMixer _mixer = new();              // the output device's apps; the Windows volume in VR (Sys/AudioMixer.cs)
@@ -599,8 +601,11 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
             if (_vr.EyesValid)
             {
                 // on the head of the reading's own time, not the one predicted for this frame (Erik 10-24: "az eye tracking kurzor
-                // pontosságán még lehetne javítani" - the cursor ran ahead of every head turn and slid back; EyeGaze.Latency)
-                var head = _vr.HeadAt(_eyes.SampleAt - EyeGaze.Latency);
+                // pontosságán még lehetne javítani" - the cursor ran ahead of every head turn and slid back; EyeGaze.Latency). Once a
+                // reading: a look held through shut eyes (EyeGaze.HoldShut, 1.5 s) outlives the head poses VrSession keeps (~0.7 s) -
+                // looked up again it would turn with the head of 0.7 s ago
+                if (_eyeHeadFor != _eyes.SampleAt) { _eyeHeadFor = _eyes.SampleAt; _eyeHead = _vr.HeadAt(_eyes.SampleAt - EyeGaze.Latency); }
+                var head = _eyeHead;
                 _vr.Gaze = _eyes.WorldDir(head);
                 _vr.GazeOrigin = _eyes.WorldOrigin(head);
                 _vr.EyeRay = _eyes.RawWorldDir(head);

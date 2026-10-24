@@ -736,6 +736,9 @@ static class GazeFocusTools
     // of 15 a moment after landing; a slow move without noise - how far behind once it rests; Carry. Then the readings (EyeGaze.Feed):
     // a repeated one is no new look, a blink's are none and are held until Hold, the moment after it skipped; and the head of a moment
     // (VrSession.HeadAt).
+    // (10-24 review: also Erik's own tracker's noise, 0.17 deg an axis - at rest, small looks over, the noise after following scrolled
+    // text, the fixation's id; the spot carried with a sliding screen while the readings lag (EyeCarry); shut eyes and a stalled stream
+    // held HoldShut, the tracker's "not tracked" Hold, a squint a look again after ShutMax.)
     public static int EyeSpotChecks(Action<string, bool> Want)
     {
         int problems = 0;
@@ -751,12 +754,13 @@ static class GazeFocusTools
         static float Gauss(Random r) => (float)(Math.Sqrt(-2 * Math.Log(1 - r.NextDouble())) * Math.Cos(2 * Math.PI * r.NextDouble()));
         var es = new EyeSpot();
         double clock = 0, next = 0;
-        void Begin(float yaw, float pitch)
+        void Begin(float yaw, float pitch, float noise = 0)           // (noise: radians, as learned already - else the start's)
         {
             es = new EyeSpot();
             clock = next = 0;
             On(yaw, pitch, out var p0);
             es.Start(p0, -Vector3.UnitZ);
+            if (noise > 0) es.Noise = noise;
         }
         // a frame: the clock on, the reading due in it (the latest, as EyeTick takes it) - truth(t) the look's yaw / pitch at the reading's time
         void Frame(Func<double, (float yaw, float pitch)> truth, float sigma, Random rng)
@@ -830,41 +834,202 @@ static class GazeFocusTools
         Check($"eye spot: 2 min at rest, noise 0.5 deg an axis - {rms:0.000} deg RMS (want under 0.13), {movesPerS:0.00} moves of half a pixel a second " +
               $"(want under 2.5), {jumpsPerMin:0.0} jumps over 0.5 deg a minute (want under 3.5), the noise learned {noiseDeg:0.00} deg (want 0.6-0.8); " +
               $"a 4 deg saccade {sac4:0.00} deg off 100 ms after landing (want under 0.35), 2 deg {sac2:0.00} off at 70 ms (want under 0.55), the medians " +
-              $"of 15; a slow move without noise {slowBehind:0.00} deg behind once it rests (want under 0.25); Carry moved the spot {carryErr * 1000:0.000} mm " +
+              $"of 15; a slow move without noise {slowBehind:0.00} deg behind once it rests (want under 0.3 - no noise, the limits stay at the start's " +
+              $"0.7 deg since 10-24: the move itself is not learned as noise; with Erik's noise below); Carry moved the spot {carryErr * 1000:0.000} mm " +
               $"off the screen's move (want under 0.01)",
             rms < 0.13f && movesPerS < 2.5f && jumpsPerMin < 3.5f && noiseDeg > 0.6f && noiseDeg < 0.8f && sac4 < 0.35f && sac2 < 0.55f
-            && slowBehind < 0.25f && carryErr < 1e-5f);
+            && slowBehind < 0.3f && carryErr < 1e-5f);
 
-        // 5. the readings: new ones only, blinks
+        // 4b. Erik's tracker (the --eyetest of 10-24: 0.17 deg an axis): 2 minutes at rest - the RMS, the moves, new fixations, the noise
+        // learned (from the start's 0.7: the first 15 s left out); small looks over with that noise learned (0.3 deg ~11 px - the next
+        // toolbar icon -, 0.5 deg) - how far off a moment later, the medians of 15; the slow move of 3. with that noise (the sim: 0.08 deg
+        // behind, before 10-24's floors 0.14); 3 s of following text scrolled at 4 deg/s, then a 0.6 deg look at the next item - the noise
+        // learned meanwhile, how far off 100 ms later, the fixation's id changed (EyePress)
+        const float SigmaErik = 0.17f;
+        Begin(0, 0);
+        rng = new Random(12);
+        err2 = 0;
+        frames = moves = 0;
+        int fixAtRest = 0, fixId = es.FixId;
+        prev = es.Spot(clock);
+        for (int i = 0; i < 120 * 90; i++)
         {
-            static unsafe EyeGaze.FaceState Face(float yawDeg, bool shut, float pitchDeg = 0)
+            Frame(_ => (0, 0), SigmaErik, rng);
+            var sp = es.Spot(clock);
+            if (i >= 15 * 90)
+            {
+                float e = Off(sp, rest);
+                err2 += e * e;
+                frames++;
+                if (Vector3.Distance(sp, prev) >= 0.5f * W / TexW) moves++;
+                if (es.FixId != fixId) fixAtRest++;
+            }
+            fixId = es.FixId;
+            prev = sp;
+        }
+        float rmsErik = (float)Math.Sqrt(err2 / Math.Max(1, frames)), movesErik = moves / (frames / 90f), fixErik = fixAtRest / (frames / 90f / 60);
+        float noiseErik = es.Noise;
+        float LookOver(float size, float afterMs, int seed)
+        {
+            var errs = new float[15];
+            for (int k = 0; k < errs.Length; k++)
+            {
+                var r = new Random(seed + k);
+                Begin(0, 0, noiseErik);
+                On(size, 0, out var target);
+                while (clock < 1.5 + afterMs / 1000) Frame(t => t < 1.5 ? (0, 0) : (size, 0), SigmaErik, r);
+                errs[k] = Off(es.Spot(clock), target);
+            }
+            Array.Sort(errs);
+            return errs[errs.Length / 2];
+        }
+        float over03 = LookOver(0.3f, 400, 500), over05 = LookOver(0.5f, 100, 600);
+        float slowErik;                                     // (the slow move of 3. with Erik's noise, the medians of 15)
+        {
+            var errs = new float[15];
+            for (int k = 0; k < errs.Length; k++)
+            {
+                var r = new Random(900 + k);
+                Begin(0, 0, noiseErik);
+                while (clock < 2) Frame(t => (t < 0.5 ? 0 : MathF.Min(2.5f, 2.5f * (float)(t - 0.5)), 0), SigmaErik, r);
+                errs[k] = Off(es.Spot(clock), slowEnd);
+            }
+            Array.Sort(errs);
+            slowErik = errs[errs.Length / 2];
+        }
+        float pursuitNoise, pursuitOff;
+        int pursuitNewFix = 0;
+        {
+            var errs = new float[15];
+            var nz = new float[15];
+            for (int k = 0; k < errs.Length; k++)
+            {
+                var r = new Random(700 + k);
+                Begin(0, 0, noiseErik);
+                (float, float) Scroll(double t) => (t >= 4.4 ? 0.6f : 0, -4 * (float)Math.Clamp(t - 1, 0, 3));
+                while (clock < 4.39) Frame(Scroll, SigmaErik, r);
+                nz[k] = es.Noise * 180 / MathF.PI;
+                int id = es.FixId;
+                while (clock < 4.5) Frame(Scroll, SigmaErik, r);
+                On(0.6f, -12, out var target);
+                errs[k] = Off(es.Spot(clock), target);
+                if (es.FixId != id) pursuitNewFix++;
+            }
+            Array.Sort(errs);
+            Array.Sort(nz);
+            pursuitOff = errs[errs.Length / 2];
+            pursuitNoise = nz[nz.Length / 2];
+        }
+        float noiseErikDeg = noiseErik * 180 / MathF.PI;
+        Check($"eye spot, Erik's noise (0.17 deg an axis): 2 min at rest - {rmsErik:0.000} deg RMS (want under 0.06), {movesErik:0.00} moves of half a pixel " +
+              $"a second (want under 1), {fixErik:0.0} new fixations a minute (want under 4), the noise learned {noiseErikDeg:0.00} deg (want 0.2-0.3); " +
+              $"a look 0.3 deg over {over03:0.00} deg off at 400 ms (want under 0.15), 0.5 deg {over05:0.00} off at 100 ms (want under 0.15); the slow " +
+              $"move {slowErik:0.00} deg behind once it rests (want under 0.12); after 3 s of following scrolled text the noise {pursuitNoise:0.00} deg " +
+              $"(want under 0.35), a 0.6 deg look {pursuitOff:0.00} off at 100 ms (want under 0.2), a new fixation {pursuitNewFix} of 15 (want 15)",
+            rmsErik < 0.06f && movesErik < 1 && fixErik < 4 && noiseErikDeg > 0.2f && noiseErikDeg < 0.3f && over03 < 0.15f && over05 < 0.15f
+            && slowErik < 0.12f && pursuitNoise < 0.35f && pursuitOff < 0.2f && pursuitNewFix == 15);
+
+        // 4c. the carry with the readings' lag (Laser.EyeTick, EyeCarry): the screen under the spot slides 8 deg in 0.3 s (gaze focus growing
+        // it), the eyes on the same pixel all the way, each reading EyeGaze.Latency old; the spot carried, each reading moved by what the
+        // screen moved since - how far off the pixel at worst (the median of 5), and without the readings moved
+        static float Ease(float x) { x = Math.Clamp(x, 0, 1); return x * x * (3 - 2 * x); }
+        float CarryRun(bool moveReadings)
+        {
+            var worst = new float[5];
+            for (int k = 0; k < worst.Length; k++)
+            {
+                var r = new Random(800 + k);
+                Begin(0, 0, noiseErik);
+                var log = new EyeCarry();
+                static float Px(double t) => 8 * Ease((float)((t - 0.4) / 0.3));
+                On(0, 0, out var pPrev);
+                while (clock < 1.2)
+                {
+                    clock += Dt;
+                    On(Px(clock), 0, out var pNow);
+                    var moved = pNow - pPrev;
+                    pPrev = pNow;
+                    if (moved.LengthSquared() > 1e-12f) { es.Carry(moved); log.Note(clock, moved); }
+                    bool fresh = false, seen = false;
+                    Vector3 at = default;
+                    while (next <= clock)
+                    {
+                        next += 1 / Rate;
+                        fresh = true;
+                        seen = On(Px(clock - EyeGaze.Latency) + Gauss(r) * SigmaErik, Gauss(r) * SigmaErik, out at);
+                    }
+                    if (fresh)
+                    {
+                        if (moveReadings) at += log.Since(clock - EyeGaze.Latency);
+                        es.Step(at, seen, eye, es.HandRef, false, clock, Dt);
+                    }
+                    if (clock > 0.4) worst[k] = MathF.Max(worst[k], Off(es.Spot(clock), pNow));
+                }
+            }
+            Array.Sort(worst);
+            return worst[worst.Length / 2];
+        }
+        float carryLag = CarryRun(true), carryNoMove = CarryRun(false);
+        // ... and EyeCarry itself: 1 mm a frame for 30 frames - a reading 40 ms old gets the last 4 frames' (the moves after its time)
+        var cl = new EyeCarry();
+        for (int k = 1; k <= 30; k++) cl.Note(k / 90.0, new Vector3(0.001f, 0, 0));
+        float since40 = cl.Since(30 / 90.0 - 0.04).X * 1000, sinceNow = cl.Since(1).X * 1000;
+        cl.Clear();
+        for (int k = 1; k <= 3; k++) cl.Note(k / 90.0, new Vector3(0, 0.001f, 0));
+        float sinceAll = cl.Since(0).Y * 1000;
+        Check($"eye carry: a screen sliding 8 deg in 0.3 s under the spot, the readings 40 ms late - the spot {carryLag:0.00} deg off the pixel at worst " +
+              $"(want under 0.3; {carryNoMove:0.00} without the readings moved by the screen's move since); EyeCarry: 30 moves of 1 mm, after 40 ms ago " +
+              $"{since40:0.0} mm (want 4.0), after now {sinceNow:0.0} (want 0.0), 3 moves all after {sinceAll:0.0} (want 3.0)",
+            carryLag < 0.3f && MathF.Abs(since40 - 4) < 0.01f && MathF.Abs(sinceNow) < 0.01f && MathF.Abs(sinceAll - 3) < 0.01f);
+
+        // 5. the readings: new ones only, blinks, a squint, the tracker's "not tracked", a stalled stream
+        {
+            static unsafe EyeGaze.FaceState Face(float yawDeg, bool shut, float pitchDeg = 0, bool tracked = true)
             {
                 var o = Quaternion.CreateFromAxisAngle(Vector3.UnitY, -yawDeg * MathF.PI / 180) * Quaternion.CreateFromAxisAngle(Vector3.UnitX, pitchDeg * MathF.PI / 180);
-                var s = new EyeGaze.FaceState { LeftEyeIsValid = 1, RightEyeIsValid = 1, LeftEyeConfidence = 1, RightEyeConfidence = 1 };
+                byte v = (byte)(tracked ? 1 : 0);
+                var s = new EyeGaze.FaceState { LeftEyeIsValid = v, RightEyeIsValid = v, LeftEyeConfidence = 1, RightEyeConfidence = 1 };
                 s.LeftEyePose = new EyeGaze.Pose { Orientation = o, Position = new Vector3(-0.032f, 0, 0) };
                 s.RightEyePose = new EyeGaze.Pose { Orientation = o, Position = new Vector3(0.032f, 0, 0) };
                 if (shut) { s.ExpressionWeights[12] = 1; s.ExpressionWeights[13] = 1; }
                 return s;
             }
+            static bool YawIs(Vector3 d, float deg) => MathF.Abs(MathF.Atan2(d.X, -d.Z) * 180 / MathF.PI - deg) < 0.01f;
             var g = new EyeGaze();
             g.Feed(Face(5, false), 0);
             bool first = g.Fresh && g.Valid && g.SampleAt == 0;
             g.Feed(Face(5, false), 0.05);
             bool repeat = !g.Fresh && g.Valid && g.SampleAt == 0;
             g.Feed(Face(7, true), 0.1);
-            bool shutNot = !g.Fresh && g.Valid && MathF.Abs(MathF.Atan2(g.RawDir.X, -g.RawDir.Z) * 180 / MathF.PI - 5) < 0.01f;
-            g.Feed(Face(8, true), 0.3);
-            bool shutLost = !g.Fresh && !g.Valid;
-            g.Feed(Face(9, false), 0.33);
+            bool shutNot = !g.Fresh && g.Valid && YawIs(g.RawDir, 5);
+            g.Feed(Face(20, true), 0.5);                    // (0.4 s shut, the look thrown 13 deg: still a blink's)
+            bool shutHeld = !g.Fresh && g.Valid;            // (past Hold: closed eyes look nowhere else - HoldShut)
+            g.Feed(Face(9, false), 0.53);
             bool tail = !g.Fresh;
-            g.Feed(Face(10, false), 0.35);
-            bool back = g.Fresh && g.Valid && MathF.Abs(MathF.Atan2(g.RawDir.X, -g.RawDir.Z) * 180 / MathF.PI - 10) < 0.01f;
-            g.Feed(Face(0, true, -35), 0.4);                // (the lids as shut looking 35 deg down - the taskbar: a look)
+            g.Feed(Face(10, false), 0.55);
+            bool back = g.Fresh && g.Valid && YawIs(g.RawDir, 10);
+            g.Feed(Face(10.5f, true), 0.6);                 // a squint: the lids as shut, the look steady
+            bool squintGated = !g.Fresh;
+            g.Feed(Face(11, true), 1.0);
+            bool squintLook = g.Fresh && YawIs(g.RawDir, 11);
+            g.Feed(Face(11, false, tracked: false), 1.05);  // the tracker: not tracked
+            bool untrackedHeld = !g.Fresh && g.Valid;
+            g.Feed(Face(11, false, tracked: false), 1.3);
+            bool untrackedLost = !g.Valid;
+            g.Feed(Face(12, false), 2.0);                   // the stream stalls: the same reading again and again
+            g.Feed(Face(12, false), 2.4);
+            bool stallHeld = !g.Fresh && g.Valid;
+            g.Feed(Face(12, false), 3.6);
+            bool stallLost = !g.Valid;
+            g.Feed(Face(0, true, -35), 3.7);                // (the lids as shut looking 35 deg down - the taskbar: a look)
             bool down = g.Fresh && MathF.Asin(g.RawDir.Y) * 180 / MathF.PI < -34;
             Check($"eye readings: a new one fresh {first} (want True); the same again not new, still valid {repeat} (want True); eyes shut - no new " +
-                  $"look, the last held {shutNot} (want True), lost after Hold {shutLost} (want True); 30 ms after they open skipped {tail} (want True), " +
-                  $"50 ms after a new look {back} (want True); shut lids looking 35 deg down a look {down} (want True)",
-                first && repeat && shutNot && shutLost && tail && back && down);
+                  $"look, the last held {shutNot} (want True), held past Hold 0.4 s in {shutHeld} (want True); 30 ms after they open skipped {tail} " +
+                  $"(want True), 50 ms after a new look {back} (want True); a squint gated at first {squintGated}, a look after ShutMax {squintLook} " +
+                  $"(want True, True); not tracked - held {untrackedHeld}, lost after Hold {untrackedLost} (want True, True); a stalled stream held " +
+                  $"0.4 s {stallHeld}, lost after HoldShut {stallLost} (want True, True); shut lids looking 35 deg down a look {down} (want True)",
+                first && repeat && shutNot && shutHeld && tail && back && squintGated && squintLook && untrackedHeld && untrackedLost
+                && stallHeld && stallLost && down);
         }
 
         // 6. the head of a moment (VrSession.HeadAt)
@@ -876,11 +1041,13 @@ static class GazeFocusTools
             vr.NoteHead(10.00, Matrix4x4.CreateRotationY(0) * Matrix4x4.CreateTranslation(0, 1.6f, 0));
             vr.NoteHead(10.01, Matrix4x4.CreateRotationY(-10 * MathF.PI / 180) * Matrix4x4.CreateTranslation(0.01f, 1.6f, 0));
             var mid = vr.HeadAt(10.005);
-            float midYaw = YawOf(mid), oldYaw = YawOf(vr.HeadAt(9)), newYaw = YawOf(vr.HeadAt(11));
+            float midYaw = YawOf(mid), oldYaw = YawOf(vr.HeadAt(9)), newYaw = YawOf(vr.HeadAt(10.1));
             bool midAt = MathF.Abs(mid.Translation.X - 0.005f) < 1e-5f;
+            bool staleHmd = vr.HeadAt(10.5) == vr.Hmd;      // (none of late - eye tracking just back: the headset's now)
             Check($"eye head: no poses - the headset's {noneHmd} (want True); poses at 0 and 10 deg 10 ms apart - {midYaw:0.00} deg in the middle " +
-                  $"(want 5.00, placed between {midAt}), {oldYaw:0.00} before them (want 0.00), {newYaw:0.00} after (want 10.00)",
-                noneHmd && MathF.Abs(midYaw - 5) < 0.05f && midAt && MathF.Abs(oldYaw) < 0.05f && MathF.Abs(newYaw - 10) < 0.05f);
+                  $"(want 5.00, placed between {midAt}), {oldYaw:0.00} before them (want 0.00), {newYaw:0.00} after (want 10.00), 0.5 s after the " +
+                  $"headset's {staleHmd} (want True)",
+                noneHmd && MathF.Abs(midYaw - 5) < 0.05f && midAt && MathF.Abs(oldYaw) < 0.05f && MathF.Abs(newYaw - 10) < 0.05f && staleHmd);
         }
         return problems;
     }

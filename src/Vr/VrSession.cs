@@ -67,8 +67,11 @@ public sealed class VrSession : IDisposable
 
     // ---- the head's poses of the last ~0.7 s, each with the moment it is for (Erik 10-24: "az eye tracking kurzor pontosságán még
     // lehetne javítani"): an eye reading is tens of ms old, the head pose of the frame is predicted ahead - the look put on that head
-    // ran ahead of every head turn. HeadAt gives the head of any moment in between (slerp / lerp of the two around it). ----
+    // ran ahead of every head turn. HeadAt gives the head of any moment in between (slerp / lerp of the two around it). The poses kept
+    // are the head as it was, not as predicted for the frame (10-24 review: a prediction overshoots when a head turn stops - ~0.6 deg at
+    // 25 ms of it -, and that went straight into the look): one more pose call a frame, the headset's alone, predicting nothing. ----
     const int HeadKeep = 64;
+    readonly TrackedDevicePose_t[] _headNow = new TrackedDevicePose_t[1];
     readonly double[] _headAt = new double[HeadKeep];
     readonly Quaternion[] _headQ = new Quaternion[HeadKeep];
     readonly Vector3[] _headP = new Vector3[HeadKeep];
@@ -87,10 +90,11 @@ public sealed class VrSession : IDisposable
         if (_headN < HeadKeep) _headN++;
     }
 
-    // the head at moment t: between the two poses around it; newer than all: the newest, older than all: the oldest, none: Hmd
+    // the head at moment t: between the two poses around it; newer than all: the newest, older than all: the oldest, none (or none of
+    // late - kept only while eye tracking is in use, it may have just come back): Hmd
     public Matrix4x4 HeadAt(double t)
     {
-        if (_headN == 0) return Hmd;
+        if (_headN == 0 || t - _headAt[_headI] > 0.25) return Hmd;
         int i = _headI;
         if (t >= _headAt[i]) return HeadPose(i, i, 0);
         for (int k = 1; k < _headN; k++)
@@ -271,7 +275,6 @@ public sealed class VrSession : IDisposable
         Sys.GetTimeSinceLastVsync(ref secs, ref frame);
         float predict = Math.Max(0, 1f / DisplayHz - secs) + _vsyncToPhotons;
         _predict = predict;
-        double posedFor = Clock.Now + predict;          // (the moment these poses are predicted for: HeadAt)
         Sys.GetDeviceToAbsoluteTrackingPose(ETrackingUniverseOrigin.TrackingUniverseStanding, predict, _poses);
         for (int i = 0; i < _poses.Length; i++)
         {
@@ -279,7 +282,13 @@ public sealed class VrSession : IDisposable
             DeviceConnected[i] = _poses[i].bDeviceIsConnected;
             if (DeviceValid[i]) Device[i] = MathUtil.FromHmd(_poses[i].mDeviceToAbsoluteTracking);
         }
-        if (DeviceValid[0]) NoteHead(posedFor, Device[0]);
+        // the head now, unpredicted (HeadAt) - while eye tracking is in use (the readings come, or the look is held)
+        if (EyesValid || EyeRate > 0)
+        {
+            double at = Clock.Now;
+            Sys.GetDeviceToAbsoluteTrackingPose(ETrackingUniverseOrigin.TrackingUniverseStanding, 0, _headNow);
+            if (_headNow[0].bPoseIsValid && _headNow[0].bDeviceIsConnected) NoteHead(at, MathUtil.FromHmd(_headNow[0].mDeviceToAbsoluteTracking));
+        }
         UpdateWorn();
         _idleTick = Idle ? _idleTick + 1 : 0;
         bool readInput = !Idle || _idleTick % 3 == 1;

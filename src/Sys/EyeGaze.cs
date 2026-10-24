@@ -12,31 +12,40 @@ namespace Orbit;
 // touched) once a frame - 360 bytes copied out of the map, no call to anyone.
 //
 // What it gives: the look's direction in the world (both eyes averaged), Valid while the eyes are tracked; a blink holds the last
-// look for a moment (Hold) before it lets go, then everything goes by the head again (VrSession.Gaze). The map is looked for while VR
+// look for a while (HoldShut; Hold once the tracker says not tracked) before it lets go, then everything goes by the head again
+// (VrSession.Gaze). The map is looked for while VR
 // is connected, again every few seconds when it is not there (the streamer not running, "Forward tracking data" off).
 //
 // New readings only (Erik 10-24: "az eye tracking kurzor pontosságán még lehetne javítani"): the map has no time stamp and Virtual
 // Desktop writes it at its own rate, so a read that finds the same poses as the last one is not a new look - Fresh says when it is,
-// SampleAt when it was first seen. The smoothing runs on new readings only (a repeated one looked like a pause, then a jump), and a
-// stream that stops counts as lost after Hold like a blink. Shut eyes (EyesClosed, both past BlinkAt) are no look either, nor the
-// moment after they open (BlinkTail): whatever the tracker says through the lids went straight into the cursor.
+// SampleAt when it was first seen. The smoothing runs on new readings only (a repeated one looked like a pause, then a jump). Shut
+// eyes (EyesClosed, both past BlinkAt) are no look either, nor the moment after they open (BlinkTail): whatever the tracker says
+// through the lids went straight into the cursor.
+// Two holds (10-24 review): the tracker saying the eyes are not tracked lets go after Hold; shut eyes and a stream that stalls keep the
+// last look HoldShut - closed eyes look nowhere else, and losing the eyes moves everything to the head (gaze focus reshuffled the row by
+// the head, the eye cursor gave the screens back to the hand's laser) after a 0.3 s rest of the eyes, a laugh, a Wi-Fi hiccup. And the
+// lids gate the readings only ShutMax, after that only a reading that jumps (a blink threw the look 13 deg): a squint or drowsy lids
+// keep EyesClosed up - it is how open the lids are, 0.81-1.00 already from looking 32-38 deg down - and the look does not jump.
 // (The --eyetest of 10-24: 72 new readings a second, a write every 11.5 ms mostly - some 90 Hz frames get none -, both eyes valid and
 // sure all the time, the raw look's step from reading to reading 0.34 deg RMS.)
 public sealed class EyeGaze : IDisposable
 {
     public const string MapName = "VirtualDesktop.BodyState";
-    public const double Hold = 0.25;                // seconds a blink (or a stream that stopped) keeps the last look
+    public const double Hold = 0.25;                // seconds the last look is kept once the tracker says the eyes are not tracked
+    public const double HoldShut = 1.5;             // ... while the eyes are shut, or no new reading comes (a stream that stalls)
     // the look smoothed like the laser (a One Euro filter on its direction): resting eyes tremble and the tracker is noisy - filtered at
     // ~2.5 Hz; a saccade (hundreds of degrees a second) opens it up so the look jumps with the eyes, not after them (gaze focus, the
     // watch's glance, the dim; the eye cursor takes the raw look - Vr/EyeSpot.cs)
     public const float MinCutoff = 2.5f, Beta = 0.1f;   // Hz, Hz per degree a second (Erik 10-19 "more sensitive": was 1.5 / 0.06)
     public const float MinConfidence = 0.3f;
-    // seconds a reading is older than the head pose SteamVR gives for its frame (the Quest's cameras, the tracker, Virtual Desktop's
-    // stream): the look goes on the head of then (VrSession.HeadAt) - put on the head SteamVR predicts it ran ahead of a head turn and
-    // slid back (~2 deg at 30 deg/s). EyeLag logs the measured value.
+    // seconds a reading is older than the moment it is first seen (the Quest's cameras, the tracker, Virtual Desktop's stream): the look
+    // goes on the head of then (VrSession.HeadAt, the head as it was) - put on the head SteamVR predicts for the frame it ran ahead of a
+    // head turn and slid back (~2 deg at 30 deg/s). EyeLag logs the measured value; once a few sessions have logged it, it goes here.
     public const double Latency = 0.040;
     public const float BlinkAt = 0.7f;              // EyesClosed on both eyes from here: shut
     public const double BlinkTail = 0.04;           // seconds after they open that are skipped too
+    public const double ShutMax = 0.35;             // seconds shut lids gate every reading; after that only one 3 deg off the one before
+    const float ShutJumpCos = 0.99863f;             // (cos 3 deg)
     const int EyesClosedL = 12, EyesClosedR = 13;   // the VD module's Expressions enum (EyesLookDown is 14 / 15), read from its metadata 10-24
     // ... unless the reading looks further down than 25 deg in the head: the --eyetest of 10-24 (Erik in VR) had EyesClosed 0.81-1.00 on
     // both eyes while the eyes looked 32-38 deg down (the lids follow the look) - as shut as its blink (1.00 / 1.00, the look thrown 13 deg
@@ -87,6 +96,9 @@ public sealed class EyeGaze : IDisposable
     bool _have;
     int _count;
     double _countAt, _closedAt = -10;
+    bool _lids, _untracked;                          // the last new reading: shut lids / not a look (the tracker: not tracked, unsure)
+    double _shutSince = -10;                         // when the lids shut (the first of a run of shut readings)
+    Vector3 _lastLook = -Vector3.UnitZ;              // the last new reading's look, gated or not (ShutJumpCos)
 
     // --snapshot: a made-up look instead of the map
     public Func<(bool valid, Vector3 dir)> Fake;
@@ -117,8 +129,8 @@ public sealed class EyeGaze : IDisposable
         Feed(s, now);
     }
 
-    // one read (the map's, or the checks' made-up one): a new look, or the last one held (the same reading again, a blink, the stream
-    // stopped) until Hold
+    // one read (the map's, or the checks' made-up one): a new look, or the last one held - until Hold once the tracker says not tracked,
+    // until HoldShut through shut eyes and the same reading again (the stream stalled)
     public void Feed(in FaceState s, double now)
     {
         Last = s;
@@ -132,7 +144,13 @@ public sealed class EyeGaze : IDisposable
             _vbl = s.LeftEyeIsValid; _vbr = s.RightEyeIsValid;
             _count++;
             bool look = Take(s, out var dir, out var origin, out float conf);
-            if (look && Closed(s) && dir.Y > BlinkDownY) _closedAt = now;      // a blink (shut lids looking far down: a look)
+            _untracked = !look;
+            bool lids = look && Closed(s) && dir.Y > BlinkDownY;               // shut lids (looking far down they follow the look: a look)
+            if (lids && !_lids) _shutSince = now;
+            _lids = lids;
+            bool jump = look && Vector3.Dot(dir, _lastLook) < ShutJumpCos;
+            if (look) _lastLook = dir;
+            if (lids && (now - _shutSince < ShutMax || jump)) _closedAt = now;      // a blink (after ShutMax: only a reading thrown off)
             else if (look && now - _closedAt >= BlinkTail)
             {
                 RawDir = dir;
@@ -144,7 +162,7 @@ public sealed class EyeGaze : IDisposable
             }
         }
         if (now - _countAt >= 1) { PerSec = _count; _count = 0; _countAt = now; }
-        Valid = now - _lastGood < Hold;             // a blink: the last look a moment longer
+        Valid = now - _lastGood < (_untracked ? Hold : HoldShut);      // a blink, a stall: the last look a while longer
     }
 
     // the same reading as the last one: Virtual Desktop has not written a new one since (exact: a new one always differs somewhere)
