@@ -195,6 +195,25 @@ public sealed class SettingsPanel : IPointerTarget, IDisposable
         _lastSeen = Clock.Now;            // (what it made is kept a minute, as if it had been open: ReleaseIdle)
     }
 
+    // The first tabs drawn at startup (Erik 10-24, the boot: line: the first tab's draw was ~46 ms of a connect step - Orbit's code
+    // compiled at its first call, the page's text laid out for the first time, its kept textures made): OrbitApp's constructor, before
+    // any overlay or frame (OrbitApp.WarmPanels), each tab as WarmTab draws it - the first always, the next ones while less than
+    // budgetMs has gone by. The connect steps draw every tab again (WarmTab), these for a few ms. took: each warmed tab's ms (the
+    // bootdraw check, BootDrawTest.cs). The number of tabs drawn.
+    public int WarmTabs(double budgetMs, double[] took = null)
+    {
+        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        int n = 0;
+        while (n < SettingsView.TabCount && (n == 0 || System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds < budgetMs))
+        {
+            long s0 = System.Diagnostics.Stopwatch.GetTimestamp();
+            WarmTab(n);
+            if (took != null && n < took.Length) took[n] = System.Diagnostics.Stopwatch.GetElapsedTime(s0).TotalMilliseconds;
+            n++;
+        }
+        return n;
+    }
+
     // ---- IPointerTarget ----
     public VrOverlay Overlay => Ov;
     public bool Interactive => Ov != null && Ov.Visible && _open && _vis > 0.8f;

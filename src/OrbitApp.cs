@@ -209,6 +209,7 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         if (!_startHidden) _win.Show();
 
         WarmWatch();                        // the watch's first draw here, before SteamVR's frames - not a connect step's (BootTick)
+        WarmPanels();                       // ... the keyboard's and the settings' first tabs' too
         if (_vr.Connected) OnVrConnected();
     }
 
@@ -233,6 +234,36 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         if (!double.IsPositiveInfinity(wake)) AnimWake.At(wake);
         Log.Info($"warm-up: the watch's first draw before the connect, {Stopwatch.GetElapsedTime(d0).TotalMilliseconds:0} ms" +
                  (waited >= 1 ? $" ({waited:0} ms waited for the fonts{(fonts ? "" : ", not ready")})" : ""));
+    }
+
+    // The keyboard's and the settings' first draws there too, right after the watch's (Erik 10-24, the boot: line - "#0 108,2 ms =
+    // keyboard 39,3 ...", the first settings tab ~46 ms: the connect steps paid them in VR frames, after the watch's had moved here).
+    // The same draws as the connect steps' that follow (BootTick: then the keyboard's second, every tab drawn again - a few ms each):
+    // the keyboard in the current style (its kept picture or its half-size canvas made), and the settings' tabs off-screen into the
+    // panel's own texture (SettingsPanel.WarmTabs) - the first tab always, the next ones while the two have taken less than
+    // WarmPanelsMs (~0.1 s more before the start is done; a slower PC leaves the rest to the connect steps, as before). The textures
+    // are the ones those steps make, made earlier: the settings' let go a minute later as ever (ReleaseIdle), the keyboard's kept
+    // there for SteamVR (4 MB without it). Nothing is shown, sent or written: no overlay exists yet, the panel stays closed on its
+    // tab, the Watch tab's preview is not one shown (the watchers' cue: _photoPreview), a wake the draws ask for is given back as it
+    // was. One "warm-up:" line.
+    internal const double WarmPanelsMs = 120;
+    int _warmTabs;                          // the settings' tabs drawn before the connect (their connect steps' names in the boot: line)
+
+    void WarmPanels()
+    {
+        long t0 = Stopwatch.GetTimestamp();
+        double wake = AnimWake.Take(), pp = _photoPreview;
+        try { _kb.Draw(); }
+        catch (Exception e) { Log.Warn("warm-up: the keyboard's first draw: " + e.Message); }
+        double kb = Stopwatch.GetElapsedTime(t0).TotalMilliseconds;
+        long s0 = Stopwatch.GetTimestamp();
+        try { _warmTabs = _settingsPanel.WarmTabs(WarmPanelsMs - kb); }
+        catch (Exception e) { Log.Warn("warm-up: the settings' first draws: " + e.Message); }
+        _photoPreview = pp;
+        AnimWake.Take();
+        if (!double.IsPositiveInfinity(wake)) AnimWake.At(wake);
+        Log.Info($"warm-up: the keyboard's first draw before the connect, {kb:0} ms; the settings' first {_warmTabs} of " +
+                 $"{SettingsView.TabCount} tabs, {Stopwatch.GetElapsedTime(s0).TotalMilliseconds:0} ms");
     }
 
     static string ActionManifest => Path.Combine(AppContext.BaseDirectory, "assets", "actions.json");
@@ -1001,12 +1032,12 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
     // ms - every monitor's capture, the dashboard tab, the warm-up draws and the watchers' first work in one or two frames). OnVrConnected
     // makes only what every frame needs; the first frame after it runs every per-frame part for the first time, the second scans the
     // windows; from the third one thing a frame: each enabled monitor's and window's overlay and capture (5-15 ms: the capture item, a
-    // 1920 x 1080 texture, the frame pool, the session), then the SteamVR dashboard tab, the watch's draw (its first came before the
-    // connect: WarmWatch - it was 106 ms here) and the keyboard's first draw, the settings panel's tabs (2-18 ms each: their D2D flush
-    // waits while the game fills the GPU) and the auto-start. The budget is that step a frame, 10-15 ms; the keyboard's first draw and a
-    // flush behind the game go over it. Erik's 3 monitors: all made by frame ~16, ~0.2 s at 90 Hz (headset off, 20 Hz: ~0.8 s - nobody
-    // looks then); the watchers follow, one a frame (VrAfter). Monitors rebuilt later (SyncMonitors, a layout turning some on) come one
-    // a frame the same way.
+    // 1920 x 1080 texture, the frame pool, the session), then the SteamVR dashboard tab, the watch's and the keyboard's draws (their
+    // first came before the connect: WarmWatch, WarmPanels - 106 and 39 ms here), the settings panel's tabs (the first ones drawn before
+    // the connect too; 2-18 ms each: their D2D flush waits while the game fills the GPU) and the auto-start. The budget is that step a
+    // frame, 10-15 ms; a flush behind the game goes over it. Erik's 3 monitors: all made by frame ~16, ~0.2 s at 90 Hz (headset off,
+    // 20 Hz: ~0.8 s - nobody looks then); the watchers follow, one a frame (VrAfter). Monitors rebuilt later (SyncMonitors, a layout
+    // turning some on) come one a frame the same way.
     int _vrFrames = -1;                     // VR frames since connecting (0: the first)
     int _bootStep = -1;                     // the next connect step (-1: none left)
     int _bootEnd;                           // the frame the last step ran in
@@ -1035,14 +1066,14 @@ public sealed partial class OrbitApp : IOrbitHost, IDisposable
         {
             if (s == 0) { CreateDashboard(); Spikes.Piece("boot: dashboard tab", b0); }
             else if (s == 1) { if (_wrist.Alpha <= 0.02f) _wrist.Draw(_data); Spikes.Piece("boot: the watch's second draw", b0); }
-            else if (s == 2) { if (!C.Keyboard.Visible) _kb.Draw(); Spikes.Piece("boot: the keyboard's first draw", b0); }
+            else if (s == 2) { if (!C.Keyboard.Visible) _kb.Draw(); Spikes.Piece("boot: the keyboard's second draw", b0); }
             else if (s < 3 + tabs)
             {
                 // (the Watch tab's preview notes a preview shown: not the watchers' cue to start now - they go one a frame, VrAfter)
                 double pp = _photoPreview;
                 if (!_settingsPanel.IsOpen) _settingsPanel.WarmTab(s - 3);
                 _photoPreview = pp;
-                Spikes.Piece("boot: a settings tab's first draw", b0);
+                Spikes.Piece(s - 3 < _warmTabs ? "boot: a settings tab drawn again" : "boot: a settings tab's first draw", b0);
             }
             else { ApplyAutoStart(); Spikes.Piece("boot: auto-start", b0); }
         }
