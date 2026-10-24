@@ -6,11 +6,13 @@ namespace Orbit;
 
 // The custom face's widgets drawn once while the watch is away (Erik 10-24, the spike lines: battery 10.8 ms, recap 7, an opened widget
 // 6 the first time each drew - the connect's warm-ups, OrbitApp.BootTick and WarmAgain, draw only the page in view). After the connect's
-// steps, the watch hidden for a second at least, one item a frame (OrbitApp.Tick): each widget of the other pages, then an opened view of
-// each kind on the pages (and in their folders) - a few ms each, off-screen into the watch's own surface, never handed to SteamVR: its one
-// SetTexture is WristPanel.Update's, right after a real Draw of the whole surface, and the surface is left clear after each item. Again only
-// when the layout, the style or the language changed (3 s after the last change), and for the kinds whose data came since (the first
-// notification, a world, the friends...). Not the retro styles (their skins keep motion of their own) nor the fixed faces.
+// steps, the watch hidden for a second at least, one item a frame (OrbitApp.Tick): each widget of the pages and of their folders (a
+// folder's are drawn only when it opens), then an opened view of each kind on the pages (and in their folders). Not the page a real draw
+// drew last (DrawCustomFace: the connect's warm-ups, a look, the settings' preview) while the layout, the style and the language are as
+// it drew them - only its cards whose data came after that draw. A few ms each, off-screen into the watch's own surface, never handed to
+// SteamVR: its one SetTexture is WristPanel.Update's, right after a real Draw of the whole surface, and the surface is left clear after
+// each item. Again only when the layout, the style or the language changed (3 s after the last change), and for the kinds whose data came
+// since (the first notification, a world, the friends...). Not the retro styles (their skins keep motion of their own) nor the fixed faces.
 // It leaves no trace: drawn with a Ui of its own (the watch's springs, eased values, pressed control and hit areas are not touched) and a
 // pointer that is nowhere (nothing hovered, pressed or scrolled: no button acts, no slider sends), the boot held off for the draw (a boot
 // held for a look draws an empty face), and what a draw writes in the panel put back after it (WarmKeep): the opened widget (none), the
@@ -34,6 +36,10 @@ public sealed partial class WristPanel
     double _warmSigAt = -1;                        // when the layout's signature last changed (-1: never looked)
     int _warmData, _warmDrawn, _warmOnly = -1;     // the data seen (bits, only ever added), the data drawn with, the kinds listed (-1: all)
     bool _warmOff;                                 // it failed outside a draw: not again this run
+    // the page a real draw drew last (DrawCustomFace), the data it had and the style / language it was in; not ok once the layout
+    // changes (Erik 10-24, the review: a style changed while the watch was away left the page in view the one page not drawn in it)
+    bool _warmFaceOk;
+    int _warmFacePage, _warmFaceData, _warmFaceLook;
     long _warmTicks, _warmMax;
     string _warmMaxWhat;
     int _warmCards, _warmViews, _warmFrames;
@@ -61,7 +67,9 @@ public sealed partial class WristPanel
             if (sig != _warmSig || _warmSigAt < 0)
             {
                 // a new layout / style / language: all of it again, once it has stayed so for 3 s (a slider or an editor drag moves it
-                // every frame)
+                // every frame) - the page in view too, till a real draw draws it again (the first signature: the connect's draws
+                // stand, their style and language checked in WarmBuild)
+                if (_warmSigAt >= 0) _warmFaceOk = false;
                 (_warmSig, _warmSigAt, _warmNext, _warmOnly) = (sig, now, -1, -1);
                 return;
             }
@@ -93,18 +101,23 @@ public sealed partial class WristPanel
         _warmTicks = _warmMax = 0;
         _warmMaxWhat = null;
         _warmDrawn = _warmOnly == -1 ? _warmData : _warmDrawn | _warmOnly;
-        int count = WatchPages.Count(C), cur = C.Page;          // (the config as it is: CurPage and PageList can write it)
-        // the cards of the other pages (the page in view: drawn by the connect's warm-ups, and with every look) - and of the page in
-        // view too when it is for data that came while the watch was away (its cards drew without it)
+        int count = WatchPages.Count(C);                        // (the config as it is: PageList can write it)
+        // the cards, page by page - of the page a real draw drew last with this layout, style and language (the connect's warm-ups,
+        // a look, the settings' preview) only the ones whose data came after that draw (they drew without it); a folder's widgets on
+        // every page, that one's too: a draw of the page never draws them (FolderSheet does, when it opens)
         for (int p = 0; p < count; p++)
         {
             var list = WarmList(p);
-            if ((p == cur && _warmOnly == -1) || list == null) continue;
+            if (list == null) continue;
+            bool seen = _warmFaceOk && p == _warmFacePage && _warmFaceLook == WarmLook;
+            int only = seen ? (_warmOnly == -1 ? _warmData : _warmOnly) & ~_warmFaceData : -1;
             var grid = WatchPages.Grid(C, p);
             foreach (var w in list)
             {
-                var k = w == null ? null : WatchWidgets.Find(w.Type);
-                if (k != null && k.Id is not ("minesweeper" or "mixer" or "avatar") && WarmWanted(k.Id)) _warmItems.Add(new WarmItem(list, grid, w, null));
+                if (w == null) continue;
+                WarmCard(list, grid, w, only);
+                if (WatchFolders.Is(w) && w.Children != null)
+                    foreach (var c in w.Children) if (c != null) WarmCard(w.Children, GridSpec.Folder, c, -1);
             }
         }
         // an opened view of each kind, on the pages and in their folders (the first widget of the kind found)
@@ -122,6 +135,24 @@ public sealed partial class WristPanel
             }
         }
     }
+
+    // a widget's card - not Minesweeper's, the mixer's, the avatar's (only: the data bits its kind is drawn for, -1: any)
+    void WarmCard(List<WatchWidget> list, GridSpec grid, WatchWidget w, int only)
+    {
+        var k = WatchWidgets.Find(w.Type);
+        if (k == null || k.Id is ("minesweeper" or "mixer" or "avatar") || !WarmWanted(k.Id) || (only != -1 && (WarmBit(k.Id) & only) == 0)) return;
+        _warmItems.Add(new WarmItem(list, grid, w, null));
+    }
+
+    // DrawCustomFace, a real draw (the warm-up never calls it): the page in view drawn with this data, style and language - not a
+    // face held for its boot (a look cut short: nothing of it drawn yet)
+    void WarmFaceDrawn(int page, PanelData d)
+    {
+        if (_introStart > Clock.Now || (Theme.Cyber && _cyBootAt > Clock.Now)) return;
+        (_warmFaceOk, _warmFacePage, _warmFaceData, _warmFaceLook) = (true, page, WarmData(d), WarmLook);
+    }
+
+    static int WarmLook => unchecked(Theme.Version * 31 + Lang.Version);
 
     void WarmView(List<WatchWidget> list, GridSpec grid, WatchWidget w)
     {
@@ -217,8 +248,9 @@ public sealed partial class WristPanel
                 _dockKeys = DockShows(d);
                 _warmOne.Clear();
                 _warmOne.Add(it.W);
-                // past its cascade (t 99), nothing popping in, no page around it
-                DrawPage(_warmOne, it.Grid, 0, d, C.Background == "cards", Volume.Level >= 0 && Volume.Muted, Now, 99, false);
+                // past its cascade (t 99), nothing popping in, no page around it (a folder's widget: on its sheet, as FolderSheet draws it)
+                bool cards = it.Grid != GridSpec.Folder && C.Background == "cards";
+                DrawPage(_warmOne, it.Grid, 0, d, cards, Volume.Level >= 0 && Volume.Muted, Now, 99, false);
             }
             else
             {
@@ -302,7 +334,7 @@ public sealed partial class WristPanel
         if (_warmFrames == 0) { _warmItems.Clear(); return; }
         bool all = _warmOnly == -1;
         var sb = new StringBuilder(all ? "watch warm-up: " : "watch warm-up, their data came: ");
-        sb.Append(_warmCards).Append(_warmCards == 1 ? " widget" : " widgets").Append(all ? " of the other pages and " : " and ")
+        sb.Append(_warmCards).Append(_warmCards == 1 ? " widget" : " widgets").Append(" and ")
           .Append(_warmViews).Append(_warmViews == 1 ? " opened view" : " opened views");
         if (_warmViews > 0)
         {

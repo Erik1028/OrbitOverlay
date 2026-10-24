@@ -569,6 +569,7 @@ public sealed partial class WristPanel
         Spikes.Piece("watch: opened widget", dd0);
         _layoutSeen = true;
         _seenPage = cur;
+        WarmFaceDrawn(cur, d);                              // the warm-up leaves this page out while it stays so (WristWarm.cs)
         _artFade = _notesSlide = _settled = false;          // a new cover / notification was taken by the cards drawn this frame
         if (t < 1.2) _ui.Animating = true;
     }
